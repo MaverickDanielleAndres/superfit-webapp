@@ -1,26 +1,218 @@
 @import "tailwindcss";
+@plugin "tailwindcss-animate";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* Make dark mode the default using a class configuration if we were in Tailwind v3,
+   but in v4 we can set dark mode via variants. We will respect the standard `.dark` class
+   behavior for our design system. */
+@custom-variant dark (&:is(.dark *));
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@theme {
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-surface-alt: var(--bg-surface-alt);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-overlay: var(--bg-overlay);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-inverse: var(--text-inverse);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-dim: var(--accent-dim);
+  --color-accent-bg: var(--accent-bg);
+  --color-accent-bg-strong: var(--accent-bg-strong);
+
+  --color-status-success: var(--status-success);
+  --color-status-warning: var(--status-warning);
+  --color-status-danger: var(--status-danger);
+  --color-status-info: var(--status-info);
+  --color-status-purple: var(--status-purple);
+
+  --color-chart-green: var(--chart-green);
+  --color-chart-blue: var(--chart-blue);
+  --color-chart-amber: var(--chart-amber);
+  --color-chart-red: var(--chart-red);
+  --color-chart-purple: var(--chart-purple);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-axis: var(--chart-axis);
+
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-sidebar-active-bg: var(--sidebar-active-bg);
+  --color-sidebar-active-text: var(--sidebar-active-text);
+  --color-sidebar-inactive: var(--sidebar-inactive);
+  --color-sidebar-icon-active: var(--sidebar-icon-active);
+  --color-sidebar-border: var(--sidebar-border);
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+
+  --radius: 0.5rem;
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --animate-shimmer: shimmer 1.4s infinite linear;
+  --animate-float: float 3s ease-in-out infinite;
+  --animate-pulse-green: pulse-green 2s ease-in-out infinite;
+
+  @keyframes shimmer {
+    0% { background-position: -600px 0; }
+    100% { background-position: 600px 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes pulse-green {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Base styles for root - Defaulting to dark mode (Image 1) */
+:root {
+  --bg-base:          #0a0a0a;   
+  --bg-surface:       #111111;   
+  --bg-surface-alt:   #161616;   
+  --bg-elevated:      #1a1a1a;   
+  --bg-overlay:       rgba(0,0,0,0.72); 
+
+  --border-subtle:    #1f1f1f;   
+  --border-default:   #2a2a2a;   
+  --border-strong:    #3a3a3a;   
+
+  --text-primary:     #fafafa;   
+  --text-secondary:   #a3a3a3;   
+  --text-tertiary:    #525252;   
+  --text-inverse:     #0a0a0a;   
+
+  --accent:           #22c55e;   
+  --accent-hover:     #16a34a;   
+  --accent-dim:       #166534;   
+  --accent-bg:        rgba(34,197,94,0.10);  
+  --accent-bg-strong: rgba(34,197,94,0.18);  
+
+  --status-success:   #22c55e;
+  --status-warning:   #f59e0b;
+  --status-danger:    #ef4444;
+  --status-info:      #3b82f6;
+  --status-purple:    #a855f7;   
+
+  --chart-green:      #22c55e;   
+  --chart-blue:       #60a5fa;   
+  --chart-amber:      #fbbf24;   
+  --chart-red:        #f87171;   
+  --chart-purple:     #c084fc;   
+  --chart-grid:       #1f1f1f;   
+  --chart-axis:       #525252;   
+
+  --sidebar-bg:           #0f0f0f;
+  --sidebar-active-bg:    #1a1a1a;
+  --sidebar-active-text:  #ffffff;
+  --sidebar-inactive:     #737373;
+  --sidebar-icon-active:  #22c55e;
+  --sidebar-border:       #1a1a1a;
+
+  /* We will set these CSS variables via next/font in layout.tsx, but provide fallbacks here */
+  --font-display: 'DM Sans', -apple-system, sans-serif;
+  --font-body:    'Inter', -apple-system, sans-serif;
+  --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.light {
+  /* LIGHT MODE — SECONDARY (Image 3 Reference) */
+  --bg-base:          #ffffff;
+  --bg-surface:       #f9f9f9;
+  --bg-surface-alt:   #f3f4f6;
+  --bg-elevated:      #ffffff;
+  --bg-overlay:       rgba(0,0,0,0.45);
+
+  --border-subtle:    #e5e7eb;
+  --border-default:   #d1d5db;
+  --border-strong:    #9ca3af;
+
+  --text-primary:     #0a0a0a;
+  --text-secondary:   #4b5563;
+  --text-tertiary:    #9ca3af;
+  --text-inverse:     #ffffff;
+
+  --accent:           #16a34a;
+  --accent-hover:     #15803d;
+  --accent-dim:       #bbf7d0;
+  --accent-bg:        rgba(22,163,74,0.08);
+  --accent-bg-strong: rgba(22,163,74,0.15);
+
+  --status-success:   #16a34a;
+  --status-warning:   #d97706;
+  --status-danger:    #dc2626;
+  --status-info:      #2563eb;
+  --status-purple:    #9333ea;
+
+  --chart-green:      #16a34a;
+  --chart-blue:       #2563eb;
+  --chart-amber:      #d97706;
+  --chart-red:        #dc2626;
+  --chart-purple:     #9333ea;
+  --chart-grid:       #e5e7eb;
+  --chart-axis:       #9ca3af;
+
+  --sidebar-bg:           #ffffff;
+  --sidebar-active-bg:    #f0fdf4;
+  --sidebar-active-text:  #15803d;
+  --sidebar-inactive:     #6b7280;
+  --sidebar-icon-active:  #16a34a;
+  --sidebar-border:       #e5e7eb;
+}
+
+@layer base {
+  *, ::before, ::after {
+    border-color: var(--border-default);
+  }
+
+  body {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+  }
+}
+
+/* ── Typography Utilities (Matching Design System) ── */
+@layer utilities {
+  .display-2xl { font-family: var(--font-display); font-size: 4rem;    font-weight: 800; line-height: 1.0;  letter-spacing: -0.05em; }
+  .display-xl  { font-family: var(--font-display); font-size: 3.5rem;  font-weight: 700; line-height: 1.0;  letter-spacing: -0.04em; }
+  .display-lg  { font-family: var(--font-display); font-size: 2.75rem; font-weight: 700; line-height: 1.1;  letter-spacing: -0.03em; }
+  .display-md  { font-family: var(--font-display); font-size: 2.25rem; font-weight: 700; line-height: 1.15; letter-spacing: -0.025em; }
+  .display-sm  { font-family: var(--font-display); font-size: 1.875rem;font-weight: 700; line-height: 1.2;  letter-spacing: -0.02em; }
+
+  /* ── Headings ── */
+  .h1 { font-family: var(--font-display); font-size: 1.75rem;  font-weight: 700; line-height: 1.2;  letter-spacing: -0.02em; }
+  .h2 { font-family: var(--font-display); font-size: 1.5rem;   font-weight: 600; line-height: 1.25; letter-spacing: -0.015em; }
+  .h3 { font-family: var(--font-display); font-size: 1.25rem;  font-weight: 600; line-height: 1.3;  letter-spacing: -0.01em; }
+  .h4 { font-family: var(--font-body);    font-size: 1.0625rem;font-weight: 600; line-height: 1.35; letter-spacing: -0.005em; }
+  .h5 { font-family: var(--font-body);    font-size: 0.9375rem;font-weight: 600; line-height: 1.4;  letter-spacing: 0; }
+
+  /* ── Body ── */
+  .body-lg { font-family: var(--font-body); font-size: 1.0625rem; font-weight: 400; line-height: 1.65; }
+  .body-base { font-family: var(--font-body); font-size: 0.9375rem; font-weight: 400; line-height: 1.6;  }
+  .body-sm { font-family: var(--font-body); font-size: 0.875rem;  font-weight: 400; line-height: 1.55; }
+
+  /* ── UI Labels ── */
+  .label-lg { font-family: var(--font-body); font-size: 0.875rem;  font-weight: 500; line-height: 1.4; letter-spacing: 0.005em; }
+  .label-base { font-family: var(--font-body); font-size: 0.8125rem; font-weight: 500; line-height: 1.4; letter-spacing: 0.01em; }
+  .label-sm { font-family: var(--font-body); font-size: 0.75rem;   font-weight: 500; line-height: 1.3; letter-spacing: 0.02em; }
+
+  /* ── Overline (ALL CAPS section labels) ── */
+  .overline-text { font-family: var(--font-body); font-size: 0.6875rem; font-weight: 600; line-height: 1.2; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  /* ── Monospace: timers, calculator outputs ── */
+  .timer-xl { font-family: var(--font-mono); font-size: 5rem;   font-weight: 600; line-height: 1.0; letter-spacing: -0.02em; }
+  .timer-lg { font-family: var(--font-mono); font-size: 3rem;   font-weight: 600; line-height: 1.0; letter-spacing: -0.02em; }
+  .timer-md { font-family: var(--font-mono); font-size: 1.75rem;font-weight: 600; line-height: 1.0; }
+  .mono-base { font-family: var(--font-mono); font-size: 0.875rem;font-weight: 400; line-height: 1.5; }
 }
