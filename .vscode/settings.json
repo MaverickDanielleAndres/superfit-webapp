@@ -1,0 +1,4 @@
+{
+  "tailwindCSS.validate": false,
+  "tailwindCSS.lint.suggestCanonicalClasses": "ignore"
+}
