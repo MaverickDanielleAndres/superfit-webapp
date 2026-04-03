@@ -4,9 +4,9 @@
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { createClient } from '@/lib/supabase/client'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 import type { Database } from '@/types/supabase'
+import { requestApi } from '@/lib/api/client'
 
 export interface FitnessGoal {
     id: string
@@ -87,28 +87,13 @@ export const useGoalStore = create<GoalState>()(
                 if (!isSupabaseAuthEnabled()) return
 
                 set({ isLoading: true, error: null })
-                const supabase = createClient()
-                const { data: authData } = await supabase.auth.getUser()
-                const userId = authData.user?.id
-
-                if (!userId) {
-                    set({ isLoading: false, error: 'User not authenticated.' })
-                    return
+                try {
+                    const response = await requestApi<{ goals: GoalRow[] }>('/api/v1/goals')
+                    const mapped = response.data.goals.map((row) => mapRowToGoal(row))
+                    set({ goals: mapped, isLoading: false, error: null })
+                } catch (error) {
+                    set({ isLoading: false, error: getErrorMessage(error) })
                 }
-
-                const { data, error } = await supabase
-                    .from('goals')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .order('created_at', { ascending: false })
-
-                if (error) {
-                    set({ isLoading: false, error: error.message })
-                    return
-                }
-
-                const mapped = (data || []).map((row) => mapRowToGoal(row))
-                set({ goals: mapped, isLoading: false, error: null })
             },
 
             addGoal: async (goal) => {
@@ -119,66 +104,70 @@ export const useGoalStore = create<GoalState>()(
                     return
                 }
 
-                const supabase = createClient()
-                const { data: authData } = await supabase.auth.getUser()
-                const userId = authData.user?.id
-                if (!userId) return
-
                 const tempId = `goal_${Date.now()}`
                 const optimistic: FitnessGoal = { ...goal, id: tempId, createdAt: new Date().toISOString() }
 
                 set((state) => ({ goals: [optimistic, ...state.goals] }))
 
-                const payload: Database['public']['Tables']['goals']['Insert'] = {
-                    user_id: userId,
-                    title: goal.title,
-                    category: goal.category,
-                    target_value: goal.target,
-                    current_value: goal.current,
-                    start_value: goal.start,
-                    unit: goal.unit,
-                    deadline: goal.deadline,
-                    projected_complete: goal.projectedComplete || null,
-                    ahead: goal.ahead,
-                    completed: goal.completed,
-                    completed_at: null,
+                try {
+                    const response = await requestApi<{ goal: GoalRow }>('/api/v1/goals', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            title: goal.title,
+                            category: goal.category,
+                            target: goal.target,
+                            current: goal.current,
+                            start: goal.start,
+                            unit: goal.unit,
+                            deadline: goal.deadline,
+                            projectedComplete: goal.projectedComplete || null,
+                            ahead: goal.ahead,
+                            completed: goal.completed,
+                        }),
+                    })
+
+                    set((state) => ({
+                        goals: state.goals.map((g) => (g.id === tempId ? mapRowToGoal(response.data.goal) : g)),
+                        error: null,
+                    }))
+                } catch (error) {
+                    set((state) => ({
+                        goals: state.goals.filter((g) => g.id !== tempId),
+                        error: getErrorMessage(error),
+                    }))
                 }
-
-                const { data, error } = await supabase.from('goals').insert(payload).select('*').single()
-
-                if (error || !data) {
-                    set((state) => ({ goals: state.goals.filter((g) => g.id !== tempId), error: error?.message || 'Unable to create goal.' }))
-                    return
-                }
-
-                set((state) => ({
-                    goals: state.goals.map((g) => (g.id === tempId ? mapRowToGoal(data) : g)),
-                    error: null
-                }))
             },
 
             updateGoal: async (id, partial) => {
+                const previousGoals = get().goals
                 set((state) => ({ goals: state.goals.map((g) => (g.id === id ? { ...g, ...partial } : g)) }))
 
                 if (!isSupabaseAuthEnabled()) return
 
-                const supabase = createClient()
-                const payload: Database['public']['Tables']['goals']['Update'] = {
-                    title: partial.title,
-                    category: partial.category,
-                    target_value: partial.target,
-                    current_value: partial.current,
-                    start_value: partial.start,
-                    unit: partial.unit,
-                    deadline: partial.deadline,
-                    projected_complete: partial.projectedComplete,
-                    ahead: partial.ahead,
-                    completed: partial.completed,
-                    completed_at: partial.completed ? new Date().toISOString() : null,
-                }
+                try {
+                    const response = await requestApi<{ goal: GoalRow }>(`/api/v1/goals/${id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            title: partial.title,
+                            category: partial.category,
+                            target: partial.target,
+                            current: partial.current,
+                            start: partial.start,
+                            unit: partial.unit,
+                            deadline: partial.deadline,
+                            projectedComplete: partial.projectedComplete,
+                            ahead: partial.ahead,
+                            completed: partial.completed,
+                        }),
+                    })
 
-                const { error } = await supabase.from('goals').update(payload).eq('id', id)
-                if (error) set({ error: error.message })
+                    set((state) => ({
+                        goals: state.goals.map((goal) => (goal.id === id ? mapRowToGoal(response.data.goal) : goal)),
+                        error: null,
+                    }))
+                } catch (error) {
+                    set({ goals: previousGoals, error: getErrorMessage(error) })
+                }
             },
 
             deleteGoal: async (id) => {
@@ -187,10 +176,12 @@ export const useGoalStore = create<GoalState>()(
 
                 if (!isSupabaseAuthEnabled()) return
 
-                const supabase = createClient()
-                const { error } = await supabase.from('goals').delete().eq('id', id)
-                if (error) {
-                    set({ goals: previous, error: error.message })
+                try {
+                    await requestApi<{ deleted: boolean; id: string }>(`/api/v1/goals/${id}`, {
+                        method: 'DELETE',
+                    })
+                } catch (error) {
+                    set({ goals: previous, error: getErrorMessage(error) })
                 }
             },
 
@@ -228,4 +219,11 @@ function categoryToColor(category: string | null): string {
     if (category === 'Nutrition') return 'bg-orange-500'
     if (category === 'Body Composition') return 'bg-pink-500'
     return 'bg-emerald-500'
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+        return error.message
+    }
+    return 'Request failed.'
 }

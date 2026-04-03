@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { DayLog, MealEntry, FoodItem, SavedMeal, WeeklyMealPlan } from '@/types'
-import { createClient } from '@/lib/supabase/client'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
-import type { Database, Json } from '@/types/supabase'
+import type { Database } from '@/types/supabase'
+import { requestApi } from '@/lib/api/client'
 
 interface NutritionState {
     dayLogs: DayLog[]
@@ -36,63 +36,38 @@ export const useNutritionStore = create<NutritionState>()(
                 if (!isSupabaseAuthEnabled()) return
 
                 set({ isLoading: true, error: null })
-                const supabase = createClient()
-                const { data: authData } = await supabase.auth.getUser()
-                const userId = authData.user?.id
-
-                if (!userId) {
-                    set({ isLoading: false, error: 'User not authenticated.' })
-                    return
+                try {
+                    const response = await requestApi<{ date: string; entries: NutritionRow[] }>(`/api/v1/nutrition?date=${date}`)
+                    const entries = response.data.entries.map(mapRowToEntry)
+                    set((state) => ({
+                        dayLogs: [...state.dayLogs.filter((log) => log.date !== date), { date, entries }],
+                        isLoading: false,
+                        error: null,
+                    }))
+                } catch (error) {
+                    set({ isLoading: false, error: getErrorMessage(error) })
                 }
-
-                const from = `${date}T00:00:00.000Z`
-                const to = `${date}T23:59:59.999Z`
-
-                const { data, error } = await supabase
-                    .from('nutrition_entries')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .gte('logged_at', from)
-                    .lte('logged_at', to)
-                    .order('logged_at', { ascending: true })
-
-                if (error) {
-                    set({ isLoading: false, error: error.message })
-                    return
-                }
-
-                const entries = (data || []).map(mapRowToEntry)
-                set((state) => ({
-                    dayLogs: [...state.dayLogs.filter((log) => log.date !== date), { date, entries }],
-                    isLoading: false,
-                    error: null,
-                }))
             },
 
             addEntry: async (date, entry) => {
                 if (isSupabaseAuthEnabled()) {
-                    const supabase = createClient()
-                    const { data: authData } = await supabase.auth.getUser()
-                    const userId = authData.user?.id
-
-                    if (userId) {
-                        const payload: Database['public']['Tables']['nutrition_entries']['Insert'] = {
-                            user_id: userId,
-                            logged_at: entry.loggedAt,
-                            meal_slot: entry.mealSlot,
-                            quantity: entry.quantity,
-                            food_item_id: entry.foodItemId,
-                            food_item: entry.foodItem as unknown as Json,
-                            notes: entry.notes || null,
-                        }
-
-                        const { error } = await supabase.from('nutrition_entries').insert(payload)
-                        if (error) {
-                            set({ error: error.message })
-                            return
-                        }
+                    try {
+                        await requestApi<{ entry: NutritionRow }>('/api/v1/nutrition', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                foodItemId: entry.foodItemId,
+                                foodItem: entry.foodItem,
+                                quantity: entry.quantity,
+                                mealSlot: entry.mealSlot,
+                                loggedAt: entry.loggedAt,
+                                notes: entry.notes || null,
+                            }),
+                        })
 
                         await get().fetchDayLog(date)
+                        return
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
                         return
                     }
                 }
@@ -113,14 +88,16 @@ export const useNutritionStore = create<NutritionState>()(
 
             removeEntry: async (date, entryId) => {
                 if (isSupabaseAuthEnabled()) {
-                    const supabase = createClient()
-                    const { error } = await supabase.from('nutrition_entries').delete().eq('id', entryId)
-                    if (error) {
-                        set({ error: error.message })
+                    try {
+                        await requestApi<{ deleted: boolean; id: string }>(`/api/v1/nutrition/${entryId}`, {
+                            method: 'DELETE',
+                        })
+                        await get().fetchDayLog(date)
+                        return
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
                         return
                     }
-                    await get().fetchDayLog(date)
-                    return
                 }
 
                 set((state) => {
@@ -170,4 +147,11 @@ function mapRowToEntry(row: NutritionRow): MealEntry {
         loggedAt: row.logged_at,
         notes: row.notes || undefined,
     }
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+        return error.message
+    }
+    return 'Request failed.'
 }

@@ -5,8 +5,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { CommunityPost, Challenge } from '@/types'
-import { createClient } from '@/lib/supabase/client'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { requestApi } from '@/lib/api/client'
 
 export interface CommunityComment {
     id: string
@@ -109,21 +109,11 @@ export const useCommunityStore = create<CommunityState>()(
                 if (!isSupabaseAuthEnabled()) return
 
                 set({ isLoading: true, error: null })
-                const supabase = createClient()
-                const { data: authData, error: authError } = await supabase.auth.getUser()
-                const userId = authData.user?.id
-
-                if (authError || !userId) {
-                    set({ isLoading: false, error: authError?.message || 'User not authenticated.' })
-                    return
-                }
-
                 try {
-                    const posts = await fetchCommunityFeed(userId)
-                    set({ posts, isLoading: false, error: null })
+                    const response = await requestApi<{ posts: CommunityPost[] }>('/api/v1/community/posts')
+                    set({ posts: response.data.posts, isLoading: false, error: null })
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : 'Unable to load community feed.'
-                    set({ isLoading: false, error: message })
+                    set({ isLoading: false, error: getErrorMessage(error) })
                 }
             },
 
@@ -143,41 +133,30 @@ export const useCommunityStore = create<CommunityState>()(
                 if (!isSupabaseAuthEnabled() || !isUuid(post.userId)) return
 
                 void (async () => {
-                    const supabase = createClient()
-                    const payload = {
-                        user_id: post.userId,
-                        content: post.content,
-                        post_type: post.type,
-                        media_urls: post.mediaUrls || [],
-                        poll: post.poll || null,
-                        workout_ref: post.workoutRef || null,
-                        meal_ref: post.mealRef || null,
-                        pr_ref: post.prRef || null,
-                    }
+                    try {
+                        const response = await requestApi<{ post: CommunityPost }>('/api/v1/community/posts', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                content: post.content,
+                                type: post.type,
+                                mediaUrls: post.mediaUrls || [],
+                                poll: post.poll || null,
+                                workoutRef: post.workoutRef || null,
+                                mealRef: post.mealRef || null,
+                                prRef: post.prRef || null,
+                            }),
+                        })
 
-                    const { data, error } = await (supabase as any)
-                        .from('community_posts')
-                        .insert(payload)
-                        .select('id, created_at')
-                        .single()
-
-                    if (error) {
-                        set({ error: error.message })
-                        return
-                    }
-
-                    if (data?.id) {
+                        const persistedPost = response.data.post
                         set((state) => ({
                             posts: state.posts.map((existingPost) =>
                                 existingPost.id === tempId
-                                    ? {
-                                        ...existingPost,
-                                        id: data.id as string,
-                                        postedAt: (data.created_at as string) || existingPost.postedAt,
-                                    }
+                                    ? { ...existingPost, ...persistedPost }
                                     : existingPost
                             )
                         }))
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
                     }
                 })()
             },
@@ -200,23 +179,20 @@ export const useCommunityStore = create<CommunityState>()(
                 if (!isSupabaseAuthEnabled() || !isUuid(postId) || !isUuid(userId)) return
 
                 void (async () => {
-                    const supabase = createClient()
+                    try {
+                        if (shouldLike) {
+                            await requestApi<{ liked: boolean; postId: string }>(`/api/v1/community/posts/${postId}/like`, {
+                                method: 'POST',
+                            })
+                            return
+                        }
 
-                    if (shouldLike) {
-                        const { error } = await (supabase as any)
-                            .from('community_post_likes')
-                            .insert({ post_id: postId, user_id: userId })
-                        if (error) set({ error: error.message })
-                        return
+                        await requestApi<{ liked: boolean; postId: string }>(`/api/v1/community/posts/${postId}/like`, {
+                            method: 'DELETE',
+                        })
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
                     }
-
-                    const { error } = await (supabase as any)
-                        .from('community_post_likes')
-                        .delete()
-                        .eq('post_id', postId)
-                        .eq('user_id', userId)
-
-                    if (error) set({ error: error.message })
                 })()
             },
 
@@ -230,24 +206,13 @@ export const useCommunityStore = create<CommunityState>()(
 
                 if (isSupabaseAuthEnabled() && isUuid(postId) && isUuid(userId)) {
                     void (async () => {
-                        const supabase = createClient()
-                        const payload = {
-                            user_id: userId,
-                            content: originalPost.content,
-                            post_type: originalPost.type,
-                            media_urls: originalPost.mediaUrls || [],
-                            poll: originalPost.poll || null,
-                            workout_ref: originalPost.workoutRef || null,
-                            meal_ref: originalPost.mealRef || null,
-                            pr_ref: originalPost.prRef || null,
-                            repost_of_id: postId,
+                        try {
+                            await requestApi<{ repostId: string; postId: string }>(`/api/v1/community/posts/${postId}/repost`, {
+                                method: 'POST',
+                            })
+                        } catch (error) {
+                            set({ error: getErrorMessage(error) })
                         }
-
-                        const { error } = await (supabase as any)
-                            .from('community_posts')
-                            .insert(payload)
-
-                        if (error) set({ error: error.message })
                     })()
                 }
 
@@ -275,19 +240,16 @@ export const useCommunityStore = create<CommunityState>()(
                 if (!isSupabaseAuthEnabled() || !isUuid(postId) || !isUuid(comment.authorId)) return
 
                 void (async () => {
-                    const supabase = createClient()
-                    const payload = {
-                        user_id: comment.authorId,
-                        parent_id: postId,
-                        content: comment.content,
-                        post_type: 'text',
+                    try {
+                        await requestApi<{ comment: { id: string }; postId: string }>(`/api/v1/community/posts/${postId}/comments`, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                content: comment.content,
+                            }),
+                        })
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
                     }
-
-                    const { error } = await (supabase as any)
-                        .from('community_posts')
-                        .insert(payload)
-
-                    if (error) set({ error: error.message })
                 })()
             },
 
@@ -300,19 +262,12 @@ export const useCommunityStore = create<CommunityState>()(
                 if (!isSupabaseAuthEnabled() || !isUuid(postId)) return
 
                 void (async () => {
-                    const supabase = createClient()
-                    const { data: authData } = await supabase.auth.getUser()
-                    const userId = authData.user?.id
-                    if (!userId) return
-
-                    const { error } = await (supabase as any)
-                        .from('community_posts')
-                        .update({ deleted_at: new Date().toISOString() })
-                        .eq('id', postId)
-                        .eq('user_id', userId)
-
-                    if (error) {
-                        set({ posts: previous, error: error.message })
+                    try {
+                        await requestApi<{ deleted: boolean; id: string }>(`/api/v1/community/posts/${postId}`, {
+                            method: 'DELETE',
+                        })
+                    } catch (error) {
+                        set({ posts: previous, error: getErrorMessage(error) })
                     }
                 })()
             },
@@ -321,108 +276,11 @@ export const useCommunityStore = create<CommunityState>()(
     )
 )
 
-async function fetchCommunityFeed(currentUserId: string): Promise<CommunityPost[]> {
-    const supabase = createClient()
-
-    const { data: postsData, error: postsError } = await (supabase as any)
-        .from('community_posts')
-        .select('id,user_id,content,post_type,media_urls,poll,workout_ref,meal_ref,pr_ref,created_at,parent_id,repost_of_id,profile:profiles(full_name,avatar_url,role,email)')
-        .is('deleted_at', null)
-        .is('parent_id', null)
-        .is('repost_of_id', null)
-        .order('created_at', { ascending: false })
-        .limit(100)
-
-    if (postsError) throw new Error(postsError.message)
-
-    const posts = Array.isArray(postsData) ? postsData : []
-    const postIds = posts.map((row) => row.id as string).filter(Boolean)
-
-    const likesByPost = new Map<string, number>()
-    const likedByMe = new Set<string>()
-    const commentsByPost = new Map<string, number>()
-    const repostsByPost = new Map<string, number>()
-
-    if (postIds.length) {
-        const { data: likesData, error: likesError } = await (supabase as any)
-            .from('community_post_likes')
-            .select('post_id,user_id')
-            .in('post_id', postIds)
-
-        if (likesError) throw new Error(likesError.message)
-
-        for (const like of likesData || []) {
-            const postId = like.post_id as string
-            likesByPost.set(postId, (likesByPost.get(postId) || 0) + 1)
-            if ((like.user_id as string) === currentUserId) likedByMe.add(postId)
-        }
-
-        const { data: commentsData, error: commentsError } = await (supabase as any)
-            .from('community_posts')
-            .select('id,parent_id')
-            .is('deleted_at', null)
-            .in('parent_id', postIds)
-
-        if (commentsError) throw new Error(commentsError.message)
-
-        for (const comment of commentsData || []) {
-            const parentId = comment.parent_id as string
-            commentsByPost.set(parentId, (commentsByPost.get(parentId) || 0) + 1)
-        }
-
-        const { data: repostData, error: repostError } = await (supabase as any)
-            .from('community_posts')
-            .select('id,repost_of_id')
-            .is('deleted_at', null)
-            .in('repost_of_id', postIds)
-
-        if (repostError) throw new Error(repostError.message)
-
-        for (const repost of repostData || []) {
-            const sourceId = repost.repost_of_id as string
-            repostsByPost.set(sourceId, (repostsByPost.get(sourceId) || 0) + 1)
-        }
-    }
-
-    return posts.map((row) => {
-        const profile = (row.profile || {}) as { full_name?: string | null; avatar_url?: string | null; role?: string | null; email?: string | null }
-        const postId = row.id as string
-        const userId = row.user_id as string
-
-        const emailHandle = profile.email ? String(profile.email).split('@')[0] : userId.slice(0, 8)
-        const userName = profile.full_name || 'SuperFit User'
-
-        return {
-            id: postId,
-            userId,
-            userName,
-            userHandle: `@${emailHandle}`,
-            userAvatar: profile.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${userId}`,
-            isCoach: profile.role === 'coach',
-            type: normalizePostType(row.post_type),
-            content: String(row.content || ''),
-            mediaUrls: Array.isArray(row.media_urls) ? row.media_urls.map((value: unknown) => String(value)) : undefined,
-            poll: (row.poll as CommunityPost['poll']) || undefined,
-            workoutRef: (row.workout_ref as CommunityPost['workoutRef']) || undefined,
-            mealRef: (row.meal_ref as CommunityPost['mealRef']) || undefined,
-            prRef: (row.pr_ref as CommunityPost['prRef']) || undefined,
-            likes: likesByPost.get(postId) || 0,
-            comments: commentsByPost.get(postId) || 0,
-            reposts: repostsByPost.get(postId) || 0,
-            views: 0,
-            isLiked: likedByMe.has(postId),
-            postedAt: String(row.created_at),
-        } satisfies CommunityPost
-    })
-}
-
-function normalizePostType(type: unknown): CommunityPost['type'] {
-    if (type === 'workout' || type === 'meal' || type === 'progress' || type === 'text' || type === 'pr' || type === 'challenge') {
-        return type
-    }
-    return 'text'
-}
-
 function isUuid(value: string): boolean {
     return UUID_REGEX.test(value)
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message
+    return 'An unexpected error occurred'
 }

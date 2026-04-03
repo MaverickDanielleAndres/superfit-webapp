@@ -9,9 +9,11 @@ import { Exercise } from '@/types'
 import CreateWorkoutSheet from '@/components/workout/CreateWorkoutSheet'
 import ExercisePickerDrawer from '@/components/workout/ExercisePickerDrawer'
 import RestTimerPill from '@/components/workout/RestTimerPill'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
 export default function WorkoutPage() {
     const { activeSession, startSession, endSession, logSet, addExerciseToSession, addSetToExercise, removeSetFromExercise, removeExerciseFromSession, fetchSessions } = useWorkoutStore()
+    const isSimulationMode = !isSupabaseAuthEnabled()
     const [sessionTimer, setSessionTimer] = useState(0)
     const [showExerciseModal, setShowExerciseModal] = useState(false)
     const [showCreateSheet, setShowCreateSheet] = useState(false)
@@ -52,6 +54,11 @@ export default function WorkoutPage() {
                 <p className="font-body text-[15px] text-(--text-secondary) max-w-[320px] mx-auto mb-8">
                     Start an empty workout or choose from your saved routines to begin tracking.
                 </p>
+                {isSimulationMode && (
+                    <span className="mb-6 inline-flex items-center rounded-[8px] bg-amber-500/10 px-2.5 py-1 font-body text-[11px] font-bold uppercase tracking-wider text-amber-500">
+                        Simulation Mode
+                    </span>
+                )}
 
                 <div className="flex flex-col w-full max-w-[320px] gap-3">
                     <button
@@ -109,6 +116,11 @@ export default function WorkoutPage() {
                             <Timer className="w-[14px] h-[14px]" />
                             <span className="font-display font-bold text-[16px] tabular-nums tracking-wider">{formatTimer(sessionTimer)}</span>
                         </div>
+                        {isSimulationMode && (
+                            <span className="mt-2 inline-flex items-center rounded-[8px] bg-amber-500/10 px-2.5 py-1 font-body text-[10px] font-bold uppercase tracking-wider text-amber-500">
+                                Simulation Mode
+                            </span>
+                        )}
                     </div>
 
                     <button

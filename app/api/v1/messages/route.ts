@@ -1,0 +1,233 @@
+import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { dataResponse, problemResponse } from '@/lib/api/problem'
+
+interface MessageReaction {
+  userId: string
+  emoji: string
+}
+
+interface MessageAttachment {
+  id: string
+  type: 'image' | 'video' | 'file'
+  url: string
+  thumbnailUrl?: string
+  name?: string
+}
+
+interface ChatMessage {
+  id: string
+  threadId: string
+  senderId: string
+  text: string
+  createdAt: string
+  status: 'sent' | 'delivered' | 'read'
+  reactions: MessageReaction[]
+  attachments: MessageAttachment[]
+  replyToId?: string
+}
+
+interface ChatThread {
+  id: string
+  participants: { id: string; name: string; avatar: string }[]
+  isGroup: boolean
+  groupName?: string
+  groupAvatar?: string
+  lastMessage?: ChatMessage
+  unreadCount: number
+  updatedAt: string
+}
+
+export async function GET() {
+  const requestId = crypto.randomUUID()
+  const supabase = await createServerSupabaseClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return problemResponse({
+      status: 401,
+      code: 'UNAUTHORIZED',
+      title: 'Unauthorized',
+      detail: 'Authentication required.',
+      requestId,
+      retriable: false,
+    })
+  }
+
+  const { data: membershipRows, error: membershipError } = await (supabase as any)
+    .from('message_thread_participants')
+    .select('thread_id,last_read_at,thread:message_threads(id,is_group,group_name,group_avatar,updated_at,created_at)')
+    .eq('user_id', user.id)
+    .order('joined_at', { ascending: false })
+
+  if (membershipError) {
+    return problemResponse({
+      status: 500,
+      code: 'MESSAGES_FETCH_FAILED',
+      title: 'Messages Fetch Failed',
+      detail: membershipError.message,
+      requestId,
+    })
+  }
+
+  const memberships = Array.isArray(membershipRows) ? membershipRows : []
+  const threadIds = memberships.map((row) => String(row.thread_id || '')).filter(Boolean)
+
+  if (!threadIds.length) {
+    return dataResponse({
+      requestId,
+      data: {
+        threads: [] as ChatThread[],
+        messagesByThread: {} as Record<string, ChatMessage[]>,
+      },
+    })
+  }
+
+  const { data: participantRows, error: participantError } = await (supabase as any)
+    .from('message_thread_participants')
+    .select('thread_id,user_id,profile:profiles(full_name,avatar_url)')
+    .in('thread_id', threadIds)
+
+  if (participantError) {
+    return problemResponse({
+      status: 500,
+      code: 'MESSAGES_FETCH_FAILED',
+      title: 'Messages Fetch Failed',
+      detail: participantError.message,
+      requestId,
+    })
+  }
+
+  const { data: messageRows, error: messageError } = await (supabase as any)
+    .from('messages')
+    .select('id,thread_id,sender_id,text,attachments,status,reply_to_id,created_at,reactions:message_reactions(user_id,emoji)')
+    .in('thread_id', threadIds)
+    .order('created_at', { ascending: true })
+
+  if (messageError) {
+    return problemResponse({
+      status: 500,
+      code: 'MESSAGES_FETCH_FAILED',
+      title: 'Messages Fetch Failed',
+      detail: messageError.message,
+      requestId,
+    })
+  }
+
+  const participantsByThread = new Map<string, ChatThread['participants']>()
+  for (const row of participantRows || []) {
+    const threadId = String(row.thread_id || '')
+    if (!threadId) continue
+
+    const profile = (row.profile || {}) as { full_name?: string | null; avatar_url?: string | null }
+    const participant = {
+      id: String(row.user_id || ''),
+      name: profile.full_name || (String(row.user_id || '') === user.id ? 'You' : 'User'),
+      avatar: profile.avatar_url || '',
+    }
+
+    const existing = participantsByThread.get(threadId) || []
+    participantsByThread.set(threadId, [...existing, participant])
+  }
+
+  const messagesByThread: Record<string, ChatMessage[]> = {}
+  for (const row of messageRows || []) {
+    const threadId = String(row.thread_id || '')
+    if (!threadId) continue
+
+    if (!messagesByThread[threadId]) messagesByThread[threadId] = []
+
+    const reactions: MessageReaction[] = Array.isArray(row.reactions)
+      ? row.reactions
+          .map((reaction: any) => ({
+            userId: String(reaction.user_id || ''),
+            emoji: String(reaction.emoji || ''),
+          }))
+          .filter((reaction: MessageReaction) => !!reaction.userId && !!reaction.emoji)
+      : []
+
+    const attachments: MessageAttachment[] = Array.isArray(row.attachments)
+      ? row.attachments
+          .map((attachment: any) => ({
+            id: String(attachment.id || `att_${Date.now()}`),
+            type: normalizeAttachmentType(attachment.type),
+            url: String(attachment.url || ''),
+            thumbnailUrl: attachment.thumbnailUrl ? String(attachment.thumbnailUrl) : undefined,
+            name: attachment.name ? String(attachment.name) : undefined,
+          }))
+          .filter((attachment: MessageAttachment) => !!attachment.url || !!attachment.name)
+      : []
+
+    messagesByThread[threadId].push({
+      id: String(row.id || ''),
+      threadId,
+      senderId: String(row.sender_id || ''),
+      text: String(row.text || ''),
+      createdAt: String(row.created_at || new Date().toISOString()),
+      status: normalizeMessageStatus(row.status),
+      reactions,
+      attachments,
+      replyToId: row.reply_to_id ? String(row.reply_to_id) : undefined,
+    })
+  }
+
+  const membershipsByThread = new Map<string, string>()
+  for (const row of memberships) {
+    membershipsByThread.set(String(row.thread_id || ''), String(row.last_read_at || '1970-01-01T00:00:00.000Z'))
+  }
+
+  const threads: ChatThread[] = []
+  for (const row of memberships) {
+    const thread = row.thread as {
+      id: string
+      is_group: boolean
+      group_name: string | null
+      group_avatar: string | null
+      updated_at: string | null
+      created_at: string | null
+    }
+
+    if (!thread?.id) continue
+
+    const threadMessages = messagesByThread[thread.id] || []
+    const lastMessage = threadMessages[threadMessages.length - 1]
+    const lastReadAt = membershipsByThread.get(thread.id) || '1970-01-01T00:00:00.000Z'
+
+    const unreadCount = threadMessages.filter((message) => {
+      if (message.senderId === user.id) return false
+      return Date.parse(message.createdAt) > Date.parse(lastReadAt)
+    }).length
+
+    threads.push({
+      id: thread.id,
+      participants: participantsByThread.get(thread.id) || [],
+      isGroup: Boolean(thread.is_group),
+      groupName: thread.group_name || undefined,
+      groupAvatar: thread.group_avatar || undefined,
+      lastMessage,
+      unreadCount,
+      updatedAt: thread.updated_at || lastMessage?.createdAt || thread.created_at || new Date().toISOString(),
+    })
+  }
+
+  threads.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+
+  return dataResponse({
+    requestId,
+    data: {
+      threads,
+      messagesByThread,
+    },
+  })
+}
+
+function normalizeMessageStatus(status: unknown): ChatMessage['status'] {
+  if (status === 'sent' || status === 'delivered' || status === 'read') return status
+  return 'sent'
+}
+
+function normalizeAttachmentType(type: unknown): MessageAttachment['type'] {
+  if (type === 'image' || type === 'video' || type === 'file') return type
+  return 'file'
+}

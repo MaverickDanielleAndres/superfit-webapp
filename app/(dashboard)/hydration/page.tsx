@@ -8,6 +8,7 @@ import { useHydrationStore } from '@/store/useHydrationStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { DrinkType } from '@/types'
 import { toast } from 'sonner'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
 // Explicit interface for QuickDrink to satisfy TS strictly
 interface QuickDrink {
@@ -24,6 +25,7 @@ interface QuickDrink {
 export default function HydrationPage() {
     const { user } = useAuthStore()
     const { addDrink, removeDrink, getHydrationDay, initializeMockData, fetchHydrationDay } = useHydrationStore()
+    const isSimulationMode = !isSupabaseAuthEnabled()
 
     const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year'>('day')
     const [viewDate, setViewDate] = useState(new Date())
@@ -131,6 +133,11 @@ export default function HydrationPage() {
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
                     <h1 className="font-display font-bold text-[32px] text-(--text-primary) leading-tight tracking-tight mb-2">Hydration</h1>
+                    {isSimulationMode && (
+                        <span className="inline-flex items-center rounded-[8px] bg-amber-500/10 px-2.5 py-1 font-body text-[11px] font-bold uppercase tracking-wider text-amber-500">
+                            Simulation Mode
+                        </span>
+                    )}
 
                     {/* View Modes */}
                     <div className="flex bg-(--bg-surface) p-1 rounded-[12px] border border-(--border-subtle) w-max shadow-sm">

@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Target, Trophy, Clock, Zap, Plus, X, Loader2, CheckCircle, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useGoalStore, FitnessGoal } from '@/store/useGoalStore'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
 const CATEGORY_COLORS: Record<string, string> = {
     'Weight Loss': 'bg-blue-500',
@@ -23,6 +24,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 export default function GoalsPage() {
     const { goals, addGoal, fetchGoals, deleteGoal, markComplete } = useGoalStore()
+    const isSimulationMode = !isSupabaseAuthEnabled()
     const [showAddModal, setShowAddModal] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [form, setForm] = useState({
@@ -76,6 +78,11 @@ export default function GoalsPage() {
                 <div>
                     <h1 className="font-display font-bold text-[28px] text-(--text-primary) leading-tight">Goals & Milestones</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Track progress towards your primary fitness targets.</p>
+                    {isSimulationMode && (
+                        <span className="mt-2 inline-flex items-center rounded-[8px] bg-amber-500/10 px-2.5 py-1 font-body text-[11px] font-bold uppercase tracking-wider text-amber-500">
+                            Simulation Mode
+                        </span>
+                    )}
                 </div>
                 <button onClick={() => setShowAddModal(true)} className="h-[40px] px-6 rounded-[12px] bg-(--text-primary) text-(--bg-base) font-body font-bold text-[13px] hover:scale-105 transition-transform flex items-center gap-2">
                     <Plus className="w-[16px] h-[16px]" /> Set New Goal

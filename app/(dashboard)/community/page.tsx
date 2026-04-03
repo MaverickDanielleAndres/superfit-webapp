@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import { useCommunityStore } from '@/store/useCommunityStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { CommunityPost } from '@/types'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
 export default function CommunityPage() {
     const [feedTab, setFeedTab] = useState<'foryou' | 'following'>('foryou')
@@ -45,6 +46,7 @@ export default function CommunityPage() {
 
     const { posts, addPost, likePost, repostPost, addComment, deletePost, fetchPosts, isLoading, error } = useCommunityStore()
     const { user } = useAuthStore()
+    const isSimulationMode = !isSupabaseAuthEnabled()
 
     useEffect(() => {
         if (!user?.id) return
@@ -357,7 +359,14 @@ export default function CommunityPage() {
                     {/* Header Sticky */}
                     <div className="sticky top-0 z-30 bg-(--bg-surface)/80 backdrop-blur-md border-b border-(--border-subtle)">
                         <div className="flex justify-between items-center px-4 h-[56px]">
-                            <h1 className="font-display font-bold text-[20px] text-(--text-primary)">Home</h1>
+                            <div className="flex items-center gap-2">
+                                <h1 className="font-display font-bold text-[20px] text-(--text-primary)">Home</h1>
+                                {isSimulationMode && (
+                                    <span className="inline-flex items-center rounded-[8px] bg-amber-500/10 px-2 py-0.5 font-body text-[10px] font-bold uppercase tracking-wider text-amber-500">
+                                        Simulation Mode
+                                    </span>
+                                )}
+                            </div>
                             <div className="flex border border-(--border-default) rounded-full overflow-hidden bg-[var(--bg-elevated)] p-0.5">
                                 <button onClick={() => setActiveTab('feed')} className={cn("px-4 py-1.5 rounded-full font-body text-[13px] font-bold transition-all", activeTab === 'feed' ? 'bg-(--text-primary) text-(--bg-base)' : 'text-(--text-secondary) hover:text-(--text-primary)')}>Feed</button>
                                 <button onClick={() => setActiveTab('leaderboard')} className={cn("px-4 py-1.5 rounded-full font-body text-[13px] font-bold transition-all flex items-center gap-1.5", activeTab === 'leaderboard' ? 'bg-(--text-primary) text-(--bg-base)' : 'text-(--text-secondary) hover:text-(--text-primary)')}><Trophy className="w-[14px] h-[14px]" /> Ranks</button>

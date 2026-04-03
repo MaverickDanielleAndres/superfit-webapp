@@ -10,11 +10,13 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { MealSlot, FoodItem } from '@/types'
 import { toast } from 'sonner'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
 export default function DiaryPage() {
     const { user } = useAuthStore()
     const { getDayLog, getDailyTotals, addEntry, fetchDayLog } = useNutritionStore()
     const { activeSession } = useWorkoutStore()
+    const isSimulationMode = !isSupabaseAuthEnabled()
 
     const [activeTab, setActiveTab] = useState<'food'>('food')
     const [viewDate, setViewDate] = useState(new Date())
@@ -200,6 +202,11 @@ export default function DiaryPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="font-display font-bold text-[32px] text-(--text-primary) leading-tight tracking-tight mb-1">Daily Log</h1>
+                    {isSimulationMode && (
+                        <span className="mb-2 inline-flex items-center rounded-[8px] bg-amber-500/10 px-2.5 py-1 font-body text-[11px] font-bold uppercase tracking-wider text-amber-500">
+                            Simulation Mode
+                        </span>
+                    )}
                     <div className="mt-2 relative overflow-hidden group w-max">
                         <input 
                             type="date" 

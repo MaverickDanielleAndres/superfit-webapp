@@ -2,9 +2,9 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { HydrationDay, DrinkEntry } from '@/types'
 import { getMockHydrationEntries } from '@/lib/mockData'
-import { createClient } from '@/lib/supabase/client'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 import type { Database } from '@/types/supabase'
+import { requestApi } from '@/lib/api/client'
 
 interface HydrationState {
     days: HydrationDay[]
@@ -32,77 +32,52 @@ export const useHydrationStore = create<HydrationState>()(
 
                 set({ isLoading: true, error: null })
 
-                const supabase = createClient()
-                const { data: authData } = await supabase.auth.getUser()
-                const userId = authData.user?.id
+                try {
+                    const response = await requestApi<{ date: string; entries: HydrationRow[] }>(`/api/v1/hydration?date=${date}`)
+                    const entries = response.data.entries.map(mapRowToEntry)
+                    const totalHydrationMl = entries.reduce((acc, entry) => acc + (entry.amountMl * entry.hydrationFactor), 0)
+                    const totalCaffeineMg = entries.reduce((acc, entry) => acc + (entry.caffeinesMg || 0), 0)
 
-                if (!userId) {
-                    set({ isLoading: false, error: 'User not authenticated.' })
-                    return
+                    set((state) => {
+                        const filtered = state.days.filter((d) => d.date !== date)
+                        return {
+                            days: [
+                                ...filtered,
+                                {
+                                    date,
+                                    entries,
+                                    goalMl: 3000,
+                                    totalHydrationMl,
+                                    totalCaffeineMg,
+                                },
+                            ],
+                            isLoading: false,
+                            error: null,
+                        }
+                    })
+                } catch (error) {
+                    set({ isLoading: false, error: getErrorMessage(error) })
                 }
-
-                const from = `${date}T00:00:00.000Z`
-                const to = `${date}T23:59:59.999Z`
-
-                const { data, error } = await supabase
-                    .from('hydration_logs')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .gte('logged_at', from)
-                    .lte('logged_at', to)
-                    .order('logged_at', { ascending: true })
-
-                if (error) {
-                    set({ isLoading: false, error: error.message })
-                    return
-                }
-
-                const entries = (data || []).map(mapRowToEntry)
-                const totalHydrationMl = entries.reduce((acc, entry) => acc + (entry.amountMl * entry.hydrationFactor), 0)
-                const totalCaffeineMg = entries.reduce((acc, entry) => acc + (entry.caffeinesMg || 0), 0)
-
-                set((state) => {
-                    const filtered = state.days.filter((d) => d.date !== date)
-                    return {
-                        days: [
-                            ...filtered,
-                            {
-                                date,
-                                entries,
-                                goalMl: 3000,
-                                totalHydrationMl,
-                                totalCaffeineMg,
-                            },
-                        ],
-                        isLoading: false,
-                        error: null,
-                    }
-                })
             },
 
             addDrink: async (date, entry) => {
                 if (isSupabaseAuthEnabled()) {
-                    const supabase = createClient()
-                    const { data: authData } = await supabase.auth.getUser()
-                    const userId = authData.user?.id
-
-                    if (userId) {
-                        const payload: Database['public']['Tables']['hydration_logs']['Insert'] = {
-                            user_id: userId,
-                            logged_at: entry.loggedAt,
-                            amount_ml: entry.amountMl,
-                            drink_type: entry.type,
-                            label: entry.label,
-                            hydration_factor: entry.hydrationFactor,
-                            caffeine_mg: entry.caffeinesMg || 0,
-                        }
-
-                        const { error } = await supabase.from('hydration_logs').insert(payload)
-                        if (error) {
-                            set({ error: error.message })
-                            return
-                        }
+                    try {
+                        await requestApi<{ entry: HydrationRow }>('/api/v1/hydration', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                type: entry.type,
+                                label: entry.label,
+                                amountMl: entry.amountMl,
+                                hydrationFactor: entry.hydrationFactor,
+                                caffeinesMg: entry.caffeinesMg || 0,
+                                loggedAt: entry.loggedAt,
+                            }),
+                        })
                         await get().fetchHydrationDay(date)
+                        return
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
                         return
                     }
                 }
@@ -136,14 +111,16 @@ export const useHydrationStore = create<HydrationState>()(
 
             removeDrink: async (date, entryId) => {
                 if (isSupabaseAuthEnabled()) {
-                    const supabase = createClient()
-                    const { error } = await supabase.from('hydration_logs').delete().eq('id', entryId)
-                    if (error) {
-                        set({ error: error.message })
+                    try {
+                        await requestApi<{ deleted: boolean; id: string }>(`/api/v1/hydration/${entryId}`, {
+                            method: 'DELETE',
+                        })
+                        await get().fetchHydrationDay(date)
+                        return
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
                         return
                     }
-                    await get().fetchHydrationDay(date)
-                    return
                 }
 
                 set((state) => {
@@ -203,4 +180,11 @@ function mapRowToEntry(row: HydrationRow): DrinkEntry {
         hydrationFactor: Number(row.hydration_factor || 1),
         loggedAt: row.logged_at,
     }
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+        return error.message
+    }
+    return 'Request failed.'
 }

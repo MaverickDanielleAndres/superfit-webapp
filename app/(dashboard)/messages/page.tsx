@@ -18,12 +18,14 @@ import { useMessageStore } from '@/store/useMessageStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { ChatMessage, ChatThread, MessageAttachment } from '@/types'
 import { useRouter } from 'next/navigation'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
 export default function MessagesPage() {
     const router = useRouter()
     const { threads, sendMessage, markAsRead, getMessages, addReaction, removeReaction, initialize, isLoading, error } = useMessageStore()
     const { user } = useAuthStore()
     const currentUserId = user?.id || 'me'
+    const isSimulationMode = !isSupabaseAuthEnabled()
 
     const [activeThreadId, setActiveThreadId] = useState<string>(threads[0]?.id || '')
     const [inputText, setInputText] = useState('')
@@ -207,7 +209,14 @@ export default function MessagesPage() {
             <div className="w-[340px] shrink-0 bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] overflow-hidden flex flex-col shadow-sm">
                 <div className="p-5 border-b border-(--border-subtle) bg-[var(--bg-elevated)]">
                     <div className="flex items-center justify-between mb-4">
-                        <h2 className="font-display font-black text-[24px] text-(--text-primary) leading-none tracking-tight">Chats</h2>
+                        <div className="flex flex-col">
+                            <h2 className="font-display font-black text-[24px] text-(--text-primary) leading-none tracking-tight">Chats</h2>
+                            {isSimulationMode && (
+                                <span className="mt-1 inline-flex w-max items-center rounded-[8px] bg-amber-500/10 px-2.5 py-1 font-body text-[10px] font-bold uppercase tracking-wider text-amber-500">
+                                    Simulation Mode
+                                </span>
+                            )}
+                        </div>
                         <button onClick={() => router.push('/coaching')} className="w-[36px] h-[36px] rounded-full bg-(--text-primary) text-(--bg-base) flex items-center justify-center hover:opacity-90 transition-opacity"><Smile className="w-[18px] h-[18px]" /></button>
                     </div>
                     <div className="relative">

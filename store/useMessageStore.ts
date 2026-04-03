@@ -4,9 +4,9 @@
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { ChatThread, ChatMessage, MessageAttachment, MessageReaction } from '@/types'
-import { createClient } from '@/lib/supabase/client'
+import { ChatThread, ChatMessage, MessageAttachment } from '@/types'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { requestApi } from '@/lib/api/client'
 
 interface MessageState {
     threads: ChatThread[]
@@ -81,21 +81,16 @@ export const useMessageStore = create<MessageState>()(
                 if (!isSupabaseAuthEnabled()) return
 
                 set({ isLoading: true, error: null })
-                const supabase = createClient()
-                const { data: authData, error: authError } = await supabase.auth.getUser()
-                const userId = authData.user?.id
-
-                if (authError || !userId) {
-                    set({ isLoading: false, error: authError?.message || 'User not authenticated.' })
-                    return
-                }
-
                 try {
-                    const { threads, messagesByThread } = await fetchMessageGraph(userId)
-                    set({ threads, messages: messagesByThread, isLoading: false, error: null })
+                    const response = await requestApi<{ threads: ChatThread[]; messagesByThread: Record<string, ChatMessage[]> }>('/api/v1/messages')
+                    set({
+                        threads: response.data.threads,
+                        messages: response.data.messagesByThread,
+                        isLoading: false,
+                        error: null,
+                    })
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : 'Unable to load messages.'
-                    set({ isLoading: false, error: message })
+                    set({ isLoading: false, error: getErrorMessage(error) })
                 }
             },
 
@@ -111,46 +106,22 @@ export const useMessageStore = create<MessageState>()(
                 if (!isSupabaseAuthEnabled()) return
 
                 void (async () => {
-                    const supabase = createClient()
-                    const { data: authData } = await supabase.auth.getUser()
-                    const userId = authData.user?.id
+                    const participantIds = thread.participants.map((participant) => participant.id).filter((id) => isUuid(id))
 
-                    if (!userId) return
-
-                    const otherParticipant = thread.participants.find((p) => p.id !== userId)
-                    if (!otherParticipant || !isUuid(userId) || !isUuid(otherParticipant.id)) return
-
-                    const { data: createdThread, error: threadError } = await (supabase as any)
-                        .from('message_threads')
-                        .insert({
-                            created_by: userId,
-                            is_group: thread.isGroup,
-                            group_name: thread.groupName || null,
-                            group_avatar: thread.groupAvatar || null,
+                    try {
+                        await requestApi<{ threadId: string }>('/api/v1/messages/threads', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                participantIds,
+                                isGroup: thread.isGroup,
+                                groupName: thread.groupName || null,
+                                groupAvatar: thread.groupAvatar || null,
+                            }),
                         })
-                        .select('id')
-                        .single()
-
-                    if (threadError || !createdThread?.id) {
-                        set({ error: threadError?.message || 'Unable to create conversation.' })
-                        return
+                        await get().initialize()
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
                     }
-
-                    const participantRows = [
-                        { thread_id: createdThread.id, user_id: userId },
-                        { thread_id: createdThread.id, user_id: otherParticipant.id },
-                    ]
-
-                    const { error: participantError } = await (supabase as any)
-                        .from('message_thread_participants')
-                        .insert(participantRows)
-
-                    if (participantError) {
-                        set({ error: participantError.message })
-                        return
-                    }
-
-                    await get().initialize()
                 })()
             },
 
@@ -193,48 +164,41 @@ export const useMessageStore = create<MessageState>()(
                 if (!isSupabaseAuthEnabled() || !isUuid(threadId)) return
 
                 void (async () => {
-                    const supabase = createClient()
-                    const { data: authData } = await supabase.auth.getUser()
-                    const userId = authData.user?.id
-                    if (!userId || userId !== senderId) return
+                    if (!isUuid(senderId)) return
 
-                    const payload = {
-                        thread_id: threadId,
-                        sender_id: userId,
-                        text: content,
-                        attachments,
-                        reply_to_id: isUuid(replyToId || '') ? replyToId : null,
-                        status: 'delivered',
-                    }
+                    try {
+                        const response = await requestApi<{ message: ChatMessage }>('/api/v1/messages/send', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                threadId,
+                                text: content,
+                                attachments,
+                                replyToId: isUuid(replyToId || '') ? replyToId : null,
+                            }),
+                        })
 
-                    const { data, error } = await (supabase as any)
-                        .from('messages')
-                        .insert(payload)
-                        .select('id, created_at')
-                        .single()
-
-                    if (error) {
-                        set({ error: error.message })
+                        const persistedMessage = response.data.message
+                        if (persistedMessage?.id) {
+                            set((state) => ({
+                                messages: {
+                                    ...state.messages,
+                                    [threadId]: (state.messages[threadId] || []).map((m) =>
+                                        m.id === newMessage.id
+                                            ? {
+                                                ...m,
+                                                id: persistedMessage.id,
+                                                createdAt: persistedMessage.createdAt || m.createdAt,
+                                                status: persistedMessage.status || 'delivered',
+                                            }
+                                            : m
+                                    )
+                                }
+                            }))
+                        }
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
                         return
                     }
-
-                    if (data?.id) {
-                        set((state) => ({
-                            messages: {
-                                ...state.messages,
-                                [threadId]: (state.messages[threadId] || []).map((m) =>
-                                    m.id === newMessage.id
-                                        ? { ...m, id: data.id as string, createdAt: (data.created_at as string) || m.createdAt }
-                                        : m
-                                )
-                            }
-                        }))
-                    }
-
-                    await (supabase as any)
-                        .from('message_threads')
-                        .update({ updated_at: new Date().toISOString() })
-                        .eq('id', threadId)
                 })()
             },
 
@@ -255,12 +219,14 @@ export const useMessageStore = create<MessageState>()(
                 if (!isSupabaseAuthEnabled() || !isUuid(messageId) || !isUuid(userId)) return
 
                 void (async () => {
-                    const supabase = createClient()
-                    const { error } = await (supabase as any)
-                        .from('message_reactions')
-                        .insert({ message_id: messageId, user_id: userId, emoji })
-
-                    if (error) set({ error: error.message })
+                    try {
+                        await requestApi<{ added: boolean; messageId: string; emoji: string }>('/api/v1/messages/reactions', {
+                            method: 'POST',
+                            body: JSON.stringify({ messageId, emoji }),
+                        })
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
+                    }
                 })()
             },
 
@@ -280,15 +246,14 @@ export const useMessageStore = create<MessageState>()(
                 if (!isSupabaseAuthEnabled() || !isUuid(messageId) || !isUuid(userId)) return
 
                 void (async () => {
-                    const supabase = createClient()
-                    const { error } = await (supabase as any)
-                        .from('message_reactions')
-                        .delete()
-                        .eq('message_id', messageId)
-                        .eq('user_id', userId)
-                        .eq('emoji', emoji)
-
-                    if (error) set({ error: error.message })
+                    try {
+                        await requestApi<{ removed: boolean; messageId: string; emoji: string }>('/api/v1/messages/reactions', {
+                            method: 'DELETE',
+                            body: JSON.stringify({ messageId, emoji }),
+                        })
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
+                    }
                 })()
             },
 
@@ -306,18 +271,14 @@ export const useMessageStore = create<MessageState>()(
                 if (!isSupabaseAuthEnabled() || !isUuid(threadId)) return
 
                 void (async () => {
-                    const supabase = createClient()
-                    const { data: authData } = await supabase.auth.getUser()
-                    const userId = authData.user?.id
-                    if (!userId) return
-
-                    const { error } = await (supabase as any)
-                        .from('message_thread_participants')
-                        .update({ last_read_at: new Date().toISOString() })
-                        .eq('thread_id', threadId)
-                        .eq('user_id', userId)
-
-                    if (error) set({ error: error.message })
+                    try {
+                        await requestApi<{ threadId: string; read: boolean }>('/api/v1/messages/mark-read', {
+                            method: 'POST',
+                            body: JSON.stringify({ threadId }),
+                        })
+                    } catch (error) {
+                        set({ error: getErrorMessage(error) })
+                    }
                 })()
             },
 
@@ -329,142 +290,13 @@ export const useMessageStore = create<MessageState>()(
     )
 )
 
-async function fetchMessageGraph(userId: string): Promise<{ threads: ChatThread[]; messagesByThread: Record<string, ChatMessage[]> }> {
-    const supabase = createClient()
-
-    const { data: membershipRows, error: membershipError } = await (supabase as any)
-        .from('message_thread_participants')
-        .select('thread_id,last_read_at,thread:message_threads(id,is_group,group_name,group_avatar,updated_at,created_at)')
-        .eq('user_id', userId)
-        .order('joined_at', { ascending: false })
-
-    if (membershipError) throw new Error(membershipError.message)
-
-    const memberships = Array.isArray(membershipRows) ? membershipRows : []
-    const threadIds = memberships.map((row) => row.thread_id as string).filter(Boolean)
-
-    if (!threadIds.length) {
-        return { threads: [], messagesByThread: {} }
-    }
-
-    const { data: participantRows, error: participantError } = await (supabase as any)
-        .from('message_thread_participants')
-        .select('thread_id,user_id,profile:profiles(full_name,avatar_url)')
-        .in('thread_id', threadIds)
-
-    if (participantError) throw new Error(participantError.message)
-
-    const { data: messageRows, error: messageError } = await (supabase as any)
-        .from('messages')
-        .select('id,thread_id,sender_id,text,attachments,status,reply_to_id,created_at,reactions:message_reactions(user_id,emoji)')
-        .in('thread_id', threadIds)
-        .order('created_at', { ascending: true })
-
-    if (messageError) throw new Error(messageError.message)
-
-    const participantsByThread = new Map<string, ChatThread['participants']>()
-    for (const row of participantRows || []) {
-        const threadId = row.thread_id as string
-        const profile = (row.profile || {}) as { full_name?: string | null; avatar_url?: string | null }
-        const nextParticipant = {
-            id: row.user_id as string,
-            name: profile.full_name || (row.user_id === userId ? 'You' : 'User'),
-            avatar: profile.avatar_url || ''
-        }
-
-        const existing = participantsByThread.get(threadId) || []
-        participantsByThread.set(threadId, [...existing, nextParticipant])
-    }
-
-    const messagesByThread: Record<string, ChatMessage[]> = {}
-    for (const row of messageRows || []) {
-        const threadId = row.thread_id as string
-        if (!messagesByThread[threadId]) messagesByThread[threadId] = []
-
-        const reactions: MessageReaction[] = Array.isArray(row.reactions)
-            ? row.reactions.map((reaction: any) => ({
-                userId: String(reaction.user_id || ''),
-                emoji: String(reaction.emoji || '')
-            })).filter((reaction: MessageReaction) => !!reaction.userId && !!reaction.emoji)
-            : []
-
-        const attachments: MessageAttachment[] = Array.isArray(row.attachments)
-            ? row.attachments.map((attachment: any) => ({
-                id: String(attachment.id || `att_${Date.now()}`),
-                type: normalizeAttachmentType(attachment.type),
-                url: String(attachment.url || ''),
-                thumbnailUrl: attachment.thumbnailUrl ? String(attachment.thumbnailUrl) : undefined,
-                name: attachment.name ? String(attachment.name) : undefined,
-            })).filter((attachment: MessageAttachment) => !!attachment.url || !!attachment.name)
-            : []
-
-        messagesByThread[threadId].push({
-            id: row.id as string,
-            threadId,
-            senderId: row.sender_id as string,
-            text: String(row.text || ''),
-            createdAt: row.created_at as string,
-            status: normalizeMessageStatus(row.status),
-            reactions,
-            attachments,
-            replyToId: row.reply_to_id ? String(row.reply_to_id) : undefined,
-        })
-    }
-
-    const membershipsByThread = new Map<string, string>()
-    for (const row of memberships) {
-        membershipsByThread.set(row.thread_id as string, String(row.last_read_at || '1970-01-01T00:00:00.000Z'))
-    }
-
-    const threads: ChatThread[] = []
-    for (const row of memberships) {
-        const thread = row.thread as {
-            id: string
-            is_group: boolean
-            group_name: string | null
-            group_avatar: string | null
-            updated_at: string | null
-            created_at: string | null
-        }
-
-        if (!thread?.id) continue
-
-        const threadMessages = messagesByThread[thread.id] || []
-        const lastMessage = threadMessages[threadMessages.length - 1]
-        const lastReadAt = membershipsByThread.get(thread.id) || '1970-01-01T00:00:00.000Z'
-
-        const unreadCount = threadMessages.filter((message) => {
-            if (message.senderId === userId) return false
-            return Date.parse(message.createdAt) > Date.parse(lastReadAt)
-        }).length
-
-        threads.push({
-            id: thread.id,
-            participants: participantsByThread.get(thread.id) || [],
-            isGroup: !!thread.is_group,
-            groupName: thread.group_name || undefined,
-            groupAvatar: thread.group_avatar || undefined,
-            lastMessage,
-            unreadCount,
-            updatedAt: (thread.updated_at || lastMessage?.createdAt || thread.created_at || new Date().toISOString()) as string,
-        })
-    }
-
-    threads.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-
-    return { threads, messagesByThread }
-}
-
-function normalizeMessageStatus(status: unknown): ChatMessage['status'] {
-    if (status === 'sent' || status === 'delivered' || status === 'read') return status
-    return 'sent'
-}
-
-function normalizeAttachmentType(type: unknown): MessageAttachment['type'] {
-    if (type === 'image' || type === 'video' || type === 'file') return type
-    return 'file'
-}
-
 function isUuid(value: string): boolean {
     return UUID_REGEX.test(value)
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+        return error.message
+    }
+    return 'Request failed.'
 }

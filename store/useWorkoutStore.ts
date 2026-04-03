@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { WorkoutSession, WorkoutRoutine, Exercise, SetLog, ExerciseLog } from '@/types'
-import { createClient } from '@/lib/supabase/client'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 import type { Database, Json } from '@/types/supabase'
+import { requestApi } from '@/lib/api/client'
 
 interface WorkoutState {
     sessions: WorkoutSession[]
@@ -76,34 +76,19 @@ export const useWorkoutStore = create<WorkoutState>()(
                 if (!isSupabaseAuthEnabled()) return
 
                 set({ isLoading: true, error: null })
-                const supabase = createClient()
-                const { data: authData } = await supabase.auth.getUser()
-                const userId = authData.user?.id
-
-                if (!userId) {
-                    set({ isLoading: false, error: 'User not authenticated.' })
-                    return
+                try {
+                    const response = await requestApi<{ workouts: WorkoutSessionRow[] }>('/api/v1/workouts')
+                    const mapped = response.data.workouts.map(mapRowToWorkoutSession)
+                    set({ sessions: mapped, isLoading: false, error: null })
+                } catch (error) {
+                    set({ isLoading: false, error: getErrorMessage(error) })
                 }
-
-                const { data, error } = await supabase
-                    .from('workout_sessions')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .order('start_time', { ascending: false })
-
-                if (error) {
-                    set({ isLoading: false, error: error.message })
-                    return
-                }
-
-                const mapped = (data || []).map(mapRowToWorkoutSession)
-                set({ sessions: mapped, isLoading: false, error: null })
             },
 
             startSession: (routineId) => {
                 // mock logic for starting session
                 const newSession: WorkoutSession = {
-                    id: Math.random().toString(36).substr(2, 9),
+                    id: createId(),
                     name: 'New Workout',
                     date: new Date().toISOString().split('T')[0],
                     startTime: new Date().toISOString(),
@@ -175,12 +160,12 @@ export const useWorkoutStore = create<WorkoutState>()(
                     if (!state.activeSession) return state
 
                     const newExerciseLog: ExerciseLog = {
-                        id: Math.random().toString(36).substr(2, 9),
+                        id: createId(),
                         exerciseId: exercise.id,
                         exercise,
                         sets: [
                             {
-                                id: Math.random().toString(36).substr(2, 9),
+                                id: createId(),
                                 setNumber: 1,
                                 weight: 0,
                                 reps: 0,
@@ -209,7 +194,7 @@ export const useWorkoutStore = create<WorkoutState>()(
                             return {
                                 ...ex,
                                 sets: [...ex.sets, {
-                                    id: Math.random().toString(36).substr(2, 9),
+                                    id: createId(),
                                     setNumber: ex.sets.length + 1,
                                     weight: lastSet ? lastSet.weight : 0,
                                     reps: lastSet ? lastSet.reps : 0,
@@ -276,18 +261,8 @@ export const useWorkoutStore = create<WorkoutState>()(
 )
 
 async function persistWorkoutSession(session: WorkoutSession, onError: (message: string) => void) {
-    const supabase = createClient()
-    const { data: authData } = await supabase.auth.getUser()
-    const userId = authData.user?.id
-
-    if (!userId) {
-        onError('User not authenticated.')
-        return
-    }
-
-    const payload: Database['public']['Tables']['workout_sessions']['Insert'] = {
+    const payload = {
         id: session.id,
-        user_id: userId,
         name: session.name,
         date: session.date,
         start_time: session.startTime,
@@ -302,11 +277,28 @@ async function persistWorkoutSession(session: WorkoutSession, onError: (message:
         is_template: session.isTemplate,
     }
 
-    const { error } = await supabase
-        .from('workout_sessions')
-        .upsert(payload, { onConflict: 'id' })
-
-    if (error) onError(error.message)
+    try {
+        await requestApi<{ workout: WorkoutSessionRow }>('/api/v1/workouts', {
+            method: 'POST',
+            body: JSON.stringify({
+                id: payload.id,
+                name: payload.name,
+                date: payload.date,
+                startTime: payload.start_time,
+                endTime: payload.end_time,
+                duration: payload.duration,
+                exercises: payload.exercises,
+                totalVolume: payload.total_volume,
+                calories: payload.calories,
+                notes: payload.notes,
+                isCompleted: payload.is_completed,
+                routineId: payload.routine_id,
+                isTemplate: payload.is_template,
+            }),
+        })
+    } catch (error) {
+        onError(getErrorMessage(error))
+    }
 }
 
 function mapRowToWorkoutSession(row: WorkoutSessionRow): WorkoutSession {
@@ -327,4 +319,18 @@ function mapRowToWorkoutSession(row: WorkoutSessionRow): WorkoutSession {
         routineId: row.routine_id || row.template_id || undefined,
         isTemplate: row.is_template,
     }
+}
+
+function createId(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID()
+    }
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+        return error.message
+    }
+    return 'Request failed.'
 }
