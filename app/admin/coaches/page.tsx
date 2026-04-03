@@ -1,20 +1,21 @@
 'use client'
 
-import React, { useState } from 'react'
-import { Search, Filter, ShieldCheck, CheckCircle2, MoreVertical, XCircle } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { Search, ShieldCheck, MoreVertical } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { useAdminPortalStore } from '@/store/useAdminPortalStore'
+import { useRouter } from 'next/navigation'
 
 export default function AdminCoachesPage() {
+    const router = useRouter()
     const [search, setSearch] = useState('')
+    const { coaches, fetchCoaches, updateUserStatus } = useAdminPortalStore()
 
-    const coaches = [
-        { id: '1', name: 'Marcus Thorne', email: 'marcus@example.com', clients: 24, status: 'Verified', revenue: '$4,850' },
-        { id: '2', name: 'Sarah Connor', email: 'sarah@example.com', clients: 45, status: 'Verified', revenue: '$9,100' },
-        { id: '3', name: 'James Logan', email: 'james@example.com', clients: 0, status: 'Pending Review', revenue: '$0' },
-        { id: '4', name: 'Elena Rostova', email: 'elena@example.com', clients: 12, status: 'Verified', revenue: '$2,400' },
-    ]
+    useEffect(() => {
+        void fetchCoaches()
+    }, [fetchCoaches])
 
     const filteredCoaches = coaches.filter(coach => 
         coach.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -59,7 +60,8 @@ export default function AdminCoachesPage() {
                             {filteredCoaches.map(coach => (
                                 <tr key={coach.id} className="border-b border-(--border-subtle) hover:bg-[var(--bg-elevated)] transition-colors group">
                                     <td className="p-4 pl-6 flex items-center gap-3">
-                                        <img src={`https://api.dicebear.com/7.x/notionists/svg?seed=${coach.name}`} className="w-[40px] h-[40px] rounded-[10px] border border-(--border-subtle)" />
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={`https://api.dicebear.com/7.x/notionists/svg?seed=${coach.name}`} alt={`${coach.name} avatar`} className="w-[40px] h-[40px] rounded-[10px] border border-(--border-subtle)" />
                                         <div>
                                             <span className="font-display font-bold text-[15px] text-(--text-primary) block">{coach.name}</span>
                                             <span className="font-body text-[12px] text-(--text-secondary) block">{coach.email}</span>
@@ -72,24 +74,26 @@ export default function AdminCoachesPage() {
                                     <td className="p-4 font-medium text-(--text-primary)">{coach.revenue}</td>
                                     <td className="p-4 pr-6 text-right">
                                         <div className="flex items-center justify-end gap-2 text-(--text-secondary)">
-                                            {coach.status === 'Pending Review' ? (
-                                                <>
-                                                    <button onClick={() => toast.success('Coach Application Approved')} className="w-[36px] h-[36px] rounded-[10px] hover:bg-emerald-500/10 hover:text-emerald-500 flex items-center justify-center transition-colors" title="Approve"><CheckCircle2 className="w-[16px] h-[16px]" /></button>
-                                                    <button onClick={() => toast.error('Coach Application Rejected')} className="w-[36px] h-[36px] rounded-[10px] hover:bg-red-500/10 hover:text-red-500 flex items-center justify-center transition-colors" title="Reject"><XCircle className="w-[16px] h-[16px]" /></button>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <button onClick={() => toast('Opening Verification Details...')} className="w-[36px] h-[36px] rounded-[10px] hover:bg-(--border-subtle) flex items-center justify-center transition-colors" title="View Verification Details"><ShieldCheck className="w-[16px] h-[16px]" /></button>
-                                                    <button 
-                                                        onClick={() => toast.info(`Options for ${coach.name}`, {
-                                                            action: { label: 'Request Info', onClick: () => toast('Info request sent to coach') },
-                                                            cancel: { label: 'Suspend', onClick: () => toast.error(`Coach ${coach.name} suspended`) }
-                                                        })} 
-                                                        className="w-[36px] h-[36px] rounded-[10px] hover:bg-(--border-subtle) flex items-center justify-center transition-colors" title="More Actions">
-                                                        <MoreVertical className="w-[16px] h-[16px]" />
-                                                    </button>
-                                                </>
-                                            )}
+                                            <button
+                                                onClick={() => {
+                                                    router.push(`/admin/applications?email=${encodeURIComponent(coach.email)}`)
+                                                }}
+                                                className="w-[36px] h-[36px] rounded-[10px] hover:bg-(--border-subtle) flex items-center justify-center transition-colors"
+                                                title="View Verification Details"
+                                            >
+                                                <ShieldCheck className="w-[16px] h-[16px]" />
+                                            </button>
+                                            <button 
+                                                onClick={() => {
+                                                    void (async () => {
+                                                        const nextStatus = coach.status === 'Suspended' ? 'Active' : 'Suspended'
+                                                        await updateUserStatus(coach.id, nextStatus)
+                                                        toast.success(`${coach.name} marked as ${nextStatus}.`)
+                                                    })()
+                                                }} 
+                                                className="w-[36px] h-[36px] rounded-[10px] hover:bg-(--border-subtle) flex items-center justify-center transition-colors" title="More Actions">
+                                                <MoreVertical className="w-[16px] h-[16px]" />
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>

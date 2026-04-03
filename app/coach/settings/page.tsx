@@ -1,13 +1,41 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { User, Bell, Shield, CreditCard, Save } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
 
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState('Account')
+    const [firstName, setFirstName] = useState('')
+    const [lastName, setLastName] = useState('')
+    const [email, setEmail] = useState('')
+    const [avatarUrl, setAvatarUrl] = useState('')
+    const [isSaving, setIsSaving] = useState(false)
+
+    useEffect(() => {
+        void (async () => {
+            const supabase = createClient()
+            const { data: authData } = await supabase.auth.getUser()
+            const user = authData.user
+            if (!user) return
+
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('full_name,email,avatar_url')
+                .eq('id', user.id)
+                .single()
+
+            const fullName = String(profile?.full_name || user.user_metadata?.full_name || '')
+            const [first = '', ...rest] = fullName.split(' ')
+            setFirstName(first)
+            setLastName(rest.join(' '))
+            setEmail(String(profile?.email || user.email || ''))
+            setAvatarUrl(String(profile?.avatar_url || ''))
+        })()
+    }, [])
 
     return (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-4xl mx-auto h-full">
@@ -42,9 +70,24 @@ export default function SettingsPage() {
                             <div className="flex items-center gap-6 pb-6 border-b border-(--border-subtle)">
                                 <div className="relative">
                                     <div className="w-[80px] h-[80px] rounded-full bg-[var(--bg-elevated)] border-2 border-(--border-subtle) flex items-center justify-center overflow-hidden">
-                                        <User className="w-[32px] h-[32px] text-(--text-tertiary)" />
+                                        {avatarUrl ? (
+                                            <>
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img src={avatarUrl} alt="Coach profile avatar" className="w-full h-full object-cover" />
+                                            </>
+                                        ) : (
+                                            <User className="w-[32px] h-[32px] text-(--text-tertiary)" />
+                                        )}
                                     </div>
-                                    <button onClick={() => toast('Opening file picker...')} className="absolute bottom-0 right-0 w-[28px] h-[28px] rounded-full bg-emerald-500 text-white border-2 border-(--bg-surface) flex items-center justify-center hover:bg-emerald-600 transition-colors">
+                                    <button
+                                        onClick={() => {
+                                            const nextUrl = window.prompt('Paste image URL', avatarUrl)
+                                            if (nextUrl !== null) {
+                                                setAvatarUrl(nextUrl.trim())
+                                            }
+                                        }}
+                                        className="absolute bottom-0 right-0 w-[28px] h-[28px] rounded-full bg-emerald-500 text-white border-2 border-(--bg-surface) flex items-center justify-center hover:bg-emerald-600 transition-colors"
+                                    >
                                         +
                                     </button>
                                 </div>
@@ -57,15 +100,15 @@ export default function SettingsPage() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="flex flex-col gap-2">
                                     <label className="font-body text-[13px] font-bold text-(--text-secondary)">First Name</label>
-                                    <input type="text" defaultValue="Marcus" className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)" />
+                                    <input type="text" value={firstName} onChange={(event) => setFirstName(event.target.value)} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)" />
                                 </div>
                                 <div className="flex flex-col gap-2">
                                     <label className="font-body text-[13px] font-bold text-(--text-secondary)">Last Name</label>
-                                    <input type="text" defaultValue="Thorne" className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)" />
+                                    <input type="text" value={lastName} onChange={(event) => setLastName(event.target.value)} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)" />
                                 </div>
                                 <div className="flex flex-col gap-2 md:col-span-2">
                                     <label className="font-body text-[13px] font-bold text-(--text-secondary)">Email Address</label>
-                                    <input type="email" defaultValue="coach@superfit.app" className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)" />
+                                    <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)" />
                                 </div>
                                 <div className="flex flex-col gap-2 md:col-span-2">
                                     <label className="font-body text-[13px] font-bold text-(--text-secondary)">Timezone</label>
@@ -80,9 +123,35 @@ export default function SettingsPage() {
                             <div className="flex justify-end pt-4 border-t border-(--border-subtle)">
                                 <button 
                                     onClick={() => {
-                                        const id = toast.loading('Saving preferences...')
-                                        setTimeout(() => toast.success('Account settings saved!', { id }), 800)
+                                        void (async () => {
+                                            setIsSaving(true)
+                                            const id = toast.loading('Saving preferences...')
+                                            const supabase = createClient()
+                                            const { data } = await supabase.auth.getUser()
+                                            const userId = data.user?.id
+
+                                            if (!userId) {
+                                                toast.error('You need to sign in again.', { id })
+                                                setIsSaving(false)
+                                                return
+                                            }
+
+                                            const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
+
+                                            const { error } = await supabase
+                                                .from('profiles')
+                                                .update({ full_name: fullName, email, avatar_url: avatarUrl || null })
+                                                .eq('id', userId)
+
+                                            if (error) {
+                                                toast.error(error.message, { id })
+                                            } else {
+                                                toast.success('Account settings saved!', { id })
+                                            }
+                                            setIsSaving(false)
+                                        })()
                                     }}
+                                    disabled={isSaving}
                                     className="h-[44px] px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2"
                                 >
                                     <Save className="w-[18px] h-[18px]" /> Save Changes
@@ -104,8 +173,8 @@ export default function SettingsPage() {
                                 </div>
                                 <button 
                                     onClick={() => {
-                                        const id = toast.loading('Redirecting to Stripe secure connection...')
-                                        setTimeout(() => toast.success('Stripe connected successfully! (Mock)', { id }), 1500)
+                                        const connectUrl = process.env.NEXT_PUBLIC_STRIPE_CONNECT_URL || 'https://dashboard.stripe.com/connect/accounts'
+                                        window.open(connectUrl, '_blank', 'noopener,noreferrer')
                                     }}
                                     className="h-[48px] px-8 rounded-[12px] bg-indigo-500 text-white font-display font-bold text-[15px] shadow-sm hover:bg-indigo-600 transition-colors mt-4"
                                 >

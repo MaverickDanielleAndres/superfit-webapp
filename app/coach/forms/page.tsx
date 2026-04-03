@@ -1,22 +1,93 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { FileText, Plus, Copy, Edit2, Trash2, Send, Eye } from 'lucide-react'
+import { FileText, Plus, Copy, Edit2, Trash2, Send, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { useCoachPortalStore } from '@/store/useCoachPortalStore'
 
 export default function FormsPage() {
-    const forms = [
-        { id: '1', name: 'Initial Intake Assessment', submissions: 145, lastUpdated: 'Mar 1, 2024', status: 'Active' },
-        { id: '2', name: 'Weekly Check-in Form', submissions: 890, lastUpdated: 'Feb 15, 2024', status: 'Active' },
-        { id: '3', name: 'Post-Meet Reflection', submissions: 12, lastUpdated: 'Dec 10, 2023', status: 'Draft' },
-        { id: '4', name: 'Dietary Preferences Questionnaire', submissions: 56, lastUpdated: 'Jan 5, 2024', status: 'Active' },
-    ]
+    const {
+        forms,
+        clients,
+        fetchForms,
+        fetchClients,
+        createForm,
+        duplicateForm,
+        deleteForm,
+        updateFormStatus,
+        assignFormToClients,
+    } = useCoachPortalStore()
+    const [assignmentOpen, setAssignmentOpen] = useState(false)
+    const [selectedFormId, setSelectedFormId] = useState<string | null>(null)
+    const [selectedClientIds, setSelectedClientIds] = useState<string[]>([])
+    const [assignmentDeadline, setAssignmentDeadline] = useState('')
 
-    const handleAction = (action: string, formName: string) => {
-        toast(`${action} for ${formName}`, {
-            description: 'Action simulated successfully.'
-        })
+    useEffect(() => {
+        void fetchForms()
+        void fetchClients()
+    }, [fetchClients, fetchForms])
+
+    const selectedForm = useMemo(
+        () => forms.find((form) => form.id === selectedFormId) || null,
+        [forms, selectedFormId],
+    )
+
+    const assignableClients = useMemo(
+        () => clients.filter((client) => client.status === 'Active' || client.status === 'Onboarding'),
+        [clients],
+    )
+
+    const closeAssignmentModal = () => {
+        setAssignmentOpen(false)
+        setSelectedFormId(null)
+        setSelectedClientIds([])
+        setAssignmentDeadline('')
+    }
+
+    const handleAction = (action: string, formId: string) => {
+        const target = forms.find((form) => form.id === formId)
+        if (!target) return
+
+        void (async () => {
+            if (action === 'Sending/Assigning') {
+                setSelectedFormId(target.id)
+                setAssignmentOpen(true)
+                return
+            }
+            if (action === 'Duplicating') {
+                await duplicateForm(target.id)
+                toast.success(`Duplicated ${target.name}.`)
+                return
+            }
+            if (action === 'Editing') {
+                await updateFormStatus(target.id, target.status === 'Draft' ? 'Active' : 'Draft')
+                toast.success(`Updated ${target.name} status.`)
+                return
+            }
+            if (action === 'Deleting') {
+                await deleteForm(target.id)
+                toast.success(`Deleted ${target.name}.`)
+                return
+            }
+            toast(`${action} for ${target.name}`)
+        })()
+    }
+
+    const handleAssign = async () => {
+        if (!selectedForm) return
+        if (!selectedClientIds.length) {
+            toast.error('Select at least one client before assigning.')
+            return
+        }
+
+        await assignFormToClients(
+            selectedForm.id,
+            selectedClientIds,
+            assignmentDeadline ? new Date(`${assignmentDeadline}T00:00:00`).toISOString() : undefined,
+        )
+        toast.success(`Assigned ${selectedForm.name} to ${selectedClientIds.length} clients.`)
+        closeAssignmentModal()
     }
 
     return (
@@ -27,7 +98,12 @@ export default function FormsPage() {
                     <p className="font-body text-[14px] text-(--text-secondary)">Create custom questionnaires for client onboarding and weekly check-ins.</p>
                 </div>
                 <button 
-                    onClick={() => toast('Opening Form Builder...')}
+                    onClick={() => {
+                        void (async () => {
+                            await createForm('New Form')
+                            toast.success('Created draft form.')
+                        })()
+                    }}
                     className="h-[44px] px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2"
                 >
                     <Plus className="w-[18px] h-[18px]" /> Create Form
@@ -61,22 +137,22 @@ export default function FormsPage() {
                                         </span>
                                     </td>
                                     <td className="p-5 font-medium text-(--text-primary)">
-                                        <button onClick={() => handleAction('Opening Responses Viewer', form.name)} className="hover:text-emerald-500 underline decoration-dashed underline-offset-4 transition-colors">
+                                        <button onClick={() => toast.info('Response viewer will open in the next slice.')} className="hover:text-emerald-500 underline decoration-dashed underline-offset-4 transition-colors">
                                             {form.submissions}
                                         </button>
                                     </td>
                                     <td className="p-5 text-(--text-secondary)">{form.lastUpdated}</td>
                                     <td className="p-5 pr-6 text-right flex items-center justify-end gap-2">
-                                        <button onClick={() => handleAction('Sending/Assigning', form.name)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-transparent hover:border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors" title="Send/Assign">
+                                        <button onClick={() => handleAction('Sending/Assigning', form.id)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-transparent hover:border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors" title="Send/Assign">
                                             <Send className="w-[16px] h-[16px]" />
                                         </button>
-                                        <button onClick={() => handleAction('Duplicating', form.name)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-transparent hover:border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors" title="Duplicate">
+                                        <button onClick={() => handleAction('Duplicating', form.id)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-transparent hover:border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors" title="Duplicate">
                                             <Copy className="w-[16px] h-[16px]" />
                                         </button>
-                                        <button onClick={() => handleAction('Editing', form.name)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-transparent hover:border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors" title="Edit">
+                                        <button onClick={() => handleAction('Editing', form.id)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-transparent hover:border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors" title="Edit">
                                             <Edit2 className="w-[16px] h-[16px]" />
                                         </button>
-                                        <button onClick={() => handleAction('Deleting', form.name)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-red-500/10 border border-transparent hover:border-red-500/20 flex items-center justify-center text-(--text-secondary) hover:text-red-500 transition-colors" title="Delete">
+                                        <button onClick={() => handleAction('Deleting', form.id)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-red-500/10 border border-transparent hover:border-red-500/20 flex items-center justify-center text-(--text-secondary) hover:text-red-500 transition-colors" title="Delete">
                                             <Trash2 className="w-[16px] h-[16px]" />
                                         </button>
                                     </td>
@@ -86,6 +162,78 @@ export default function FormsPage() {
                     </table>
                 </div>
             </div>
+
+            {assignmentOpen && selectedForm && (
+                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="w-full max-w-[560px] bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] shadow-xl p-6 flex flex-col gap-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="font-display font-bold text-[20px] text-(--text-primary)">Assign Form</h3>
+                            <button
+                                onClick={closeAssignmentModal}
+                                className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] border border-(--border-default) text-(--text-secondary) hover:text-(--text-primary) flex items-center justify-center"
+                            >
+                                <X className="w-[16px] h-[16px]" />
+                            </button>
+                        </div>
+
+                        <div className="text-[14px] text-(--text-secondary)">
+                            <span className="font-bold text-(--text-primary)">{selectedForm.name}</span>
+                            {' '}will be assigned to selected clients.
+                        </div>
+
+                        <div className="max-h-[260px] overflow-y-auto rounded-[14px] border border-(--border-default) bg-[var(--bg-elevated)] divide-y divide-(--border-subtle)">
+                            {assignableClients.map((client) => (
+                                <label key={client.id} className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer">
+                                    <div className="flex flex-col">
+                                        <span className="font-bold text-[14px] text-(--text-primary)">{client.name}</span>
+                                        <span className="text-[12px] text-(--text-secondary)">{client.email}</span>
+                                    </div>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedClientIds.includes(client.id)}
+                                        onChange={(event) => {
+                                            if (event.target.checked) {
+                                                setSelectedClientIds((current) => [...current, client.id])
+                                            } else {
+                                                setSelectedClientIds((current) => current.filter((id) => id !== client.id))
+                                            }
+                                        }}
+                                        className="accent-emerald-500 w-[16px] h-[16px]"
+                                    />
+                                </label>
+                            ))}
+                            {!assignableClients.length && (
+                                <div className="px-4 py-3 text-[13px] text-(--text-secondary)">No assignable clients available.</div>
+                            )}
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                            <label className="font-body text-[13px] font-bold text-(--text-secondary)">Deadline (Optional)</label>
+                            <input
+                                type="date"
+                                value={assignmentDeadline}
+                                onChange={(event) => setAssignmentDeadline(event.target.value)}
+                                className="h-[42px] px-3 rounded-[10px] bg-[var(--bg-elevated)] border border-(--border-default) text-[13px] outline-none"
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 pt-2">
+                            <button
+                                onClick={closeAssignmentModal}
+                                className="h-[40px] px-4 rounded-[10px] border border-(--border-default) text-(--text-secondary) font-bold text-[13px]"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => { void handleAssign() }}
+                                className="h-[40px] px-5 rounded-[10px] bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-[13px]"
+                            >
+                                Assign to Clients
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </motion.div>
     )
 }

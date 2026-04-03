@@ -2,13 +2,26 @@
 
 import React, { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Search, Filter, Plus, Dumbbell, Grid, List as ListIcon } from 'lucide-react'
+import dynamic from 'next/dynamic'
+import { Search, Plus, Dumbbell, Grid, List as ListIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { Exercise } from '@/types'
-import ExerciseDetailSheet from '@/components/exercises/ExerciseDetailSheet'
-import CustomExerciseModal from '@/components/workout/CustomExerciseModal'
-import QuickLogModal from '@/components/workout/QuickLogModal'
+
+const ExerciseDetailSheet = dynamic(() => import('@/components/exercises/ExerciseDetailSheet'), {
+    ssr: false,
+    loading: () => null,
+})
+
+const CustomExerciseModal = dynamic(() => import('@/components/workout/CustomExerciseModal'), {
+    ssr: false,
+    loading: () => null,
+})
+
+const QuickLogModal = dynamic(() => import('@/components/workout/QuickLogModal'), {
+    ssr: false,
+    loading: () => null,
+})
 
 const MUSCLE_FILTERS = ['All', 'Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core', 'Cardio']
 const EQUIPMENT_FILTERS = ['All Equipment', 'Barbell', 'Dumbbell', 'Cable', 'Machine', 'Bodyweight', 'Bands', 'Kettlebell']
@@ -33,12 +46,14 @@ export default function ExercisesPage() {
 
     const filteredExercises = useMemo(() => {
         return allExercises.filter(ex => {
+            const normalizedMuscle = activeMuscle.toLowerCase()
+            const normalizedEquipment = activeEquipment.toLowerCase().replace(' ', '_')
             const matchesSearch = ex.name.toLowerCase().includes(searchQuery.toLowerCase())
             const matchesMuscle = activeMuscle === 'All' || 
-                ex.muscleGroups.includes(activeMuscle.toLowerCase() as any) || 
+                (ex.muscleGroups as string[]).includes(normalizedMuscle) || 
                 (activeMuscle === 'Arms' && (ex.muscleGroups.includes('biceps') || ex.muscleGroups.includes('triceps') || ex.muscleGroups.includes('forearms'))) || 
                 (activeMuscle === 'Legs' && (ex.muscleGroups.includes('quads') || ex.muscleGroups.includes('hamstrings') || ex.muscleGroups.includes('glutes') || ex.muscleGroups.includes('calves')))
-            const matchesEquip = activeEquipment === 'All Equipment' || ex.equipment.includes(activeEquipment.toLowerCase().replace(' ', '_') as any)
+            const matchesEquip = activeEquipment === 'All Equipment' || (ex.equipment as string[]).includes(normalizedEquipment)
             return matchesSearch && matchesMuscle && matchesEquip
         })
     }, [allExercises, searchQuery, activeMuscle, activeEquipment])
@@ -170,7 +185,7 @@ export default function ExercisesPage() {
                 <div className="py-20 text-center flex flex-col items-center">
                     <Dumbbell className="w-[48px] h-[48px] text-(--text-tertiary) mb-4 opacity-50" />
                     <h3 className="font-display font-bold text-[18px] text-(--text-primary) mb-2">No exercises found</h3>
-                    <p className="font-body text-[14px] text-(--text-secondary) max-w-[300px]">We couldn't find anything matching your filters. Try adjusting them or create a custom exercise.</p>
+                    <p className="font-body text-[14px] text-(--text-secondary) max-w-[300px]">We couldn&apos;t find anything matching your filters. Try adjusting them or create a custom exercise.</p>
                 </div>
             )}
 

@@ -4,13 +4,13 @@ import React, { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 import { Settings } from 'lucide-react'
-import { useUserStore } from '@/store/useUserStore'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useNutritionStore } from '@/store/useNutritionStore'
 import EditMacrosModal from './EditMacrosModal'
 
 export function MacroRingCard() {
     const router = useRouter()
-    const user = useUserStore(s => s.user)
+    const user = useAuthStore(s => s.user)
     const getDailyTotals = useNutritionStore(s => s.getDailyTotals)
     const [isEditOpen, setIsEditOpen] = useState(false)
 

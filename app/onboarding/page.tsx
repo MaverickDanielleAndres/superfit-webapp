@@ -3,15 +3,15 @@
 import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowRight, ArrowLeft, Check, Activity, Target, Zap, ChevronRight, Droplet, Pill, HeartPulse, Sparkles, Scale, Dumbbell } from 'lucide-react'
-import { useUserStore } from '@/store/useUserStore'
+import { ArrowRight, ArrowLeft, Check, Activity, Target, Zap, ChevronRight, Droplet, Pill, HeartPulse, Sparkles, Scale, Dumbbell, Utensils } from 'lucide-react'
+import { useAuthStore } from '@/store/useAuthStore'
 import { Sex, ActivityLevel, FitnessGoal, DietaryPreference, ExercisePreference } from '@/types'
 import { calculateBMI, calculateBMR, calculateTDEE } from '@/lib/calculations'
 import { cn } from '@/lib/utils'
 
 export default function OnboardingPage() {
     const router = useRouter()
-    const { completeOnboarding } = useUserStore()
+    const { completeOnboarding } = useAuthStore()
 
     const [step, setStep] = useState(1)
     const totalSteps = 11
@@ -31,12 +31,14 @@ export default function OnboardingPage() {
     const [supplements, setSupplements] = useState<string[]>([])
     const [healthConditions, setHealthConditions] = useState<string[]>([])
     const [waterConsumption, setWaterConsumption] = useState<string>('average')
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
     const handleNext = () => { if (step < totalSteps) setStep(step + 1) }
     const handleBack = () => { if (step > 1) setStep(step - 1) }
 
-    const handleComplete = () => {
-        completeOnboarding({
+    const handleComplete = async () => {
+        setIsSubmitting(true)
+        const success = await completeOnboarding({
             name,
             age,
             sex,
@@ -48,9 +50,11 @@ export default function OnboardingPage() {
             weeklyWorkouts,
             dietaryPreference,
             exercisePreferences,
-            // For MVP, we pass the rest to the profile or abstract them
         })
-        router.push('/')
+        setIsSubmitting(false)
+        if (success) {
+            router.push('/')
+        }
     }
 
     // Calculations for Step 9 & 10
@@ -77,7 +81,7 @@ export default function OnboardingPage() {
                         <div>
                             <h2 className="font-display font-black text-[32px] text-(--text-primary) tracking-tight mb-3">Welcome to SuperFit</h2>
                             <p className="font-body text-(--text-secondary) text-[16px] leading-relaxed max-w-[320px] mx-auto">
-                                Let's build your perfect, personalized fitness engine. We'll ask a few questions to calibrate your experience.
+                                Let&apos;s build your perfect, personalized fitness engine. We&apos;ll ask a few questions to calibrate your experience.
                             </p>
                         </div>
                     </div>
@@ -86,7 +90,7 @@ export default function OnboardingPage() {
                 return (
                     <div className="space-y-6">
                         <h2 className="font-display font-bold text-[28px] text-(--text-primary)">Basic Biometrics</h2>
-                        <p className="font-body text-(--text-secondary) text-[14px]">Let's tailor SuperFit to your body.</p>
+                        <p className="font-body text-(--text-secondary) text-[14px]">Let&apos;s tailor SuperFit to your body.</p>
 
                         <div className="space-y-4">
                             <div>
@@ -129,7 +133,7 @@ export default function OnboardingPage() {
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
                             <Target className="w-[32px] h-[32px] text-blue-500" />
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary)">What's your primary goal?</h2>
+                            <h2 className="font-display font-bold text-[28px] text-(--text-primary)">What&apos;s your primary goal?</h2>
                         </div>
                         <div className="flex flex-col gap-3">
                             {[
@@ -491,7 +495,8 @@ export default function OnboardingPage() {
                             </button>
                         ) : (
                             <button
-                                onClick={handleComplete}
+                                onClick={() => { void handleComplete() }}
+                                disabled={isSubmitting}
                                 className="w-full h-[56px] rounded-[14px] bg-(--accent) text-white font-display font-bold text-[16px] flex items-center justify-center gap-2 hover:bg-(--accent-hover) transition-all shadow-[0_8px_24px_rgba(16,185,129,0.3)] hover:shadow-[0_8px_32px_rgba(16,185,129,0.5)] transform hover:-translate-y-[2px]"
                             >
                                 Enter Dashboard <ChevronRight className="w-[20px] h-[20px]" />

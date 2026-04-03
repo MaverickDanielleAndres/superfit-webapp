@@ -2,14 +2,19 @@
 
 import React from 'react'
 import { motion } from 'framer-motion'
+import dynamic from 'next/dynamic'
 import { Weight, HeartPulse, Droplets, Activity, Plus } from 'lucide-react'
 import { MetricCard } from '@/components/dashboard/MetricCard'
 import { MacroRingCard } from '@/components/dashboard/MacroRingCard'
-import { HeartRateCard } from '@/components/dashboard/HeartRateCard'
 import { RecommendedActivity } from '@/components/dashboard/RecommendedActivity'
 import { FitnessGoalCard } from '@/components/dashboard/FitnessGoalCard'
 import { useHydrationStore } from '@/store/useHydrationStore'
 import { toast } from 'sonner'
+
+const HeartRateCard = dynamic(() => import('@/components/dashboard/HeartRateCard').then((m) => m.HeartRateCard), {
+    ssr: false,
+    loading: () => <div className="h-[280px] rounded-[24px] bg-[var(--bg-surface)] border border-[var(--border-subtle)] animate-pulse" />
+})
 
 export default function DashboardPage() {
     const getHydrationDay = useHydrationStore(s => s.getHydrationDay)

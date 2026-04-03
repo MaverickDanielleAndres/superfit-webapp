@@ -104,38 +104,18 @@ export default function TimerPage() {
 
     const currentConfig = configs[activeMode]
 
-    // Timer Tick Engine
-    useEffect(() => {
-        let interval: NodeJS.Timeout
-
-        if (isRunning && currentPhase !== 'finished') {
-            interval = setInterval(() => {
-                setTimeLeft(prev => {
-                    const nextTime = prev - 1
-
-                    // Alert Triggers
-                    if (advancedSettings.warningBeeps && nextTime > 0 && nextTime <= 3) {
-                        playBeep('short')
-                    }
-                    if (advancedSettings.halfwayAlert && currentPhase === 'work' && nextTime === Math.floor(currentConfig.work / 2)) {
-                        playBeep('halfway')
-                    }
-
-                    if (nextTime <= 0) {
-                        // Phase Transition Logic!
-                        playBeep('long')
-                        handlePhaseTransition()
-                        return 0 // temporarily return 0, handlePhaseTransition sets the real next time
-                    }
-                    return nextTime
-                })
-            }, 1000)
+    function advanceRound() {
+        if (currentRound < currentConfig.rounds) {
+            setCurrentRound(r => r + 1)
+            setCurrentPhase('work')
+            setTimeLeft(currentConfig.work)
+        } else {
+            setCurrentPhase('finished')
+            setIsRunning(false)
         }
+    }
 
-        return () => clearInterval(interval)
-    }, [isRunning, currentPhase, currentRound, currentConfig, advancedSettings])
-
-    const handlePhaseTransition = () => {
+    function handlePhaseTransition() {
         if (currentConfig.customIntervals && currentConfig.customIntervals.length > 0) {
             const nextIdx = activeIntervalIndex + 1
             if (nextIdx < currentConfig.customIntervals.length) {
@@ -168,16 +148,36 @@ export default function TimerPage() {
         }
     }
 
-    const advanceRound = () => {
-        if (currentRound < currentConfig.rounds) {
-            setCurrentRound(r => r + 1)
-            setCurrentPhase('work')
-            setTimeLeft(currentConfig.work)
-        } else {
-            setCurrentPhase('finished')
-            setIsRunning(false)
+    // Timer Tick Engine
+    useEffect(() => {
+        let interval: NodeJS.Timeout
+
+        if (isRunning && currentPhase !== 'finished') {
+            interval = setInterval(() => {
+                setTimeLeft(prev => {
+                    const nextTime = prev - 1
+
+                    // Alert Triggers
+                    if (advancedSettings.warningBeeps && nextTime > 0 && nextTime <= 3) {
+                        playBeep('short')
+                    }
+                    if (advancedSettings.halfwayAlert && currentPhase === 'work' && nextTime === Math.floor(currentConfig.work / 2)) {
+                        playBeep('halfway')
+                    }
+
+                    if (nextTime <= 0) {
+                        // Phase Transition Logic!
+                        playBeep('long')
+                        handlePhaseTransition()
+                        return 0 // temporarily return 0, handlePhaseTransition sets the real next time
+                    }
+                    return nextTime
+                })
+            }, 1000)
         }
-    }
+
+        return () => clearInterval(interval)
+    }, [isRunning, currentPhase, currentRound, currentConfig, advancedSettings])
 
     const toggleTimer = () => {
         if (currentPhase === 'finished') {

@@ -6,8 +6,9 @@
  */
 
 import React, { useState } from 'react'
+import { useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Target, Trophy, Clock, ArrowRight, Zap, Plus, X, Loader2, CheckCircle, Trash2 } from 'lucide-react'
+import { Target, Trophy, Clock, Zap, Plus, X, Loader2, CheckCircle, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useGoalStore, FitnessGoal } from '@/store/useGoalStore'
 
@@ -21,7 +22,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 }
 
 export default function GoalsPage() {
-    const { goals, addGoal, updateGoal, deleteGoal, markComplete } = useGoalStore()
+    const { goals, addGoal, fetchGoals, deleteGoal, markComplete } = useGoalStore()
     const [showAddModal, setShowAddModal] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [form, setForm] = useState({
@@ -37,6 +38,10 @@ export default function GoalsPage() {
     const activeGoals = goals.filter(g => !g.completed)
     const completedGoals = goals.filter(g => g.completed)
 
+    useEffect(() => {
+        void fetchGoals()
+    }, [fetchGoals])
+
     const metrics = [
         { icon: Trophy, label: 'Achievements Unlocked', value: completedGoals.length.toString() },
         { icon: Zap, label: 'Active Goals', value: activeGoals.length.toString() },
@@ -47,7 +52,7 @@ export default function GoalsPage() {
         if (!form.title || !form.target || !form.deadline) return
         setIsSubmitting(true)
         await new Promise(r => setTimeout(r, 400))
-        addGoal({
+        await addGoal({
             title: form.title,
             category: form.category,
             current: parseFloat(form.current) || 0,
@@ -130,10 +135,10 @@ export default function GoalsPage() {
                                             </div>
                                         </div>
                                         <div className="flex flex-col gap-2 mt-1">
-                                            <button onClick={() => markComplete(goal.id)} title="Mark Complete" className="w-[36px] h-[36px] rounded-[10px] bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-colors flex items-center justify-center">
+                                            <button onClick={() => void markComplete(goal.id)} title="Mark Complete" className="w-[36px] h-[36px] rounded-[10px] bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-colors flex items-center justify-center">
                                                 <CheckCircle className="w-[16px] h-[16px]" />
                                             </button>
-                                            <button onClick={() => deleteGoal(goal.id)} title="Delete Goal" className="w-[36px] h-[36px] rounded-[10px] bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center">
+                                            <button onClick={() => void deleteGoal(goal.id)} title="Delete Goal" className="w-[36px] h-[36px] rounded-[10px] bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center">
                                                 <Trash2 className="w-[16px] h-[16px]" />
                                             </button>
                                         </div>
@@ -164,7 +169,7 @@ export default function GoalsPage() {
                                 <span className="font-body font-bold text-[15px] text-(--text-primary)">{goal.title}</span>
                                 <span className="block font-body text-[13px] text-(--text-secondary)">{goal.category} • {goal.target} {goal.unit}</span>
                             </div>
-                            <button onClick={() => deleteGoal(goal.id)} className="text-(--text-tertiary) hover:text-red-500 transition-colors"><X className="w-[16px] h-[16px]" /></button>
+                            <button onClick={() => void deleteGoal(goal.id)} className="text-(--text-tertiary) hover:text-red-500 transition-colors"><X className="w-[16px] h-[16px]" /></button>
                         </div>
                     ))}
                 </div>
@@ -188,7 +193,7 @@ export default function GoalsPage() {
 
                                 <div className="flex flex-col gap-1">
                                     <label className="font-body text-[13px] font-semibold text-(--text-secondary) uppercase tracking-wider">Category</label>
-                                    <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value as any }))} className="h-[48px] rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) px-4 font-body text-[15px] focus:border-emerald-500 outline-none">
+                                    <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value as FitnessGoal['category'] }))} className="h-[48px] rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) px-4 font-body text-[15px] focus:border-emerald-500 outline-none">
                                         {Object.keys(CATEGORY_COLORS).map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
                                 </div>

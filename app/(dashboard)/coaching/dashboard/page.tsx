@@ -1,12 +1,14 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Users, TrendingUp, Calendar as CalendarIcon, FilePlus, MessageSquare, Plus, ChevronRight, Video, DollarSign } from 'lucide-react'
+import { Users, Calendar as CalendarIcon, FilePlus, MessageSquare, Plus, ChevronRight, Video, DollarSign, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function CoachDashboardPage() {
     const [activeTab, setActiveTab] = useState<'roster' | 'content'>('roster')
+    const [isLoading, setIsLoading] = useState(true)
+    const [loadError, setLoadError] = useState<string | null>(null)
 
     const clients = [
         { id: '1', name: 'Alex Thompson', plan: 'Hybrid Athlete', status: 'Active', nextCheckIn: 'Today', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&fit=crop' },
@@ -19,6 +21,17 @@ export default function CoachDashboardPage() {
         { icon: DollarSign, label: 'Monthly Revenue', value: '$4,250', trend: '+15% vs last month' },
         { icon: MessageSquare, label: 'Unread Messages', value: '5', trend: 'Requires attention' },
     ]
+
+    useEffect(() => {
+        const timeout = setTimeout(() => setIsLoading(false), 250)
+        return () => clearTimeout(timeout)
+    }, [])
+
+    const retryLoad = () => {
+        setLoadError(null)
+        setIsLoading(true)
+        setTimeout(() => setIsLoading(false), 250)
+    }
 
     return (
         <motion.div
@@ -95,30 +108,48 @@ export default function CoachDashboardPage() {
                                 <button className="text-(--accent) font-body text-[13px] font-semibold">View All</button>
                             </div>
 
-                            <div className="flex flex-col divide-y divide-(--border-subtle)">
-                                {clients.map(client => (
-                                    <div key={client.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer group">
-                                        <div className="flex items-center gap-4">
-                                            <img src={client.avatar} alt={client.name} className="w-[48px] h-[48px] rounded-full object-cover border border-(--border-subtle)" />
-                                            <div>
-                                                <h3 className="font-display font-bold text-[16px] text-(--text-primary) leading-none mb-1">{client.name}</h3>
-                                                <span className="font-body text-[13px] text-(--text-secondary)">{client.plan}</span>
+                            {loadError ? (
+                                <div className="p-8 text-center">
+                                    <p className="font-display font-bold text-[18px] text-red-600">Unable to load roster</p>
+                                    <p className="mt-2 font-body text-[14px] text-(--text-secondary)">{loadError}</p>
+                                    <button onClick={retryLoad} className="mt-4 px-4 py-2 rounded-[10px] border border-(--border-default) font-body font-semibold text-[13px] hover:bg-[var(--bg-elevated)]">Retry</button>
+                                </div>
+                            ) : isLoading ? (
+                                <div className="p-8 flex items-center justify-center gap-3 text-(--text-secondary)">
+                                    <Loader2 className="w-[18px] h-[18px] animate-spin" />
+                                    <span className="font-body text-[14px]">Loading clients...</span>
+                                </div>
+                            ) : clients.length === 0 ? (
+                                <div className="p-8 text-center">
+                                    <p className="font-display font-bold text-[18px] text-(--text-primary)">No active clients yet</p>
+                                    <p className="mt-2 font-body text-[14px] text-(--text-secondary)">Invite your first client to start tracking check-ins and progress.</p>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col divide-y divide-(--border-subtle)">
+                                    {clients.map(client => (
+                                        <div key={client.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer group">
+                                            <div className="flex items-center gap-4">
+                                                <img src={client.avatar} alt={client.name} className="w-[48px] h-[48px] rounded-full object-cover border border-(--border-subtle)" />
+                                                <div>
+                                                    <h3 className="font-display font-bold text-[16px] text-(--text-primary) leading-none mb-1">{client.name}</h3>
+                                                    <span className="font-body text-[13px] text-(--text-secondary)">{client.plan}</span>
+                                                </div>
                                             </div>
-                                        </div>
 
-                                        <div className="flex items-center gap-8">
-                                            <div className="text-right hidden sm:block">
-                                                <span className="block font-body text-[12px] text-(--text-secondary) uppercase tracking-wider font-semibold">Next Check-in</span>
-                                                <span className="font-body text-[14px] text-(--text-primary) font-medium">{client.nextCheckIn}</span>
+                                            <div className="flex items-center gap-8">
+                                                <div className="text-right hidden sm:block">
+                                                    <span className="block font-body text-[12px] text-(--text-secondary) uppercase tracking-wider font-semibold">Next Check-in</span>
+                                                    <span className="font-body text-[14px] text-(--text-primary) font-medium">{client.nextCheckIn}</span>
+                                                </div>
+                                                <span className={cn("px-3 py-1 rounded-full font-body text-[12px] font-bold", client.status === 'Active' ? 'bg-(--status-success) bg-opacity-20 text-(--status-success)' : 'bg-(--status-warning) bg-opacity-20 text-(--status-warning)')}>
+                                                    {client.status}
+                                                </span>
+                                                <ChevronRight className="w-[20px] h-[20px] text-(--text-tertiary) group-hover:text-(--text-primary) transition-colors" />
                                             </div>
-                                            <span className={cn("px-3 py-1 rounded-full font-body text-[12px] font-bold", client.status === 'Active' ? 'bg-(--status-success) bg-opacity-20 text-(--status-success)' : 'bg-(--status-warning) bg-opacity-20 text-(--status-warning)')}>
-                                                {client.status}
-                                            </span>
-                                            <ChevronRight className="w-[20px] h-[20px] text-(--text-tertiary) group-hover:text-(--text-primary) transition-colors" />
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">

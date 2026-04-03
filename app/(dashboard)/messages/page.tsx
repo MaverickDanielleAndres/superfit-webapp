@@ -5,22 +5,25 @@
  * Implements rich text, attachments, reactions, read receipts, and threads.
  */
 
-import React, { useState, useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import {
     Search, Info, Phone, Video, Send, Paperclip, Image as ImageIcon,
-    Smile, MoreHorizontal, Check, CheckCheck, X, Reply, Heart, ThumbsUp, Flame, ThumbsDown,
+    Smile, MoreHorizontal, Check, CheckCheck, X, Reply, ThumbsUp,
     Trash2, Pin, Forward, Mic, Copy, Edit2, Star
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useMessageStore } from '@/store/useMessageStore'
 import { useAuthStore } from '@/store/useAuthStore'
-import { MessageAttachment } from '@/types'
+import { ChatMessage, ChatThread, MessageAttachment } from '@/types'
+import { useRouter } from 'next/navigation'
 
 export default function MessagesPage() {
-    const { threads, messages, sendMessage, markAsRead, getMessages, addReaction, removeReaction } = useMessageStore()
+    const router = useRouter()
+    const { threads, sendMessage, markAsRead, getMessages, addReaction, removeReaction, initialize, isLoading, error } = useMessageStore()
     const { user } = useAuthStore()
+    const currentUserId = user?.id || 'me'
 
     const [activeThreadId, setActiveThreadId] = useState<string>(threads[0]?.id || '')
     const [inputText, setInputText] = useState('')
@@ -34,32 +37,59 @@ export default function MessagesPage() {
     const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null)
     const [showReactionMenuFor, setShowReactionMenuFor] = useState<string | null>(null)
     const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null)
+    const [hiddenMessageIds, setHiddenMessageIds] = useState<string[]>([])
+    const [starredMessageIds, setStarredMessageIds] = useState<string[]>([])
+    const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+    const [editedMessageTexts, setEditedMessageTexts] = useState<Record<string, string>>({})
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
-    const activeThread = threads.find(t => t.id === activeThreadId)
-    const activeMessages = getMessages(activeThreadId)
+    const selectedThreadId = activeThreadId || threads[0]?.id || ''
+    const activeThread = threads.find(t => t.id === selectedThreadId)
+    const activeMessages = getMessages(selectedThreadId)
+    const visibleMessages = useMemo(
+        () => activeMessages.filter((message) => !hiddenMessageIds.includes(message.id)),
+        [activeMessages, hiddenMessageIds],
+    )
 
     // Filter threads
     const filteredThreads = threads.filter(t => {
-        const title = t.isGroup ? t.groupName : t.participants.find(p => p.id !== 'me')?.name || 'User';
+        const title = t.isGroup ? t.groupName : t.participants.find(p => p.id !== currentUserId)?.name || 'User';
         return title?.toLowerCase().includes(searchQuery.toLowerCase())
     })
 
     useEffect(() => {
-        if (activeThreadId) markAsRead(activeThreadId)
-    }, [activeThreadId, activeMessages.length, markAsRead])
+        void initialize()
+    }, [initialize])
+
+    useEffect(() => {
+        if (selectedThreadId) markAsRead(selectedThreadId)
+    }, [selectedThreadId, visibleMessages.length, markAsRead])
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }, [activeMessages, attachments, replyingTo])
+    }, [visibleMessages, attachments, replyingTo])
 
     const handleSend = () => {
-        if ((!inputText.trim() && attachments.length === 0) || !activeThreadId || !user) return
+        if (!selectedThreadId || !user) return
+
+        if (editingMessageId) {
+            if (!inputText.trim()) return
+            setEditedMessageTexts((current) => ({
+                ...current,
+                [editingMessageId]: inputText.trim(),
+            }))
+            setEditingMessageId(null)
+            setInputText('')
+            toast.success('Message updated.')
+            return
+        }
+
+        if (!inputText.trim() && attachments.length === 0) return
 
         // Mock upload logic -> just pass attachments array directly
-        sendMessage(activeThreadId, 'me', inputText.trim(), attachments, replyingTo || undefined)
+        sendMessage(selectedThreadId, currentUserId, inputText.trim(), attachments, replyingTo || undefined)
 
         setInputText('')
         setAttachments([])
@@ -77,6 +107,8 @@ export default function MessagesPage() {
         setActiveThreadId(threadId)
         setAttachments([])
         setReplyingTo(null)
+        setEditingMessageId(null)
+        setInputText('')
     }
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,11 +127,11 @@ export default function MessagesPage() {
     const toggleReaction = (msgId: string, emoji: string) => {
         const msg = activeMessages.find(m => m.id === msgId)
         if (!msg) return
-        const existing = msg.reactions.find(r => r.userId === 'me' && r.emoji === emoji)
+        const existing = msg.reactions.find(r => r.userId === currentUserId && r.emoji === emoji)
         if (existing) {
-            removeReaction(activeThreadId, msgId, 'me', emoji)
+            removeReaction(selectedThreadId, msgId, currentUserId, emoji)
         } else {
-            addReaction(activeThreadId, msgId, 'me', emoji)
+            addReaction(selectedThreadId, msgId, currentUserId, emoji)
         }
         setShowReactionMenuFor(null)
     }
@@ -108,14 +140,64 @@ export default function MessagesPage() {
         return thread?.participants.find(p => p.id === id)
     }
 
-    const getThreadTitle = (thread: any) => {
+    const getThreadTitle = (thread: ChatThread) => {
         if (thread.isGroup) return thread.groupName
-        return thread.participants.find((p: any) => p.id !== 'me')?.name || 'User'
+        return thread.participants.find((p) => p.id !== currentUserId)?.name || 'User'
     }
 
-    const getThreadAvatar = (thread: any) => {
+    const getThreadAvatar = (thread: ChatThread) => {
         if (thread.isGroup) return thread.groupAvatar || `https://api.dicebear.com/7.x/shapes/svg?seed=${thread.id}`
-        return thread.participants.find((p: any) => p.id !== 'me')?.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${thread.id}`
+        return thread.participants.find((p) => p.id !== currentUserId)?.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${thread.id}`
+    }
+
+    const handleCopyMessage = async (text: string) => {
+        if (!text) return
+        try {
+            await navigator.clipboard.writeText(text)
+            toast.success('Copied to clipboard.')
+        } catch {
+            toast.error('Unable to copy text.')
+        }
+    }
+
+    const handleDeleteForMe = (messageId: string) => {
+        setHiddenMessageIds((current) => (current.includes(messageId) ? current : [...current, messageId]))
+        if (pinnedMessageId === messageId) {
+            setPinnedMessageId(null)
+        }
+        toast.success('Message hidden from this view.')
+    }
+
+    const handleForwardMessage = (message: ChatMessage) => {
+        const editedText = editedMessageTexts[message.id] || message.text
+        const nextText = editedText ? `Fwd: ${editedText}` : 'Fwd: attachment'
+        setInputText(nextText)
+        setAttachments(message.attachments || [])
+        setReplyingTo(null)
+        setEditingMessageId(null)
+        toast.success('Message added to composer for forwarding.')
+    }
+
+    const handleVoiceNote = () => {
+        setAttachments((current) => [
+            ...current,
+            {
+                id: `voice_${Date.now()}`,
+                type: 'file',
+                name: `voice-note-${new Date().toISOString().slice(11, 19).replace(/:/g, '-')}.m4a`,
+                url: '',
+            },
+        ])
+        toast.success('Voice note attached.')
+    }
+
+    if (isLoading) {
+        return (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-6xl mx-auto h-[calc(100vh-120px)] min-h-[600px] flex gap-6 pb-6 pt-2">
+                <div className="w-[340px] shrink-0 rounded-[24px] border border-(--border-subtle) bg-(--bg-surface) p-4 animate-pulse" />
+                <div className="flex-1 rounded-[24px] border border-(--border-subtle) bg-(--bg-surface) p-4 animate-pulse" />
+            </motion.div>
+        )
     }
 
     return (
@@ -126,8 +208,7 @@ export default function MessagesPage() {
                 <div className="p-5 border-b border-(--border-subtle) bg-[var(--bg-elevated)]">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="font-display font-black text-[24px] text-(--text-primary) leading-none tracking-tight">Chats</h2>
-                        {/* New chat button mockup */}
-                        <button className="w-[36px] h-[36px] rounded-full bg-(--text-primary) text-(--bg-base) flex items-center justify-center hover:opacity-90 transition-opacity"><Smile className="w-[18px] h-[18px]" /></button>
+                        <button onClick={() => router.push('/coaching')} className="w-[36px] h-[36px] rounded-full bg-(--text-primary) text-(--bg-base) flex items-center justify-center hover:opacity-90 transition-opacity"><Smile className="w-[18px] h-[18px]" /></button>
                     </div>
                     <div className="relative">
                         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[16px] h-[16px] text-(--text-tertiary)" />
@@ -141,11 +222,18 @@ export default function MessagesPage() {
                     </div>
                 </div>
 
+                {error && (
+                    <div className="mx-2 mb-2 p-3 rounded-[12px] border border-red-500/30 bg-red-500/10 text-[12px] text-red-600 flex items-center justify-between gap-2">
+                        <span className="truncate">{error}</span>
+                        <button onClick={() => { void initialize() }} className="shrink-0 px-2 py-1 rounded-[8px] border border-red-500/30 text-red-700 font-bold">Retry</button>
+                    </div>
+                )}
+
                 <div className="flex-1 overflow-y-auto overflow-x-hidden p-2">
                     {filteredThreads.map(thread => {
                         const title = getThreadTitle(thread)
                         const avatar = getThreadAvatar(thread)
-                        const isActive = activeThreadId === thread.id
+                        const isActive = selectedThreadId === thread.id
                         const isUnread = thread.unreadCount > 0
 
                         return (
@@ -170,7 +258,7 @@ export default function MessagesPage() {
                                     </div>
                                     <div className="flex items-center justify-between gap-2">
                                         <p className={cn("font-body text-[14px] truncate leading-tight", isUnread ? "font-bold text-(--text-primary)" : "text-(--text-secondary)")}>
-                                            {thread.lastMessage?.senderId === 'me' ? 'You: ' : ''}{thread.lastMessage?.text || (thread.lastMessage?.attachments.length ? 'Sent an attachment' : 'No messages yet')}
+                                            {thread.lastMessage?.senderId === currentUserId ? 'You: ' : ''}{thread.lastMessage?.text || (thread.lastMessage?.attachments.length ? 'Sent an attachment' : 'No messages yet')}
                                         </p>
                                         {isUnread && <div className="w-[10px] h-[10px] bg-emerald-500 rounded-full shrink-0" />}
                                     </div>
@@ -178,6 +266,9 @@ export default function MessagesPage() {
                             </button>
                         )
                     })}
+                    {!filteredThreads.length && (
+                        <div className="p-4 text-center text-(--text-secondary) text-[13px]">No conversations found.</div>
+                    )}
                 </div>
             </div>
 
@@ -208,14 +299,14 @@ export default function MessagesPage() {
                         <div className="absolute inset-0 z-[-1] opacity-[0.02]" style={{ backgroundImage: 'radial-gradient(var(--text-primary) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
                         {/* Pinned Message Banner */}
-                        {pinnedMessageId && activeMessages.find(m => m.id === pinnedMessageId) && (
+                        {pinnedMessageId && visibleMessages.find(m => m.id === pinnedMessageId) && (
                             <div className="sticky top-0 z-30 bg-[var(--bg-elevated)]/90 backdrop-blur-md border border-(--border-subtle) rounded-[12px] p-3 shadow-sm flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-3 overflow-hidden">
                                     <Pin className="w-[16px] h-[16px] shrink-0 text-emerald-500 fill-emerald-500/20" />
                                     <div className="flex flex-col min-w-0">
                                         <span className="font-display font-bold text-[13px] text-emerald-500">Pinned Message</span>
                                         <span className="font-body text-[13px] text-(--text-secondary) truncate max-w-[400px]">
-                                            {activeMessages.find(m => m.id === pinnedMessageId)?.text || 'Attachment'}
+                                            {visibleMessages.find(m => m.id === pinnedMessageId)?.text || 'Attachment'}
                                         </span>
                                     </div>
                                 </div>
@@ -223,11 +314,22 @@ export default function MessagesPage() {
                             </div>
                         )}
 
-                        {activeMessages.map((msg, idx) => {
-                            const isMe = msg.senderId === 'me'
+                        {!visibleMessages.length && (
+                            <div className="h-full min-h-[240px] flex items-center justify-center">
+                                <div className="text-center max-w-[320px]">
+                                    <p className="font-display font-bold text-[18px] text-(--text-primary)">No messages in this conversation</p>
+                                    <p className="mt-2 font-body text-[14px] text-(--text-secondary)">Send a message to start the chat.</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {visibleMessages.map((msg, idx) => {
+                            const isMe = msg.senderId === currentUserId
                             const sender = getParticipant(msg.senderId)
-                            const showAvatar = !isMe && (idx === activeMessages.length - 1 || activeMessages[idx + 1].senderId !== msg.senderId)
+                            const showAvatar = !isMe && (idx === visibleMessages.length - 1 || visibleMessages[idx + 1].senderId !== msg.senderId)
                             const replyMsg = msg.replyToId ? activeMessages.find(m => m.id === msg.replyToId) : null
+                            const messageText = editedMessageTexts[msg.id] ?? msg.text
+                            const isStarred = starredMessageIds.includes(msg.id)
 
                             return (
                                 <div
@@ -238,7 +340,7 @@ export default function MessagesPage() {
                                 >
 
                                     {/* Sender Name above group (if not consecutive) */}
-                                    {!isMe && (idx === 0 || activeMessages[idx - 1].senderId !== msg.senderId) && (
+                                    {!isMe && (idx === 0 || visibleMessages[idx - 1].senderId !== msg.senderId) && (
                                         <span className="font-body text-[12px] text-(--text-secondary) font-bold ml-12 mb-1">{sender?.name}</span>
                                     )}
 
@@ -247,7 +349,7 @@ export default function MessagesPage() {
                                         <div className={cn("flex items-center gap-2 mb-1 opacity-70 cursor-pointer hover:opacity-100 transition-opacity", isMe ? "mr-[10px]" : "ml-[42px]")}>
                                             <Reply className="w-[12px] h-[12px] text-(--text-tertiary) rotate-180" />
                                             <div className="bg-[var(--bg-elevated)] border border-(--border-subtle) rounded-[8px] px-3 py-1.5 max-w-[200px] truncate">
-                                                <span className="font-body text-[11px] font-bold text-(--text-primary)">{replyMsg.senderId === 'me' ? 'You' : getParticipant(replyMsg.senderId)?.name}: </span>
+                                                <span className="font-body text-[11px] font-bold text-(--text-primary)">{replyMsg.senderId === currentUserId ? 'You' : getParticipant(replyMsg.senderId)?.name}: </span>
                                                 <span className="font-body text-[11px] text-(--text-secondary)">{replyMsg.text || 'Attachment'}</span>
                                             </div>
                                         </div>
@@ -267,12 +369,12 @@ export default function MessagesPage() {
                                             <div className="flex items-center gap-0.5 mr-2 opacity-0 group-hover/message:opacity-100 transition-opacity bg-(--bg-surface) shadow-sm border border-(--border-subtle) rounded-full px-1 py-0.5">
                                                 <button onClick={() => setReplyingTo(msg.id)} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Reply"><Reply className="w-[14px] h-[14px] -scale-x-100" /></button>
                                                 <button onClick={() => setShowReactionMenuFor(msg.id)} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="React"><Smile className="w-[14px] h-[14px]" /></button>
-                                                <button onClick={() => toast.success('Copied')} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Copy"><Copy className="w-[14px] h-[14px]" /></button>
+                                                <button onClick={() => { void handleCopyMessage(messageText) }} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Copy"><Copy className="w-[14px] h-[14px]" /></button>
                                                 <button onClick={() => { setPinnedMessageId(msg.id); toast.success('Message pinned') }} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Pin"><Pin className="w-[14px] h-[14px]" /></button>
-                                                <button onClick={() => toast.success('Starred')} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-yellow-500 transition-colors" title="Star"><Star className="w-[14px] h-[14px]" /></button>
-                                                <button onClick={() => toast.success('Edit mode')} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Edit"><Edit2 className="w-[14px] h-[14px]" /></button>
-                                                <button onClick={() => toast.success('Forwarding...')} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Forward"><Forward className="w-[14px] h-[14px]" /></button>
-                                                <button onClick={() => toast.error('Message deleted')} className="w-[28px] h-[28px] rounded-full hover:bg-red-500/10 flex items-center justify-center text-(--text-tertiary) hover:text-red-500 transition-colors" title="Delete"><Trash2 className="w-[14px] h-[14px]" /></button>
+                                                <button onClick={() => setStarredMessageIds((current) => current.includes(msg.id) ? current.filter((id) => id !== msg.id) : [...current, msg.id])} className={cn("w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors", isStarred ? 'text-yellow-500' : 'text-(--text-tertiary) hover:text-yellow-500')} title="Star"><Star className={cn("w-[14px] h-[14px]", isStarred ? 'fill-current' : '')} /></button>
+                                                <button onClick={() => { setEditingMessageId(msg.id); setInputText(messageText) }} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Edit"><Edit2 className="w-[14px] h-[14px]" /></button>
+                                                <button onClick={() => handleForwardMessage(msg)} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Forward"><Forward className="w-[14px] h-[14px]" /></button>
+                                                <button onClick={() => handleDeleteForMe(msg.id)} className="w-[28px] h-[28px] rounded-full hover:bg-red-500/10 flex items-center justify-center text-(--text-tertiary) hover:text-red-500 transition-colors" title="Delete"><Trash2 className="w-[14px] h-[14px]" /></button>
                                             </div>
                                         )}
 
@@ -301,7 +403,7 @@ export default function MessagesPage() {
                                                         ? "bg-emerald-500 text-white rounded-[20px] rounded-br-[4px] shadow-sm ml-auto"
                                                         : "bg-[var(--bg-elevated)] border border-(--border-default) text-(--text-primary) rounded-[20px] rounded-bl-[4px] shadow-sm"
                                                 )}>
-                                                    {msg.text}
+                                                    {messageText}
                                                 </div>
                                             )}
 
@@ -311,7 +413,7 @@ export default function MessagesPage() {
                                                     {/* Group reactions by emoji */}
                                                     {Array.from(new Set(msg.reactions.map(r => r.emoji))).map(emoji => {
                                                         const count = msg.reactions.filter(r => r.emoji === emoji).length
-                                                        const meReacted = msg.reactions.some(r => r.emoji === emoji && r.userId === 'me')
+                                                        const meReacted = msg.reactions.some(r => r.emoji === emoji && r.userId === currentUserId)
                                                         return (
                                                             <button
                                                                 key={emoji}
@@ -345,18 +447,18 @@ export default function MessagesPage() {
                                             <div className="flex items-center gap-0.5 ml-2 opacity-0 group-hover/message:opacity-100 transition-opacity bg-(--bg-surface) shadow-sm border border-(--border-subtle) rounded-full px-1 py-0.5">
                                                 <button onClick={() => setShowReactionMenuFor(msg.id)} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="React"><Smile className="w-[14px] h-[14px]" /></button>
                                                 <button onClick={() => setReplyingTo(msg.id)} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Reply"><Reply className="w-[14px] h-[14px]" /></button>
-                                                <button onClick={() => toast.success('Copied')} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Copy"><Copy className="w-[14px] h-[14px]" /></button>
+                                                <button onClick={() => { void handleCopyMessage(messageText) }} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Copy"><Copy className="w-[14px] h-[14px]" /></button>
                                                 <button onClick={() => { setPinnedMessageId(msg.id); toast.success('Message pinned') }} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Pin"><Pin className="w-[14px] h-[14px]" /></button>
-                                                <button onClick={() => toast.success('Starred')} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-yellow-500 transition-colors" title="Star"><Star className="w-[14px] h-[14px]" /></button>
-                                                <button onClick={() => toast.success('Forwarding...')} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Forward"><Forward className="w-[14px] h-[14px]" /></button>
-                                                <button onClick={() => toast.error('Message from user deleted')} className="w-[28px] h-[28px] rounded-full hover:bg-red-500/10 flex items-center justify-center text-(--text-tertiary) hover:text-red-500 transition-colors" title="Delete for me"><Trash2 className="w-[14px] h-[14px]" /></button>
+                                                <button onClick={() => setStarredMessageIds((current) => current.includes(msg.id) ? current.filter((id) => id !== msg.id) : [...current, msg.id])} className={cn("w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors", isStarred ? 'text-yellow-500' : 'text-(--text-tertiary) hover:text-yellow-500')} title="Star"><Star className={cn("w-[14px] h-[14px]", isStarred ? 'fill-current' : '')} /></button>
+                                                <button onClick={() => handleForwardMessage(msg)} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Forward"><Forward className="w-[14px] h-[14px]" /></button>
+                                                <button onClick={() => handleDeleteForMe(msg.id)} className="w-[28px] h-[28px] rounded-full hover:bg-red-500/10 flex items-center justify-center text-(--text-tertiary) hover:text-red-500 transition-colors" title="Delete for me"><Trash2 className="w-[14px] h-[14px]" /></button>
                                             </div>
                                         )}
 
                                     </div>
 
                                     {/* Read Receipts & Time */}
-                                    {isMe && idx === activeMessages.length - 1 && (
+                                    {isMe && idx === visibleMessages.length - 1 && (
                                         <div className="mt-1.5 flex items-center gap-1.5 font-body text-[11px] font-semibold text-(--text-tertiary) mr-1">
                                             {msg.status === 'read' ? (
                                                 <>
@@ -381,7 +483,7 @@ export default function MessagesPage() {
                         })}
 
                         {/* Dummy Typing Indicator */}
-                        {inputText.length > 5 && (
+                        {inputText.length > 5 && !editingMessageId && (
                             <div className="flex items-end gap-2 max-w-[75%] ml-[36px]">
                                 <div className="bg-[var(--bg-elevated)] border border-(--border-default) rounded-[20px] rounded-bl-[4px] px-4 py-3 flex items-center gap-1.5 shadow-sm h-[42px]">
                                     <div className="w-[6px] h-[6px] bg-(--text-tertiary) rounded-full animate-bounce" />
@@ -400,7 +502,7 @@ export default function MessagesPage() {
                         {replyingTo && (
                             <div className="flex items-center justify-between bg-[var(--bg-elevated)] border border-(--border-default) rounded-[12px] px-4 py-2 mb-2">
                                 <div className="flex flex-col min-w-0">
-                                    <span className="font-display font-bold text-[13px] text-emerald-500">Replying to {activeMessages.find(m => m.id === replyingTo)?.senderId === 'me' ? 'Yourself' : getParticipant(activeMessages.find(m => m.id === replyingTo)?.senderId || '')?.name}</span>
+                                    <span className="font-display font-bold text-[13px] text-emerald-500">Replying to {activeMessages.find(m => m.id === replyingTo)?.senderId === currentUserId ? 'Yourself' : getParticipant(activeMessages.find(m => m.id === replyingTo)?.senderId || '')?.name}</span>
                                     <span className="font-body text-[13px] text-(--text-secondary) truncate max-w-[400px]">{activeMessages.find(m => m.id === replyingTo)?.text || 'Attachment'}</span>
                                 </div>
                                 <button onClick={() => setReplyingTo(null)} className="w-[28px] h-[28px] rounded-full hover:bg-(--border-subtle) flex items-center justify-center text-(--text-secondary) transition-colors"><X className="w-[16px] h-[16px]" /></button>
@@ -412,7 +514,13 @@ export default function MessagesPage() {
                             <div className="flex items-center gap-3 overflow-x-auto pb-2">
                                 {attachments.map((att, i) => (
                                     <div key={i} className="relative w-[80px] h-[80px] rounded-[12px] border border-(--border-subtle) overflow-hidden shrink-0 group">
-                                        <img src={att.url || att.thumbnailUrl} className="w-full h-full object-cover" alt="Staged" />
+                                        {att.type === 'image' || att.type === 'video' ? (
+                                            <img src={att.url || att.thumbnailUrl} className="w-full h-full object-cover" alt="Staged" />
+                                        ) : (
+                                            <div className="w-full h-full bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-secondary)">
+                                                <Paperclip className="w-[18px] h-[18px]" />
+                                            </div>
+                                        )}
                                         <button onClick={() => setAttachments(attachments.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 w-[20px] h-[20px] rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X className="w-[12px] h-[12px]" /></button>
                                     </div>
                                 ))}
@@ -424,10 +532,7 @@ export default function MessagesPage() {
                             <div className="flex items-center gap-1 shrink-0 pb-1.5">
                                 <button className="w-[36px] h-[36px] rounded-full flex items-center justify-center text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"><MoreHorizontal className="w-[20px] h-[20px]" /></button>
                                 <button onClick={() => fileInputRef.current?.click()} className="w-[36px] h-[36px] rounded-full flex items-center justify-center text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"><ImageIcon className="w-[20px] h-[20px]" /></button>
-                                <button onClick={() => {
-                                    const id = toast.loading('Recording voice note...')
-                                    setTimeout(() => toast.success('Voice note attached', { id }), 2000)
-                                }} className="w-[36px] h-[36px] rounded-full flex items-center justify-center text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"><Mic className="w-[20px] h-[20px]" /></button>
+                                <button onClick={handleVoiceNote} className="w-[36px] h-[36px] rounded-full flex items-center justify-center text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"><Mic className="w-[20px] h-[20px]" /></button>
                                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileSelect} />
                             </div>
 
@@ -449,7 +554,7 @@ export default function MessagesPage() {
                                     className="w-[48px] h-[48px] shrink-0 rounded-[24px] rounded-bl-[8px] bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-md mb-0.5 cursor-pointer"
                                     style={{ transformOrigin: 'center right' }}
                                 >
-                                    <Send className="w-[20px] h-[20px] ml-1" />
+                                    {editingMessageId ? <Check className="w-[20px] h-[20px]" /> : <Send className="w-[20px] h-[20px] ml-1" />}
                                 </button>
                             ) : (
                                 <button className="w-[48px] h-[48px] shrink-0 rounded-[24px] rounded-bl-[8px] bg-[var(--bg-elevated)] border border-(--border-subtle) text-blue-500 hover:bg-blue-500/10 flex items-center justify-center transition-colors mb-0.5 cursor-pointer">
@@ -467,7 +572,7 @@ export default function MessagesPage() {
                     </div>
                     <h3 className="font-display font-bold text-[24px] text-(--text-primary) mb-2">Your Messages</h3>
                     <p className="font-body text-[15px] max-w-[300px] text-center">Chat with athletes, coaches, and friends. Send photos and videos.</p>
-                    <button className="mt-6 bg-emerald-500 text-white px-6 py-2.5 rounded-full font-bold text-[15px] hover:bg-emerald-600 transition-colors shadow-sm cursor-pointer">Start a conversation</button>
+                    <button onClick={() => router.push('/coaching')} className="mt-6 bg-emerald-500 text-white px-6 py-2.5 rounded-full font-bold text-[15px] hover:bg-emerald-600 transition-colors shadow-sm cursor-pointer">Start a conversation</button>
                 </div>
             )}
         </motion.div>

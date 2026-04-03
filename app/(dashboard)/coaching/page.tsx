@@ -165,7 +165,7 @@ export default function CoachingPage() {
                                         <Filter className="w-[24px] h-[24px] text-(--text-tertiary)" />
                                     </div>
                                     <h3 className="font-display font-bold text-[18px] text-(--text-primary) mb-2">No Coaches Found</h3>
-                                    <p className="text-(--text-secondary) font-body text-[14px] max-w-[300px]">We couldn't find anyone matching those precise filters. Try broadening your criteria.</p>
+                                    <p className="text-(--text-secondary) font-body text-[14px] max-w-[300px]">We couldn&apos;t find anyone matching those precise filters. Try broadening your criteria.</p>
                                     <button onClick={() => { setSearchQuery(''); setLocationFilter(''); setSpecialtyFilter(''); setRatingFilter(''); }} className="mt-6 text-emerald-500 font-bold text-[14px]">Clear Filters</button>
                                 </motion.div>
                             )}

@@ -1,13 +1,118 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Store, Globe, CheckCircle2, AlertCircle, TrendingUp, Tags, Image as ImageIcon } from 'lucide-react'
+import { Globe, TrendingUp, Tags, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { useCoachPortalStore } from '@/store/useCoachPortalStore'
+import { useRouter } from 'next/navigation'
 
 export default function MarketplacePage() {
+    const router = useRouter()
     const [isActive, setIsActive] = useState(true)
+    const [coachId, setCoachId] = useState<string | null>(null)
+    const [displayName, setDisplayName] = useState('')
+    const [headline, setHeadline] = useState('')
+    const [specialties, setSpecialties] = useState('')
+    const [coverUrl, setCoverUrl] = useState('')
+    const [clientCap, setClientCap] = useState('30')
+    const [monthlyRevenue, setMonthlyRevenue] = useState(0)
+    const [transactionCount, setTransactionCount] = useState(0)
+    const [isSaving, setIsSaving] = useState(false)
+    const { initialize, programs, clients } = useCoachPortalStore()
+
+    useEffect(() => {
+        void initialize()
+    }, [initialize])
+
+    useEffect(() => {
+        void (async () => {
+            if (!isSupabaseAuthEnabled()) return
+
+            const supabase = createClient()
+            const { data: authData } = await supabase.auth.getUser()
+            const userId = authData.user?.id
+            if (!userId) return
+
+            setCoachId(userId)
+
+            const [{ data: profile }, { data: transactions }] = await Promise.all([
+                supabase
+                    .from('profiles')
+                    .select('full_name,goal,avatar_url,account_status,exercise_preferences,session_duration')
+                    .eq('id', userId)
+                    .single(),
+                supabase
+                    .from('payment_transactions')
+                    .select('amount_cents,created_at,status')
+                    .eq('coach_id', userId),
+            ])
+
+            setDisplayName(String(profile?.full_name || 'Coach Profile'))
+            setHeadline(String(profile?.goal || 'Strength and body composition coaching'))
+            setSpecialties(Array.isArray(profile?.exercise_preferences) ? profile.exercise_preferences.join(', ') : '')
+            setCoverUrl(String(profile?.avatar_url || ''))
+            setClientCap(String(profile?.session_duration || 30))
+            setIsActive(String(profile?.account_status || 'active') === 'active')
+
+            const now = new Date()
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+            const monthlyTransactions = (transactions || []).filter((entry) => {
+                if (entry.status !== 'succeeded') return false
+                return new Date(entry.created_at).getTime() >= monthStart.getTime()
+            })
+
+            setTransactionCount(monthlyTransactions.length)
+            setMonthlyRevenue(
+                monthlyTransactions.reduce((sum, entry) => sum + Number(entry.amount_cents || 0), 0) / 100,
+            )
+        })()
+    }, [])
+
+    const activeClients = useMemo(
+        () => clients.filter((client) => client.status === 'Active').length,
+        [clients],
+    )
+
+    const conversionRate = useMemo(() => {
+        const cap = Number(clientCap) || 1
+        return Math.min(100, (activeClients / cap) * 100)
+    }, [activeClients, clientCap])
+
+    const handleSave = async () => {
+        if (!coachId) {
+            toast.error('Sign in again to update marketplace details.')
+            return
+        }
+
+        setIsSaving(true)
+        const supabase = createClient()
+
+        const { error } = await supabase
+            .from('profiles')
+            .update({
+                full_name: displayName.trim(),
+                goal: headline.trim(),
+                avatar_url: coverUrl.trim() || null,
+                exercise_preferences: specialties
+                    .split(',')
+                    .map((entry) => entry.trim())
+                    .filter(Boolean),
+                session_duration: Number(clientCap) || 30,
+                account_status: isActive ? 'active' : 'inactive',
+            })
+            .eq('id', coachId)
+
+        if (error) {
+            toast.error(error.message)
+        } else {
+            toast.success('Marketplace profile updated.')
+        }
+        setIsSaving(false)
+    }
 
     return (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-4xl mx-auto h-full">
@@ -43,32 +148,43 @@ export default function MarketplacePage() {
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-2">
                                 <label className="font-body text-[13px] font-bold text-(--text-secondary)">Header Image</label>
-                                <div onClick={() => toast('Opening file picker for header image...')} className="h-[160px] rounded-[16px] border-2 border-dashed border-(--border-subtle) bg-[var(--bg-elevated)] flex flex-col items-center justify-center text-(--text-tertiary) hover:text-emerald-500 hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-colors cursor-pointer group">
+                                <div className="h-[160px] rounded-[16px] border-2 border-dashed border-(--border-subtle) bg-[var(--bg-elevated)] flex flex-col items-center justify-center text-(--text-tertiary) hover:text-emerald-500 hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-colors group">
                                     <ImageIcon className="w-[32px] h-[32px] mb-2 group-hover:scale-110 transition-transform" />
-                                    <span className="font-body font-bold text-[14px]">Click to upload new cover</span>
-                                    <span className="font-body text-[12px] opacity-70">1200x400px recommended</span>
+                                    <span className="font-body font-bold text-[14px]">Paste your cover image URL</span>
+                                    <span className="font-body text-[12px] opacity-70">Use any publicly accessible image URL</span>
                                 </div>
+                                <input
+                                    value={coverUrl}
+                                    onChange={(event) => setCoverUrl(event.target.value)}
+                                    placeholder="https://..."
+                                    className="h-[42px] px-3 rounded-[10px] bg-[var(--bg-elevated)] border border-(--border-default) text-[13px] outline-none"
+                                />
                             </div>
                             
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="flex flex-col gap-2">
-                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">Experience (Years)</label>
-                                    <input type="number" defaultValue={8} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full" />
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">Display Name</label>
+                                    <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} type="text" className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full" />
                                 </div>
                                 <div className="flex flex-col gap-2">
                                     <label className="font-body text-[13px] font-bold text-(--text-secondary)">Client Cap</label>
-                                    <input type="number" defaultValue={30} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full" />
+                                    <input value={clientCap} onChange={(event) => setClientCap(event.target.value)} type="number" className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full" />
                                 </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                                <label className="font-body text-[13px] font-bold text-(--text-secondary)">Public Headline</label>
+                                <input value={headline} onChange={(event) => setHeadline(event.target.value)} type="text" className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full" />
                             </div>
 
                             <div className="flex flex-col gap-2">
                                 <label className="font-body text-[13px] font-bold text-(--text-secondary)">Specialties <span className="font-normal text-(--text-tertiary)">(Comma separated)</span></label>
-                                <input type="text" defaultValue="Muscle Gain, Powerlifting, Strength Matrix" className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full" />
+                                <input value={specialties} onChange={(event) => setSpecialties(event.target.value)} type="text" className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full" />
                             </div>
 
                             <div className="flex flex-col gap-2">
-                                <label className="font-body text-[13px] font-bold text-(--text-secondary)">Public Bio</label>
-                                <textarea rows={4} defaultValue="Strength architect. I build competitive powerlifters and serious bodybuilders..." className="p-4 rounded-[16px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full resize-none" />
+                                <label className="font-body text-[13px] font-bold text-(--text-secondary)">Marketplace Notes</label>
+                                <textarea rows={4} value={headline} onChange={(event) => setHeadline(event.target.value)} className="p-4 rounded-[16px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full resize-none" />
                             </div>
                         </div>
                     </div>
@@ -80,16 +196,16 @@ export default function MarketplacePage() {
                         <h3 className="font-display font-black text-[18px] text-(--text-primary) mb-4 flex items-center gap-2"><TrendingUp className="w-[18px] h-[18px] text-emerald-500" /> Marketplace Stats</h3>
                         <div className="flex flex-col gap-4">
                             <div className="flex items-center justify-between pb-3 border-b border-(--border-subtle)">
-                                <span className="font-body text-[14px] text-(--text-secondary)">Profile Views (30d)</span>
-                                <span className="font-display font-bold text-[18px] text-(--text-primary)">1,248</span>
+                                <span className="font-body text-[14px] text-(--text-secondary)">Active Clients</span>
+                                <span className="font-display font-bold text-[18px] text-(--text-primary)">{activeClients}</span>
                             </div>
                             <div className="flex items-center justify-between pb-3 border-b border-(--border-subtle)">
-                                <span className="font-body text-[14px] text-(--text-secondary)">Conversion Rate</span>
-                                <span className="font-display font-bold text-[18px] text-emerald-500">4.2%</span>
+                                <span className="font-body text-[14px] text-(--text-secondary)">Roster Utilization</span>
+                                <span className="font-display font-bold text-[18px] text-emerald-500">{conversionRate.toFixed(1)}%</span>
                             </div>
                             <div className="flex items-center justify-between">
-                                <span className="font-body text-[14px] text-(--text-secondary)">Active Subs</span>
-                                <span className="font-display font-bold text-[18px] text-(--text-primary)">24 <span className="text-[12px] text-(--text-tertiary)">/ 30</span></span>
+                                <span className="font-body text-[14px] text-(--text-secondary)">Monthly Revenue</span>
+                                <span className="font-display font-bold text-[18px] text-(--text-primary)">${monthlyRevenue.toFixed(2)} <span className="text-[12px] text-(--text-tertiary)">{transactionCount} txns</span></span>
                             </div>
                         </div>
                     </div>
@@ -99,29 +215,22 @@ export default function MarketplacePage() {
                             <h3 className="font-display font-black text-[18px] text-(--text-primary) flex items-center gap-2"><Tags className="w-[18px] h-[18px] text-purple-500" /> Pricing Tiers</h3>
                         </div>
                         <div className="flex flex-col gap-3 flex-1">
-                            <div className="p-3 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) flex items-center justify-between cursor-pointer hover:border-emerald-500 transition-colors">
-                                <div>
-                                    <span className="block font-display font-bold text-[14px] text-(--text-primary)">Basic Tier</span>
-                                    <span className="block font-body text-[12px] text-(--text-secondary)">14 active</span>
+                            {programs.slice(0, 3).map((program) => (
+                                <div key={program.id} className="p-3 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) flex items-center justify-between hover:border-emerald-500 transition-colors">
+                                    <div>
+                                        <span className="block font-display font-bold text-[14px] text-(--text-primary)">{program.name}</span>
+                                        <span className="block font-body text-[12px] text-(--text-secondary)">{program.enrolled} enrolled • {program.difficulty}</span>
+                                    </div>
+                                    <span className="font-display font-black text-[16px] text-(--text-primary)">{program.length}</span>
                                 </div>
-                                <span className="font-display font-black text-[16px] text-(--text-primary)">$49/mo</span>
-                            </div>
-                            <div className="p-3 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) flex items-center justify-between cursor-pointer hover:border-emerald-500 transition-colors">
-                                <div>
-                                    <span className="block font-display font-bold text-[14px] text-(--text-primary)">Premium Tier</span>
-                                    <span className="block font-body text-[12px] text-(--text-secondary)">8 active</span>
+                            ))}
+                            {!programs.length && (
+                                <div className="p-3 rounded-[12px] border border-dashed border-(--border-subtle) text-[12px] text-(--text-secondary)">
+                                    No program tiers yet. Add one from Program Builder.
                                 </div>
-                                <span className="font-display font-black text-[16px] text-(--text-primary)">$99/mo</span>
-                            </div>
-                            <div className="p-3 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) flex items-center justify-between cursor-pointer hover:border-emerald-500 transition-colors">
-                                <div>
-                                    <span className="block font-display font-bold text-[14px] text-(--text-primary)">Elite Tier</span>
-                                    <span className="block font-body text-[12px] text-(--text-secondary)">2 active</span>
-                                </div>
-                                <span className="font-display font-black text-[16px] text-(--text-primary)">$199/mo</span>
-                            </div>
+                            )}
                         </div>
-                        <button onClick={() => toast('Opening Add Product / Tier modal...')} className="w-full h-[40px] mt-4 rounded-[10px] border border-dashed border-(--border-subtle) text-(--text-secondary) font-bold text-[13px] hover:text-(--text-primary) hover:border-emerald-500 transition-colors">
+                        <button onClick={() => router.push('/coach/programs')} className="w-full h-[40px] mt-4 rounded-[10px] border border-dashed border-(--border-subtle) text-(--text-secondary) font-bold text-[13px] hover:text-(--text-primary) hover:border-emerald-500 transition-colors">
                             + Add New Tier
                         </button>
                     </div>
@@ -130,13 +239,11 @@ export default function MarketplacePage() {
 
             <div className="flex justify-end pt-4 border-t border-(--border-subtle)">
                 <button 
-                    onClick={() => {
-                        const id = toast.loading('Saving changes...')
-                        setTimeout(() => toast.success('Profile updated successfully!', { id }), 800)
-                    }}
+                    onClick={() => { void handleSave() }}
+                    disabled={isSaving}
                     className="h-[48px] px-8 rounded-[14px] bg-emerald-500 hover:bg-emerald-600 text-white font-display font-bold text-[16px] transition-all shadow-md flex items-center justify-center gap-2"
                 >
-                    Save Changes
+                    {isSaving ? 'Saving...' : 'Save Changes'}
                 </button>
             </div>
         </motion.div>

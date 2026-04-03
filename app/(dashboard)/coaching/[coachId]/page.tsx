@@ -2,15 +2,20 @@
 
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Star, MapPin, Award, CheckCircle2, PlayCircle, Users, Activity } from 'lucide-react'
+import { ArrowLeft, Star, MapPin, Award, CheckCircle2, PlayCircle, Activity } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export default function CoachProfilePage() {
     const params = useParams()
     const router = useRouter()
     const [activeTab, setActiveTab] = useState<'programs' | 'posts' | 'reviews'>('programs')
+    const [isSubscribing, setIsSubscribing] = useState(false)
+    const tabs: Array<'programs' | 'posts' | 'reviews'> = ['programs', 'posts', 'reviews']
 
     // Mock data for the coach
     const coach = {
@@ -26,10 +31,57 @@ export default function CoachProfilePage() {
         bio: 'Strength architect. I build competitive powerlifters and serious bodybuilders. My methodology is rooted in biomechanics and progressive overload, ensuring every session brings you closer to your genetic potential.',
     }
 
-    const handleSubscribe = () => {
-        // In a real app, this would process payment and update subscription state
-        alert('Subscribed successfully! Redirecting to hub...')
-        router.push('/coaching')
+    const handleSubscribe = async (planName = 'Premium Tier', amountCents = 9900) => {
+        const coachIdParam = Array.isArray(params.coachId) ? params.coachId[0] : params.coachId
+        const coachId = coachIdParam && UUID_REGEX.test(coachIdParam) ? coachIdParam : null
+        const idempotencyKey = `checkout_${Date.now()}_${crypto.randomUUID()}`
+
+        setIsSubscribing(true)
+        try {
+            let response: Response | null = null
+            for (let attempt = 1; attempt <= 2; attempt += 1) {
+                response = await fetch('/api/v1/simulated-checkout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Idempotency-Key': idempotencyKey,
+                    },
+                    body: JSON.stringify({
+                        coachId,
+                        planName,
+                        amountCents,
+                        currency: 'usd',
+                    }),
+                })
+
+                if (response.ok || response.status < 500 || attempt === 2) {
+                    break
+                }
+
+                await new Promise((resolve) => setTimeout(resolve, 300 * attempt))
+            }
+
+            if (!response) {
+                toast.error('Unable to process subscription right now.')
+                return
+            }
+
+            const payload = await response.json().catch(() => null)
+            if (!response.ok) {
+                toast.error(payload?.detail || 'Unable to process subscription right now.')
+                if (response.status === 401) {
+                    router.push('/auth')
+                }
+                return
+            }
+
+            toast.success(`Subscription active: ${planName}`)
+            router.push('/coaching')
+        } catch {
+            toast.error('Unable to process subscription right now.')
+        } finally {
+            setIsSubscribing(false)
+        }
     }
 
     return (
@@ -45,12 +97,14 @@ export default function CoachProfilePage() {
             {/* Profile Header */}
             <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] overflow-hidden shadow-sm mb-6 relative">
                 <div className="h-[200px] w-full bg-[#1c1c1c] relative overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={coach.cover} alt="Cover" className="w-full h-full object-cover opacity-60" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
                 </div>
                 
                 <div className="px-6 sm:px-10 pb-8 relative pt-20">
                     <div className="absolute -top-[60px] left-6 sm:left-10 p-2 bg-(--bg-surface) rounded-[24px] border border-(--border-subtle) shadow-md">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={coach.avatar} alt={coach.name} className="w-[100px] h-[100px] rounded-[16px] object-cover" />
                     </div>
 
@@ -79,10 +133,17 @@ export default function CoachProfilePage() {
                         </div>
 
                         <div className="flex flex-col gap-3 min-w-[200px]">
-                            <button onClick={handleSubscribe} className="h-[48px] px-8 rounded-[14px] bg-emerald-500 hover:bg-emerald-600 text-white font-display font-bold text-[16px] transition-all shadow-md flex items-center justify-center gap-2 w-full cursor-pointer">
-                                Subscribe Now
+                            <button
+                                onClick={() => { void handleSubscribe() }}
+                                disabled={isSubscribing}
+                                className="h-[48px] px-8 rounded-[14px] bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-display font-bold text-[16px] transition-all shadow-md flex items-center justify-center gap-2 w-full cursor-pointer"
+                            >
+                                {isSubscribing ? 'Processing...' : 'Subscribe Now'}
                             </button>
-                            <button className="h-[48px] px-8 rounded-[14px] border border-(--border-subtle) bg-[var(--bg-elevated)] hover:bg-[var(--bg-surface-alt)] text-(--text-primary) font-display font-bold text-[16px] transition-all flex items-center justify-center gap-2 w-full cursor-pointer">
+                            <button
+                                onClick={() => router.push(`/messages?coach=${encodeURIComponent(coach.name)}`)}
+                                className="h-[48px] px-8 rounded-[14px] border border-(--border-subtle) bg-[var(--bg-elevated)] hover:bg-[var(--bg-surface-alt)] text-(--text-primary) font-display font-bold text-[16px] transition-all flex items-center justify-center gap-2 w-full cursor-pointer"
+                            >
                                 Send Message
                             </button>
                         </div>
@@ -94,10 +155,10 @@ export default function CoachProfilePage() {
                 {/* Main Content */}
                 <div className="flex-1 flex flex-col gap-6">
                     <div className="flex border-b border-(--border-subtle) gap-6 overflow-x-auto no-scrollbar">
-                        {['programs', 'posts', 'reviews'].map((tab) => (
+                        {tabs.map((tab) => (
                             <button
                                 key={tab}
-                                onClick={() => setActiveTab(tab as any)}
+                                onClick={() => setActiveTab(tab)}
                                 className={cn("pb-3 font-display font-black text-[16px] transition-colors relative whitespace-nowrap capitalize", activeTab === tab ? "text-(--text-primary)" : "text-(--text-tertiary) hover:text-(--text-secondary)")}
                             >
                                 {tab}
@@ -123,7 +184,11 @@ export default function CoachProfilePage() {
                                             </li>
                                         ))}
                                     </ul>
-                                    <button onClick={handleSubscribe} className="w-full h-[44px] rounded-[12px] bg-[var(--bg-elevated)] group-hover:bg-emerald-500 group-hover:text-white border border-(--border-default) group-hover:border-emerald-500 font-bold text-[14px] transition-colors cursor-pointer">
+                                    <button
+                                        onClick={() => { void handleSubscribe(plan.name, plan.price * 100) }}
+                                        disabled={isSubscribing}
+                                        className="w-full h-[44px] rounded-[12px] bg-[var(--bg-elevated)] group-hover:bg-emerald-500 group-hover:text-white border border-(--border-default) group-hover:border-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed font-bold text-[14px] transition-colors cursor-pointer"
+                                    >
                                         Select Plan
                                     </button>
                                 </div>
@@ -168,7 +233,8 @@ export default function CoachProfilePage() {
 
                     {/* Intro Video */}
                     <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-4 shadow-sm relative overflow-hidden group cursor-pointer h-[180px]">
-                        <img src="https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=400&fit=crop" className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500" />
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src="https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=400&fit=crop" alt="Coach intro video thumbnail" className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500" />
                         <div className="absolute inset-0 bg-black/40" />
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
                             <div className="w-[48px] h-[48px] rounded-full bg-emerald-500 text-white flex items-center justify-center mb-2 shadow-lg group-hover:scale-110 transition-transform">

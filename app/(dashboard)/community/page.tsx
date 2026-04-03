@@ -6,17 +6,18 @@
  * reposts, likes, and deep engagement buttons.
  */
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     Heart, MessageCircle, Share2, Trophy, Flame, Search,
     Plus, X, Loader2, Image as ImageIcon, BarChart2, Repeat2,
-    MoreHorizontal, BadgeCheck, CheckCircle2, TrendingUp, Users, Bookmark, ChevronDown, Globe
+    MoreHorizontal, BadgeCheck, CheckCircle2, Users, Bookmark, ChevronDown
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useCommunityStore } from '@/store/useCommunityStore'
 import { useAuthStore } from '@/store/useAuthStore'
+import { CommunityPost } from '@/types'
 
 export default function CommunityPage() {
     const [feedTab, setFeedTab] = useState<'foryou' | 'following'>('foryou')
@@ -34,21 +35,42 @@ export default function CommunityPage() {
 
     const [pollVotes, setPollVotes] = useState<Record<string, string>>({})
     const [followingIds, setFollowingIds] = useState<string[]>(['usr_2', 'usr_3']) // Mock starting following
+    const [hiddenPostIds, setHiddenPostIds] = useState<string[]>([])
+    const [mutedUserIds, setMutedUserIds] = useState<string[]>([])
+    const [blockedUserIds, setBlockedUserIds] = useState<string[]>([])
+    const [bookmarkedPostIds, setBookmarkedPostIds] = useState<string[]>([])
+    const [reportedPostIds, setReportedPostIds] = useState<string[]>([])
+    const [editedPostContent, setEditedPostContent] = useState<Record<string, string>>({})
+    const [editingPostId, setEditingPostId] = useState<string | null>(null)
 
-    const { posts, addPost, likePost, repostPost, deletePost } = useCommunityStore()
+    const { posts, addPost, likePost, repostPost, addComment, deletePost, fetchPosts, isLoading, error } = useCommunityStore()
     const { user } = useAuthStore()
 
-    const displayPosts = feedTab === 'foryou' ? posts : posts.filter(p => p.userId === user?.id || followingIds.includes(p.userId))
+    useEffect(() => {
+        if (!user?.id) return
+        void fetchPosts()
+    }, [fetchPosts, user?.id])
+
+    const visiblePosts = posts.filter((post) => !hiddenPostIds.includes(post.id) && !mutedUserIds.includes(post.userId) && !blockedUserIds.includes(post.userId))
+    const displayPosts = feedTab === 'foryou'
+        ? visiblePosts
+        : visiblePosts.filter((post) => post.userId === user?.id || followingIds.includes(post.userId))
 
     const handlePost = async () => {
         if (!newPostContent.trim() || !user) return
+
+        if (editingPostId) {
+            handleSavePostEdit(editingPostId)
+            return
+        }
+
         setIsPosting(true)
         await new Promise(r => setTimeout(r, 600))
         addPost({
             userId: user.id || 'usr_x',
             userName: user.name || 'Current User',
             userHandle: `@${user.email?.split('@')[0] || 'user'}`,
-            userAvatar: user.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=new_${Date.now()}`,
+            userAvatar: user.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=new_${user.id}`,
             isCoach: false,
             content: newPostContent,
             type: 'text',
@@ -57,6 +79,53 @@ export default function CommunityPage() {
         setNewPostContent('')
         setShowComposer(false)
         setIsPosting(false)
+    }
+
+    const handleBookmarkToggle = (postId: string) => {
+        setBookmarkedPostIds((current) =>
+            current.includes(postId) ? current.filter((id) => id !== postId) : [...current, postId]
+        )
+    }
+
+    const handleShare = async (postId: string) => {
+        const shareUrl = `${window.location.origin}/community?post=${postId}`
+        try {
+            await navigator.clipboard.writeText(shareUrl)
+            toast.success('Post link copied to clipboard.')
+        } catch {
+            toast.error('Unable to copy post link.')
+        }
+    }
+
+    const handleReplyPost = (postId: string) => {
+        if (!replyText.trim() || !user) return
+        addComment(postId, {
+            authorId: user.id,
+            authorName: user.name || 'Current User',
+            authorHandle: `@${user.email?.split('@')[0] || 'user'}`,
+            authorAvatar: user.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=reply_${user.id}`,
+            content: replyText.trim(),
+            timestamp: new Date().toISOString(),
+        })
+        toast.success('Reply posted.')
+        setReplyText('')
+        setExpandedPostId(null)
+    }
+
+    const handleEditStart = (post: CommunityPost) => {
+        setEditingPostId(post.id)
+        setNewPostContent(editedPostContent[post.id] || post.content)
+        setShowComposer(true)
+        setPostMenuOpenId(null)
+    }
+
+    const handleSavePostEdit = (postId: string) => {
+        if (!newPostContent.trim()) return
+        setEditedPostContent((current) => ({ ...current, [postId]: newPostContent.trim() }))
+        setEditingPostId(null)
+        setShowComposer(false)
+        setNewPostContent('')
+        toast.success('Post updated.')
     }
 
     const leaderboard = [
@@ -75,10 +144,13 @@ export default function CommunityPage() {
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     }
 
-    const renderPost = (post: any) => {
+    const renderPost = (post: CommunityPost) => {
         const isLiked = !!(user && post.isLiked)
         const isReposted = !!post.isReposted
         const isOwn = user && post.userId === user.id
+        const isBookmarked = bookmarkedPostIds.includes(post.id)
+        const postContent = editedPostContent[post.id] || post.content
+        const isReported = reportedPostIds.includes(post.id)
 
         return (
             <motion.div
@@ -98,7 +170,7 @@ export default function CommunityPage() {
                 <div className="flex gap-3 sm:gap-4">
                     {/* Avatar Column */}
                     <div className="flex flex-col items-center shrink-0 w-[40px] sm:w-[48px]">
-                        <img src={post.userAvatar || post.authorAvatar} alt="Avatar" className="w-[40px] h-[40px] sm:w-[48px] sm:h-[48px] rounded-full object-cover border border-(--border-subtle)" />
+                        <img src={post.userAvatar} alt="Avatar" className="w-[40px] h-[40px] sm:w-[48px] sm:h-[48px] rounded-full object-cover border border-(--border-subtle)" />
                         {expandedPostId === post.id && <div className="w-[2px] h-full bg-(--border-subtle) mt-2" />}
                     </div>
 
@@ -108,15 +180,15 @@ export default function CommunityPage() {
                         <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="font-display font-bold text-[15px] sm:text-[16px] text-(--text-primary) hover:underline cursor-pointer truncate max-w-[150px] sm:max-w-none">
-                                    {post.userName || post.authorName}
+                                    {post.userName}
                                 </span>
                                 {post.isVerified && <BadgeCheck className="w-[16px] h-[16px] text-blue-500 shrink-0" />}
                                 {post.isCoach && <span className="bg-emerald-500/10 text-emerald-600 font-bold text-[10px] uppercase px-1.5 py-0.5 rounded-[4px] shrink-0">Coach</span>}
                                 <span className="font-body text-[14px] text-(--text-tertiary) truncate">
-                                    {post.userHandle || post.authorHandle}
+                                    {post.userHandle}
                                 </span>
                                 <span className="font-body text-[14px] text-(--text-tertiary)">·</span>
-                                <span className="font-body text-[14px] text-(--text-tertiary)">{formatTimestamp(post.postedAt || post.timestamp)}</span>
+                                <span className="font-body text-[14px] text-(--text-tertiary)">{formatTimestamp(post.postedAt)}</span>
                             </div>
                             <div className="relative">
                                 <button onClick={() => setPostMenuOpenId(postMenuOpenId === post.id ? null : post.id)} className="text-(--text-tertiary) hover:text-(--accent) transition-colors p-1 rounded-full hover:bg-[var(--bg-elevated)] shrink-0">
@@ -125,14 +197,14 @@ export default function CommunityPage() {
                                 <AnimatePresence>
                                     {postMenuOpenId === post.id && (
                                         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="absolute right-0 top-full mt-1 bg-[var(--bg-elevated)] border border-(--border-subtle) rounded-[12px] shadow-lg w-[160px] py-1 z-50">
-                                            {isOwn && <button onClick={() => {toast.info('Edit mode enabled'); setPostMenuOpenId(null) }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Edit</button>}
+                                            {isOwn && <button onClick={() => handleEditStart(post)} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Edit</button>}
                                             {isOwn && <button onClick={() => {deletePost(post.id); toast.success('Post deleted'); setPostMenuOpenId(null) }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-red-500">Delete</button>}
                                             {!isOwn && (
                                                 <>
-                                                    <button onClick={() => {toast.info('Post hidden'); setPostMenuOpenId(null)}} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Hide</button>
-                                                    <button onClick={() => {toast.info('User muted'); setPostMenuOpenId(null)}} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Mute</button>
-                                                    <button onClick={() => {toast.info('User blocked'); setPostMenuOpenId(null)}} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Block</button>
-                                                    <button onClick={() => {toast.success('Reported'); setPostMenuOpenId(null)}} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-red-500">Report</button>
+                                                    <button onClick={() => { setHiddenPostIds((current) => current.includes(post.id) ? current : [...current, post.id]); setPostMenuOpenId(null); toast.success('Post hidden from your feed.') }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Hide</button>
+                                                    <button onClick={() => { setMutedUserIds((current) => current.includes(post.userId) ? current : [...current, post.userId]); setPostMenuOpenId(null); toast.success(`Muted ${post.userName}.`) }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Mute</button>
+                                                    <button onClick={() => { setBlockedUserIds((current) => current.includes(post.userId) ? current : [...current, post.userId]); setPostMenuOpenId(null); toast.success(`Blocked ${post.userName}.`) }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Block</button>
+                                                    <button onClick={() => { setReportedPostIds((current) => current.includes(post.id) ? current : [...current, post.id]); setPostMenuOpenId(null); toast.success('Post reported.') }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-red-500">{isReported ? 'Reported' : 'Report'}</button>
                                                 </>
                                             )}
                                         </motion.div>
@@ -143,7 +215,7 @@ export default function CommunityPage() {
 
                         {/* Text Content */}
                         <p className="font-body text-[15px] sm:text-[16px] text-(--text-primary) leading-relaxed whitespace-pre-wrap mb-3">
-                            {post.content}
+                            {postContent}
                         </p>
 
                         {/* Media Attachment */}
@@ -154,36 +226,41 @@ export default function CommunityPage() {
                         )}
 
                         {/* Poll Attachment */}
-                        {post.poll && (
-                            <div className="bg-[var(--bg-elevated)] border border-(--border-default) rounded-[16px] p-4 mb-3">
-                                <h4 className="font-display font-bold text-[15px] text-(--text-primary) mb-3">{post.poll.question}</h4>
-                                <div className="space-y-2">
-                                    {post.poll.options.map((opt: any) => {
-                                        const userVoted = pollVotes[post.id]
-                                        const extraVotes = userVoted ? (opt.id === userVoted ? 1 : 0) : 0
-                                        const actualTotal = post.poll.totalVotes + (userVoted ? 1 : 0)
-                                        const actualVotes = opt.votes + extraVotes
-                                        const pct = ((actualVotes / actualTotal) * 100).toFixed(0) || '0';
-                                        return (
-                                            <div 
-                                                key={opt.id} 
-                                                onClick={() => {
-                                                    if (!userVoted) {
-                                                        setPollVotes(prev => ({ ...prev, [post.id]: opt.id }))
-                                                    }
-                                                }}
-                                                className={cn("relative h-[36px] bg-(--bg-surface) border rounded-[8px] overflow-hidden flex items-center px-3 transition-colors", userVoted ? (userVoted === opt.id ? "border-emerald-500 font-bold" : "border-(--border-subtle)") : "border-(--border-subtle) cursor-pointer hover:border-emerald-500")}
-                                            >
-                                                <div className={cn("absolute left-0 top-0 bottom-0", userVoted === opt.id ? "bg-emerald-500/30" : "bg-emerald-500/10")} style={{ width: `${pct}%`, transition: 'width 0.5s ease' }} />
-                                                <span className="relative z-10 font-body text-[14px] text-(--text-primary) flex-1">{opt.text} {userVoted === opt.id && <CheckCircle2 className="w-[14px] h-[14px] inline-block ml-1 text-emerald-500" />}</span>
-                                                <span className="relative z-10 font-body text-[14px] text-(--text-secondary) font-bold">{pct}%</span>
-                                            </div>
-                                        )
-                                    })}
+                        {(() => {
+                            const poll = post.poll
+                            if (!poll) return null
+
+                            return (
+                                <div className="bg-[var(--bg-elevated)] border border-(--border-default) rounded-[16px] p-4 mb-3">
+                                    <h4 className="font-display font-bold text-[15px] text-(--text-primary) mb-3">{poll.question}</h4>
+                                    <div className="space-y-2">
+                                        {poll.options.map((opt: { id: string; text: string; votes: number }) => {
+                                            const userVoted = pollVotes[post.id]
+                                            const extraVotes = userVoted ? (opt.id === userVoted ? 1 : 0) : 0
+                                            const actualTotal = poll.totalVotes + (userVoted ? 1 : 0)
+                                            const actualVotes = opt.votes + extraVotes
+                                            const pct = ((actualVotes / actualTotal) * 100).toFixed(0) || '0';
+                                            return (
+                                                <div
+                                                    key={opt.id}
+                                                    onClick={() => {
+                                                        if (!userVoted) {
+                                                            setPollVotes(prev => ({ ...prev, [post.id]: opt.id }))
+                                                        }
+                                                    }}
+                                                    className={cn("relative h-[36px] bg-(--bg-surface) border rounded-[8px] overflow-hidden flex items-center px-3 transition-colors", userVoted ? (userVoted === opt.id ? "border-emerald-500 font-bold" : "border-(--border-subtle)") : "border-(--border-subtle) cursor-pointer hover:border-emerald-500")}
+                                                >
+                                                    <div className={cn("absolute left-0 top-0 bottom-0", userVoted === opt.id ? "bg-emerald-500/30" : "bg-emerald-500/10")} style={{ width: `${pct}%`, transition: 'width 0.5s ease' }} />
+                                                    <span className="relative z-10 font-body text-[14px] text-(--text-primary) flex-1">{opt.text} {userVoted === opt.id && <CheckCircle2 className="w-[14px] h-[14px] inline-block ml-1 text-emerald-500" />}</span>
+                                                    <span className="relative z-10 font-body text-[14px] text-(--text-secondary) font-bold">{pct}%</span>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                    <span className="block mt-3 font-body text-[13px] text-(--text-tertiary)">{poll.totalVotes + (pollVotes[post.id] ? 1 : 0)} votes {pollVotes[post.id] && '· Final results'}</span>
                                 </div>
-                                <span className="block mt-3 font-body text-[13px] text-(--text-tertiary)">{post.poll.totalVotes + (pollVotes[post.id] ? 1 : 0)} votes {(pollVotes[post.id] || post.poll.closed) && '· Final results'}</span>
-                            </div>
-                        )}
+                            )
+                        })()}
 
                         {/* Action Bar */}
                         <div className="flex items-center justify-between max-w-[425px] mt-1 text-(--text-tertiary)">
@@ -217,11 +294,11 @@ export default function CommunityPage() {
                                 <span>{(post.views || 0).toLocaleString()}</span>
                             </button>
 
-                            <button onClick={() => toast.success('Post bookmarked')} className="flex items-center gap-1.5 font-body text-[13px] hover:text-emerald-500 transition-colors group cursor-pointer">
-                                <div className="p-2 rounded-full group-hover:bg-emerald-500/10 transition-colors"><Bookmark className="w-[18px] h-[18px]" /></div>
+                            <button onClick={() => handleBookmarkToggle(post.id)} className={cn("flex items-center gap-1.5 font-body text-[13px] transition-colors group cursor-pointer", isBookmarked ? 'text-emerald-500' : 'hover:text-emerald-500')}>
+                                <div className={cn("p-2 rounded-full transition-colors", isBookmarked ? 'bg-emerald-500/10' : 'group-hover:bg-emerald-500/10')}><Bookmark className={cn("w-[18px] h-[18px]", isBookmarked ? 'fill-current' : '')} /></div>
                             </button>
 
-                            <button onClick={() => toast.success('Link copied to clipboard')} className="flex items-center gap-1.5 font-body text-[13px] hover:text-emerald-500 transition-colors group cursor-pointer">
+                            <button onClick={() => { void handleShare(post.id) }} className="flex items-center gap-1.5 font-body text-[13px] hover:text-emerald-500 transition-colors group cursor-pointer">
                                 <div className="p-2 rounded-full group-hover:bg-emerald-500/10 transition-colors"><Share2 className="w-[18px] h-[18px]" /></div>
                             </button>
                         </div>
@@ -253,11 +330,7 @@ export default function CommunityPage() {
                                     className="flex-1 bg-transparent border-none text-[15px] font-body text-(--text-primary) placeholder:text-(--text-tertiary) focus:ring-0 outline-none"
                                 />
                                 <button 
-                                    onClick={() => {
-                                        toast.success('Reply posted!')
-                                        setReplyText('')
-                                        setExpandedPostId(null)
-                                    }}
+                                    onClick={() => handleReplyPost(post.id)}
                                     className="px-4 py-1.5 bg-emerald-500 text-white font-bold text-[13px] rounded-full disabled:opacity-50 hover:bg-emerald-600 transition-colors cursor-pointer" 
                                     disabled={!replyText.trim()}
                                 >
@@ -309,12 +382,25 @@ export default function CommunityPage() {
                         )}
                     </div>
 
+                    {error && (
+                        <div className="mx-4 mt-4 p-3 rounded-[12px] border border-red-500/30 bg-red-500/10 text-[13px] text-red-600 flex items-center justify-between gap-2">
+                            <span className="truncate">{error}</span>
+                            <button onClick={() => { void fetchPosts() }} className="shrink-0 px-3 py-1 rounded-[8px] border border-red-500/30 font-bold text-red-700">Retry</button>
+                        </div>
+                    )}
+
                     {activeTab === 'feed' ? (
                         <>
                             {/* Tweet Composer Box (Desktop) */}
                             <div className="hidden sm:flex border-b border-(--border-subtle) p-4 gap-4 bg-(--bg-surface)">
                                 <img src={user?.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=you`} className="w-[48px] h-[48px] rounded-full border border-(--border-subtle) object-cover" />
                                 <div className="flex-1 flex flex-col">
+                                    {editingPostId && (
+                                        <div className="mb-2 flex items-center justify-between gap-2 rounded-[10px] border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-700">
+                                            <span>Editing post</span>
+                                            <button onClick={() => { setEditingPostId(null); setNewPostContent('') }} className="font-bold">Cancel</button>
+                                        </div>
+                                    )}
                                     <div className="flex items-center gap-2 mb-2 pb-2 border-b border-(--border-subtle)">
                                         <button className="flex items-center gap-1 px-3 py-1 bg-blue-500/10 text-blue-600 rounded-full font-body font-bold text-[12px] hover:bg-blue-500/20 transition-colors border border-blue-500/20 shadow-sm">
                                             <span>Everyone</span> <ChevronDown className="w-[12px] h-[12px]" />
@@ -328,15 +414,15 @@ export default function CommunityPage() {
                                     />
                                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-(--border-subtle)">
                                         <div className="flex items-center gap-1 text-emerald-500">
-                                            <button onClick={() => toast.info('Image attachment simulated')} className="p-2 hover:bg-emerald-500/10 rounded-full transition-colors cursor-pointer"><ImageIcon className="w-[20px] h-[20px]" /></button>
-                                            <button onClick={() => toast.info('Poll creation simulated')} className="p-2 hover:bg-emerald-500/10 rounded-full transition-colors cursor-pointer"><BarChart2 className="w-[20px] h-[20px]" /></button>
+                                            <button onClick={() => setNewPostContent((current) => `${current}${current ? '\n\n' : ''}https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=1200&fit=crop`)} className="p-2 hover:bg-emerald-500/10 rounded-full transition-colors cursor-pointer"><ImageIcon className="w-[20px] h-[20px]" /></button>
+                                            <button onClick={() => setNewPostContent((current) => `${current}${current ? '\n\n' : ''}Quick poll:\n- Option A\n- Option B`)} className="p-2 hover:bg-emerald-500/10 rounded-full transition-colors cursor-pointer"><BarChart2 className="w-[20px] h-[20px]" /></button>
                                         </div>
                                         <button
                                             onClick={handlePost}
                                             disabled={!newPostContent.trim() || isPosting}
                                             className="bg-emerald-500 text-white font-bold text-[15px] px-6 py-2 rounded-full disabled:opacity-50 flex items-center gap-2 hover:bg-emerald-600 transition-colors"
                                         >
-                                            {isPosting ? <Loader2 className="w-[16px] h-[16px] animate-spin" /> : null} Post
+                                            {isPosting ? <Loader2 className="w-[16px] h-[16px] animate-spin" /> : null} {editingPostId ? 'Save' : 'Post'}
                                         </button>
                                     </div>
                                 </div>
@@ -351,13 +437,18 @@ export default function CommunityPage() {
 
                             {/* Feed List */}
                             <div className="flex flex-col">
-                                {displayPosts.length > 0 ? displayPosts.map(post => renderPost(post)) : (
+                                {isLoading ? (
+                                    <div className="py-20 text-center flex flex-col items-center">
+                                        <Loader2 className="w-[32px] h-[32px] animate-spin text-emerald-500" />
+                                        <p className="mt-3 font-body text-(--text-secondary)">Loading community feed...</p>
+                                    </div>
+                                ) : displayPosts.length > 0 ? displayPosts.map(post => renderPost(post)) : (
                                     <div className="py-20 text-center flex flex-col items-center">
                                         <div className="w-[80px] h-[80px] rounded-full bg-[var(--bg-elevated)] flex items-center justify-center mb-4">
                                             <Users className="w-[40px] h-[40px] text-(--text-tertiary)" />
                                         </div>
-                                        <h3 className="font-display font-bold text-[24px] text-(--text-primary)">No posts yet</h3>
-                                        <p className="font-body text-(--text-secondary) max-w-[300px] mt-2">When you follow people, their posts will show up here.</p>
+                                        <h3 className="font-display font-bold text-[24px] text-(--text-primary)">{feedTab === 'following' ? 'No posts from people you follow' : 'No posts yet'}</h3>
+                                        <p className="font-body text-(--text-secondary) max-w-[320px] mt-2">{feedTab === 'following' ? 'Follow more athletes or switch to For you.' : 'Publish your first post to start the conversation.'}</p>
                                     </div>
                                 )}
                             </div>
@@ -469,13 +560,13 @@ export default function CommunityPage() {
                         className="fixed inset-0 z-[100] bg-(--bg-surface) sm:hidden flex flex-col"
                     >
                         <div className="flex justify-between items-center px-4 h-[56px] border-b border-(--border-subtle)">
-                            <button onClick={() => setShowComposer(false)} className="text-(--text-primary)"><X className="w-[24px] h-[24px]" /></button>
+                            <button onClick={() => { setShowComposer(false); setEditingPostId(null); setNewPostContent('') }} className="text-(--text-primary)"><X className="w-[24px] h-[24px]" /></button>
                             <button
                                 onClick={handlePost}
                                 disabled={!newPostContent.trim() || isPosting}
                                 className="bg-emerald-500 text-white font-bold text-[14px] px-5 py-1.5 rounded-full disabled:opacity-50"
                             >
-                                {isPosting ? <Loader2 className="w-[14px] h-[14px] animate-spin" /> : 'Post'}
+                                {isPosting ? <Loader2 className="w-[14px] h-[14px] animate-spin" /> : editingPostId ? 'Save' : 'Post'}
                             </button>
                         </div>
                         <div className="flex-1 p-4 flex gap-3">

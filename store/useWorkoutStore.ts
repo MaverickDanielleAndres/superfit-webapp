@@ -1,14 +1,20 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { WorkoutSession, WorkoutRoutine, Exercise, SetLog, ExerciseLog } from '@/types'
+import { createClient } from '@/lib/supabase/client'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import type { Database, Json } from '@/types/supabase'
 
 interface WorkoutState {
     sessions: WorkoutSession[]
     routines: WorkoutRoutine[]
     exerciseLibrary: Exercise[]
     activeSession: WorkoutSession | null
+    isLoading: boolean
+    error: string | null
 
     customExercises: Exercise[]
+    fetchSessions: () => Promise<void>
 
     startSession: (routineId?: string) => void
     endSession: () => void
@@ -22,10 +28,14 @@ interface WorkoutState {
     addCustomExercise: (exercise: Exercise) => void
 }
 
+type WorkoutSessionRow = Database['public']['Tables']['workout_sessions']['Row']
+
 export const useWorkoutStore = create<WorkoutState>()(
     persist(
         (set, get) => ({
             sessions: [],
+            isLoading: false,
+            error: null,
             routines: [],
             exerciseLibrary: [
                 {
@@ -62,6 +72,34 @@ export const useWorkoutStore = create<WorkoutState>()(
             customExercises: [],
             activeSession: null,
 
+            fetchSessions: async () => {
+                if (!isSupabaseAuthEnabled()) return
+
+                set({ isLoading: true, error: null })
+                const supabase = createClient()
+                const { data: authData } = await supabase.auth.getUser()
+                const userId = authData.user?.id
+
+                if (!userId) {
+                    set({ isLoading: false, error: 'User not authenticated.' })
+                    return
+                }
+
+                const { data, error } = await supabase
+                    .from('workout_sessions')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .order('start_time', { ascending: false })
+
+                if (error) {
+                    set({ isLoading: false, error: error.message })
+                    return
+                }
+
+                const mapped = (data || []).map(mapRowToWorkoutSession)
+                set({ sessions: mapped, isLoading: false, error: null })
+            },
+
             startSession: (routineId) => {
                 // mock logic for starting session
                 const newSession: WorkoutSession = {
@@ -86,6 +124,11 @@ export const useWorkoutStore = create<WorkoutState>()(
                         endTime: new Date().toISOString(),
                         isCompleted: true
                     }
+
+                    if (isSupabaseAuthEnabled()) {
+                        void persistWorkoutSession(completedSession, (message) => set({ error: message }))
+                    }
+
                     return {
                         sessions: [...state.sessions, completedSession],
                         activeSession: null
@@ -94,6 +137,10 @@ export const useWorkoutStore = create<WorkoutState>()(
             },
 
             saveWorkoutSession: (session) => {
+                if (isSupabaseAuthEnabled()) {
+                    void persistWorkoutSession(session, (message) => set({ error: message }))
+                }
+
                 set((state) => ({
                     sessions: [session, ...state.sessions]
                 }))
@@ -227,3 +274,57 @@ export const useWorkoutStore = create<WorkoutState>()(
         { name: 'superfit-workout-storage' }
     )
 )
+
+async function persistWorkoutSession(session: WorkoutSession, onError: (message: string) => void) {
+    const supabase = createClient()
+    const { data: authData } = await supabase.auth.getUser()
+    const userId = authData.user?.id
+
+    if (!userId) {
+        onError('User not authenticated.')
+        return
+    }
+
+    const payload: Database['public']['Tables']['workout_sessions']['Insert'] = {
+        id: session.id,
+        user_id: userId,
+        name: session.name,
+        date: session.date,
+        start_time: session.startTime,
+        end_time: session.endTime || null,
+        duration: session.duration || null,
+        exercises: session.exercises as unknown as Json,
+        total_volume: session.totalVolume,
+        calories: session.calories || null,
+        notes: session.notes || null,
+        is_completed: session.isCompleted,
+        routine_id: session.routineId || null,
+        is_template: session.isTemplate,
+    }
+
+    const { error } = await supabase
+        .from('workout_sessions')
+        .upsert(payload, { onConflict: 'id' })
+
+    if (error) onError(error.message)
+}
+
+function mapRowToWorkoutSession(row: WorkoutSessionRow): WorkoutSession {
+    const fallbackStart = row.start_time || row.started_at || new Date().toISOString()
+
+    return {
+        id: row.id,
+        name: row.name,
+        date: row.date || fallbackStart.slice(0, 10),
+        startTime: fallbackStart,
+        endTime: row.end_time || row.ended_at || undefined,
+        duration: row.duration || row.duration_seconds || undefined,
+        exercises: row.exercises as unknown as ExerciseLog[],
+        totalVolume: Number(row.total_volume || 0),
+        calories: row.calories || undefined,
+        notes: row.notes || undefined,
+        isCompleted: row.is_completed,
+        routineId: row.routine_id || row.template_id || undefined,
+        isTemplate: row.is_template,
+    }
+}

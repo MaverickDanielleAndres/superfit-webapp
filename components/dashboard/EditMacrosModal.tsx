@@ -4,7 +4,7 @@ import React, { useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { X, Activity, Target, Weight, Check } from 'lucide-react'
 import { useForm } from 'react-hook-form'
-import { useUserStore } from '@/store/useUserStore'
+import { useAuthStore } from '@/store/useAuthStore'
 import { FitnessGoal, ActivityLevel } from '@/types'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -17,7 +17,7 @@ type FormValues = {
 }
 
 export default function EditMacrosModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
-    const { user, updateUser, recalculateTargets } = useUserStore()
+    const { user, updateProfile, recalculateTargets } = useAuthStore()
 
     const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
         defaultValues: {
@@ -59,12 +59,12 @@ export default function EditMacrosModal({ isOpen, onClose }: { isOpen: boolean, 
     if (!isOpen || !user) return null
 
     const onSubmit = (data: FormValues) => {
-        updateUser({
+        updateProfile({
             currentWeight: data.currentWeight,
             goal: data.goal as FitnessGoal,
             activityLevel: data.activityLevel as ActivityLevel
         })
-        recalculateTargets()
+        void recalculateTargets()
         toast.success("Macro targets successfully recalculated and updated!")
         onClose()
     }

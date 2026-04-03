@@ -129,7 +129,7 @@ export default function MealPlannerPage() {
                                 <CalendarDays className="w-[24px] h-[24px] text-emerald-500" />
                             </div>
                             <div>
-                                <h2 className="font-display font-bold text-[24px] text-(--text-primary) leading-tight">{activeDay}'s Menu</h2>
+                                <h2 className="font-display font-bold text-[24px] text-(--text-primary) leading-tight">{activeDay}&apos;s Menu</h2>
                                 <p className="font-body text-[14px] text-(--text-secondary)">Plan your exact meals for the day.</p>
                             </div>
                         </div>

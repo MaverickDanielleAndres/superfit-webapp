@@ -13,14 +13,15 @@ import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Eye, EyeOff, Activity, ArrowRight, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 type AuthMode = 'signin' | 'signup'
 
 export default function AuthPage() {
     const router = useRouter()
-    const { login, signup, isLoading, error, isAuthenticated, user, clearError } = useAuthStore()
+    const searchParams = useSearchParams()
+    const { login, signup, isLoading, error, isAuthenticated, user, clearError, initializeAuth, logout } = useAuthStore()
 
     const [mode, setMode] = useState<AuthMode>('signin')
     const [name, setName] = useState('')
@@ -30,9 +31,22 @@ export default function AuthPage() {
     const [showPassword, setShowPassword] = useState(false)
     const [localError, setLocalError] = useState('')
     const [success, setSuccess] = useState(false)
+    const accountInactive = searchParams.get('reason') === 'account-inactive'
 
-    // If already authenticated, redirect
     useEffect(() => {
+        void initializeAuth()
+    }, [initializeAuth])
+
+    // If redirected for account status, keep user on auth and clear stale session state.
+    useEffect(() => {
+        if (accountInactive) {
+            if (isAuthenticated) {
+                logout()
+            }
+            return
+        }
+
+        // If already authenticated, redirect
         if (isAuthenticated && user) {
             if (!user.onboardingComplete) {
                 router.push('/onboarding')
@@ -40,7 +54,7 @@ export default function AuthPage() {
                 router.push('/')
             }
         }
-    }, [isAuthenticated, user, router])
+    }, [accountInactive, isAuthenticated, logout, user, router])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -152,6 +166,13 @@ export default function AuthPage() {
                     </div>
 
                     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                        {accountInactive && (
+                            <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-[12px]">
+                                <AlertCircle className="w-[16px] h-[16px] text-amber-600 shrink-0" />
+                                <span className="font-body text-[13px] text-amber-700">Your account is currently inactive. Contact support or your coach to reactivate access.</span>
+                            </div>
+                        )}
+
                         <AnimatePresence mode="wait">
                             {mode === 'signup' && (
                                 <motion.div

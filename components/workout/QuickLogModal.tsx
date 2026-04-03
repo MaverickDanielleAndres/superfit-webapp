@@ -10,11 +10,17 @@ import { toast } from 'sonner'
 
 export default function QuickLogModal({ exercise, isOpen, onClose }: { exercise: Exercise | null, isOpen: boolean, onClose: () => void }) {
     const saveWorkoutSession = useWorkoutStore(s => s.saveWorkoutSession)
+    const createInitialSet = (): SetLog => ({
+        id: `set_${Date.now()}_1`,
+        setNumber: 1,
+        weight: 0,
+        reps: 0,
+        setType: 'working',
+        completed: false,
+    })
     
     const [date, setDate] = useState(new Date().toISOString().split('T')[0])
-    const [sets, setSets] = useState<SetLog[]>([
-        { id: `set_${Date.now()}_1`, setNumber: 1, weight: 0, reps: 0, setType: 'working', completed: false }
-    ])
+    const [sets, setSets] = useState<SetLog[]>(() => [createInitialSet()])
     const [isSaving, setIsSaving] = useState(false)
 
     if (!isOpen || !exercise) return null
@@ -79,7 +85,7 @@ export default function QuickLogModal({ exercise, isOpen, onClose }: { exercise:
             setIsSaving(false)
             onClose()
             // Reset state for next open
-            setSets([{ id: `set_${Date.now()}_1`, setNumber: 1, weight: 0, reps: 0, setType: 'working', completed: false }])
+            setSets([createInitialSet()])
         }, 600)
     }
 

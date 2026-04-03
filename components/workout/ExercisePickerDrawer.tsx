@@ -172,7 +172,7 @@ export default function ExercisePickerDrawer({ isOpen, onClose, onSelect }: { is
                     <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                         <Dumbbell className="w-[40px] h-[40px] text-(--text-tertiary) mb-4 opacity-50" />
                         <h3 className="font-display font-bold text-[18px] text-(--text-primary) mb-2">No exercises found</h3>
-                        <p className="font-body text-[14px] text-(--text-secondary) max-w-sm">We couldn't find any exercises matching your current filters. Try adjusting them or create your own custom exercise below.</p>
+                        <p className="font-body text-[14px] text-(--text-secondary) max-w-sm">We couldn&apos;t find any exercises matching your current filters. Try adjusting them or create your own custom exercise below.</p>
                     </div>
                 )}
             </div>

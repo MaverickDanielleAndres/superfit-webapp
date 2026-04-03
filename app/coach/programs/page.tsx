@@ -1,19 +1,38 @@
 'use client'
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Plus, Copy, Send, MoreVertical, LayoutGrid, Image as ImageIcon, X, ArrowLeft, GripVertical, Search } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useCoachPortalStore } from '@/store/useCoachPortalStore'
 
 export default function ProgramsPage() {
-    const programs = [
-        { id: '1', name: '8-Week Shred V2', enrolled: 14, difficulty: 'Intermediate', length: '8 Weeks', cover: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=400&fit=crop' },
-        { id: '2', name: 'Powerlifting Prep (Peaking)', enrolled: 3, difficulty: 'Advanced', length: '12 Weeks', cover: 'https://images.unsplash.com/photo-1534438327276-[14e6300c3a26?w=400&fit=crop](https://images.unsplash.com/photo-1534438327276-(14e6300c3a26?w=400&fit=crop))' },
-        { id: '3', name: 'Home Dumbbell Only', enrolled: 22, difficulty: 'Beginner', length: '4 Weeks', cover: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&fit=crop' },
-        { id: '4', name: 'Mobility & Recovery', enrolled: 45, difficulty: 'All Levels', length: 'Ongoing', cover: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=400&fit=crop' }
-    ]
+    const {
+        programs,
+        clients: roster,
+        fetchPrograms,
+        fetchClients,
+        addProgram,
+        updateProgram,
+        duplicateProgram,
+        assignProgram,
+    } = useCoachPortalStore()
 
-    const [builderState, setBuilderState] = React.useState<{isOpen: boolean, name: string}>({isOpen: false, name: ''})
+    const [builderState, setBuilderState] = React.useState<{
+        isOpen: boolean
+        name: string
+        programId: string | null
+        difficulty: string
+        length: string
+        cover: string
+    }>({
+        isOpen: false,
+        name: '',
+        programId: null,
+        difficulty: 'Beginner',
+        length: '4 Weeks',
+        cover: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&fit=crop',
+    })
     const [builderDays, setBuilderDays] = React.useState<{id: string, name: string, exercises: string[]}[]>([
         {id: 'd1', name: 'Day 1: Lower Body', exercises: ['Squat (Barbell)', 'Romanian Deadlift', 'Leg Press']},
         {id: 'd2', name: 'Day 2: Upper Body', exercises: ['Bench Press', 'Pull Up', 'Overhead Press']}
@@ -21,12 +40,17 @@ export default function ProgramsPage() {
 
     const [assignModal, setAssignModal] = React.useState<{isOpen: boolean, programId: string | null}>({isOpen: false, programId: null})
     const [selectedClients, setSelectedClients] = React.useState<string[]>([])
-    const clients = [
-        { id: 'c1', name: 'Jake Mitchell', plan: 'Active' },
-        { id: 'c2', name: 'Sarah Connor', plan: 'Active' },
-        { id: 'c3', name: 'Mike Ross', plan: 'Inactive' },
-        { id: 'c4', name: 'Emma Wilson', plan: 'Active' },
-    ]
+
+    useEffect(() => {
+        void fetchPrograms()
+        void fetchClients()
+    }, [fetchClients, fetchPrograms])
+
+    const clients = roster.map((client) => ({
+        id: client.id,
+        name: client.name,
+        plan: client.status,
+    }))
 
     const handleDragStart = (e: React.DragEvent, dayId: string, exIndex: number) => {
         e.dataTransfer.setData('application/json', JSON.stringify({ dayId, exIndex }))
@@ -55,7 +79,7 @@ export default function ProgramsPage() {
             <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col h-full bg-(--bg-base) rounded-[24px] overflow-hidden -mt-4 border border-(--border-subtle)">
                 <div className="h-[72px] shrink-0 border-b border-(--border-subtle) bg-(--bg-surface) flex items-center justify-between px-6 z-10">
                     <div className="flex items-center gap-4">
-                        <button onClick={() => setBuilderState({isOpen: false, name: ''})} className="w-[36px] h-[36px] rounded-full bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary)">
+                        <button onClick={() => setBuilderState((prev) => ({ ...prev, isOpen: false, programId: null }))} className="w-[36px] h-[36px] rounded-full bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary)">
                             <ArrowLeft className="w-[18px] h-[18px]" />
                         </button>
                         <input 
@@ -68,7 +92,30 @@ export default function ProgramsPage() {
                     </div>
                     <div className="flex items-center gap-3">
                         <span className="text-[13px] text-(--text-secondary) font-bold mr-2">Changes saved</span>
-                        <button onClick={() => setBuilderState({isOpen: false, name: ''})} className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 h-[40px] rounded-[12px] font-bold text-[14px]">
+                        <button
+                            onClick={() => {
+                                void (async () => {
+                                    const payload = {
+                                        name: builderState.name || 'Untitled Program',
+                                        difficulty: builderState.difficulty,
+                                        length: builderState.length,
+                                        cover: builderState.cover,
+                                        builderDays,
+                                    }
+
+                                    if (builderState.programId) {
+                                        await updateProgram(builderState.programId, payload)
+                                        toast.success('Program updated.')
+                                    } else {
+                                        await addProgram(payload)
+                                        toast.success('Program created.')
+                                    }
+
+                                    setBuilderState((prev) => ({ ...prev, isOpen: false, programId: null }))
+                                })()
+                            }}
+                            className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 h-[40px] rounded-[12px] font-bold text-[14px]"
+                        >
                             Publish Program
                         </button>
                     </div>
@@ -107,10 +154,7 @@ export default function ProgramsPage() {
                                 ))}
                                 <button 
                                     onClick={() => {
-                                        toast('Opening exercise library...')
-                                        setTimeout(() => {
-                                            setBuilderDays(prev => prev.map(d => d.id === day.id ? {...d, exercises: [...d.exercises, 'New Exercise']} : d))
-                                        }, 500)
+                                        setBuilderDays(prev => prev.map(d => d.id === day.id ? {...d, exercises: [...d.exercises, 'New Exercise']} : d))
                                     }}
                                     className="w-full h-[44px] rounded-[12px] border border-dashed border-(--border-subtle) flex items-center justify-center gap-2 text-(--text-secondary) font-bold text-[13px] hover:bg-[var(--bg-elevated)] hover:text-(--text-primary) transition-colors mt-2"
                                 >
@@ -139,7 +183,7 @@ export default function ProgramsPage() {
                     <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Program Builder</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Create and manage your reusable workout templates and master programs.</p>
                 </div>
-                <button onClick={() => setBuilderState({isOpen: true, name: 'Untitled Program'})} className="h-[44px] px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2">
+                <button onClick={() => setBuilderState({isOpen: true, name: 'Untitled Program', programId: null, difficulty: 'Beginner', length: '4 Weeks', cover: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&fit=crop'})} className="h-[44px] px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2">
                     <Plus className="w-[18px] h-[18px]" /> Create Program
                 </button>
             </div>
@@ -161,10 +205,22 @@ export default function ProgramsPage() {
                             </div>
                             
                             <div className="mt-auto flex items-center gap-2 pt-4 border-t border-(--border-subtle)">
-                                <button onClick={() => setBuilderState({isOpen: true, name: p.name})} className="flex-1 py-2 rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-(--border-default) font-bold text-[13px] text-(--text-primary) transition-colors flex items-center justify-center gap-1.5">
+                                <button onClick={() => {
+                                    setBuilderDays(p.builderDays?.length ? p.builderDays : [
+                                        {id: 'd1', name: 'Day 1', exercises: []}
+                                    ])
+                                    setBuilderState({
+                                        isOpen: true,
+                                        name: p.name,
+                                        programId: p.id,
+                                        difficulty: p.difficulty,
+                                        length: p.length,
+                                        cover: p.cover,
+                                    })
+                                }} className="flex-1 py-2 rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-(--border-default) font-bold text-[13px] text-(--text-primary) transition-colors flex items-center justify-center gap-1.5">
                                     <LayoutGrid className="w-[14px] h-[14px]" /> Edit
                                 </button>
-                                <button onClick={() => toast.success(`Duplicated ${p.name}`)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors cursor-pointer" title="Duplicate">
+                                <button onClick={() => { void duplicateProgram(p.id); toast.success(`Duplicated ${p.name}`) }} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors cursor-pointer" title="Duplicate">
                                     <Copy className="w-[16px] h-[16px]" />
                                 </button>
                                 <button onClick={() => setAssignModal({isOpen: true, programId: p.id})} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors cursor-pointer" title="Assign">
@@ -176,7 +232,7 @@ export default function ProgramsPage() {
                 ))}
             </div>
             
-            <div onClick={() => setBuilderState({isOpen: true, name: 'Untitled Program'})} className="mt-8 bg-(--bg-surface) border border-dashed border-(--border-subtle) rounded-[24px] p-10 flex flex-col items-center justify-center text-center hover:bg-[var(--bg-elevated)]/50 transition-colors cursor-pointer">
+            <div onClick={() => setBuilderState({isOpen: true, name: 'Untitled Program', programId: null, difficulty: 'Beginner', length: '4 Weeks', cover: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&fit=crop'})} className="mt-8 bg-(--bg-surface) border border-dashed border-(--border-subtle) rounded-[24px] p-10 flex flex-col items-center justify-center text-center hover:bg-[var(--bg-elevated)]/50 transition-colors cursor-pointer">
                 <div className="w-[64px] h-[64px] rounded-full bg-emerald-500/10 flex items-center justify-center mb-4 text-emerald-500">
                     <Plus className="w-[32px] h-[32px]" />
                 </div>
@@ -220,12 +276,13 @@ export default function ProgramsPage() {
                                 <button 
                                     disabled={selectedClients.length === 0}
                                     onClick={() => {
-                                        const id = toast.loading('Assigning program...')
-                                        setTimeout(() => {
-                                            toast.success(`Program assigned to ${selectedClients.length} clients`, { id })
+                                        if (!assignModal.programId) return
+                                        void (async () => {
+                                            await assignProgram(assignModal.programId!, selectedClients)
+                                            toast.success(`Program assigned to ${selectedClients.length} clients`)
                                             setAssignModal({isOpen: false, programId: null})
                                             setSelectedClients([])
-                                        }, 800)
+                                        })()
                                     }} 
                                     className="w-full h-[48px] rounded-[12px] bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-[15px] shadow-sm transition-colors mt-2"
                                 >

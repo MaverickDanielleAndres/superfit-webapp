@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { Search, MessageCircle, Bell, Settings2, Moon, Sun, X } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -10,8 +10,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 export function TopBar() {
     const { theme, setTheme } = useTheme()
-    const [mounted, setMounted] = useState(false)
-    const [greeting, setGreeting] = useState('Good morning')
+    const [greeting] = useState(() => {
+        const hour = new Date().getHours()
+        if (hour < 12) return 'Good morning'
+        if (hour < 17) return 'Good afternoon'
+        return 'Good evening'
+    })
     const [isSearchOpen, setIsSearchOpen] = useState(false)
     const [isNotifOpen, setIsNotifOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
@@ -19,14 +23,6 @@ export function TopBar() {
     const { getTotalUnread } = useMessageStore()
     const totalUnread = getTotalUnread()
     const router = useRouter()
-
-    useEffect(() => {
-        setMounted(true)
-        const hour = new Date().getHours()
-        if (hour < 12) setGreeting('Good morning')
-        else if (hour < 17) setGreeting('Good afternoon')
-        else setGreeting('Good evening')
-    }, [])
 
     const notifications = [
         { id: 1, text: "David liked your post", time: "2m ago", read: false },
@@ -134,14 +130,12 @@ export function TopBar() {
                 </button>
 
                 {/* Theme Toggle */}
-                {mounted && (
-                    <button
-                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                        className="w-[40px] h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
-                    >
-                        {theme === 'dark' ? <Sun className="w-[20px] h-[20px]" /> : <Moon className="w-[20px] h-[20px]" />}
-                    </button>
-                )}
+                <button
+                    onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                    className="w-[40px] h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+                >
+                    {theme === 'dark' ? <Sun className="w-[20px] h-[20px]" /> : <Moon className="w-[20px] h-[20px]" />}
+                </button>
             </div>
 
             {/* Search Modal */}

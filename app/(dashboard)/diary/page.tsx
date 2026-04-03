@@ -13,7 +13,7 @@ import { toast } from 'sonner'
 
 export default function DiaryPage() {
     const { user } = useAuthStore()
-    const { getDayLog, getDailyTotals, addEntry } = useNutritionStore()
+    const { getDayLog, getDailyTotals, addEntry, fetchDayLog } = useNutritionStore()
     const { activeSession } = useWorkoutStore()
 
     const [activeTab, setActiveTab] = useState<'food'>('food')
@@ -80,6 +80,10 @@ export default function DiaryPage() {
         }
     }, [stream])
 
+    useEffect(() => {
+        void fetchDayLog(dateStr)
+    }, [dateStr, fetchDayLog])
+
     const handleCapture = () => {
         if (videoRef.current) {
             const canvas = document.createElement('canvas')
@@ -136,15 +140,19 @@ export default function DiaryPage() {
         }, 2500)
     }
 
-    const handleSaveScanResult = () => {
+    const addFoodEntry = async (foodItem: FoodItem, mealSlot: MealSlot, quantity = 1) => {
+        await addEntry(dateStr, {
+            foodItemId: foodItem.id,
+            foodItem,
+            quantity,
+            mealSlot,
+            loggedAt: new Date().toISOString(),
+        })
+    }
+
+    const handleSaveScanResult = async () => {
         if (scanResults) {
-            addEntry(dateStr, {
-                foodItemId: scanResults.item.id,
-                foodItem: scanResults.item,
-                quantity: scanResults.quantity,
-                mealSlot: scanResults.mealSlot,
-                loggedAt: new Date().toISOString()
-            })
+            await addFoodEntry(scanResults.item, scanResults.mealSlot, scanResults.quantity)
             toast.success('Meal added to diary!')
             closeScanner()
         }
@@ -490,15 +498,11 @@ export default function DiaryPage() {
                                                         barcode: undefined,
                                                         category: 'Snacks'
                                                     }
-                                                    addEntry(dateStr, {
-                                                        foodItemId: item.id,
-                                                        foodItem: item,
-                                                        quantity: 1,
-                                                        mealSlot: activeTargetMeal,
-                                                        loggedAt: new Date().toISOString()
-                                                    })
-                                                    toast.success(`${food.name} added!`)
-                                                    setIsAddFoodOpen(false)
+                                                    void (async () => {
+                                                        await addFoodEntry(item, activeTargetMeal, 1)
+                                                        toast.success(`${food.name} added!`)
+                                                        setIsAddFoodOpen(false)
+                                                    })()
                                                 }}
                                             >
                                                 <div>
@@ -510,7 +514,7 @@ export default function DiaryPage() {
                                                 </button>
                                             </div>
                                         ))}
-                                        {foodSearchQuery && <div className="text-center py-6 text-(--text-tertiary) text-[13px]">Can't find it? <button onClick={() => setAddFoodTab('manual')} className="text-emerald-500 font-bold hover:underline">Add Custom Food</button></div>}
+                                        {foodSearchQuery && <div className="text-center py-6 text-(--text-tertiary) text-[13px]">Can&apos;t find it? <button onClick={() => setAddFoodTab('manual')} className="text-emerald-500 font-bold hover:underline">Add Custom Food</button></div>}
                                     </div>
                                 </>
                             ) : (
@@ -559,18 +563,14 @@ export default function DiaryPage() {
                                                     servingSize: 1,
                                                     servingUnit: 'serving',
                                                     isVerified: false,
-                                                    category: 'Custom'
+                                                    category: 'Other'
                                                 }
-                                                addEntry(dateStr, {
-                                                    foodItemId: item.id,
-                                                    foodItem: item,
-                                                    quantity: 1,
-                                                    mealSlot: activeTargetMeal,
-                                                    loggedAt: new Date().toISOString()
-                                                })
-                                                toast.success(`${item.name} added manually!`)
-                                                setManualFood({ name: '', brand: '', calories: '', protein: '', carbs: '', fat: '' })
-                                                setIsAddFoodOpen(false)
+                                                void (async () => {
+                                                    await addFoodEntry(item, activeTargetMeal, 1)
+                                                    toast.success(`${item.name} added manually!`)
+                                                    setManualFood({ name: '', brand: '', calories: '', protein: '', carbs: '', fat: '' })
+                                                    setIsAddFoodOpen(false)
+                                                })()
                                             }}
                                             className="w-full h-[54px] mt-8 bg-(--accent) text-white font-display font-bold text-[16px] rounded-[16px] hover:bg-(--accent-hover) transition-transform active:scale-[0.98] shadow-lg shadow-emerald-500/20"
                                         >

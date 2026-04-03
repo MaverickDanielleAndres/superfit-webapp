@@ -23,7 +23,7 @@ interface QuickDrink {
 
 export default function HydrationPage() {
     const { user } = useAuthStore()
-    const { addDrink, removeDrink, getHydrationDay, initializeMockData } = useHydrationStore()
+    const { addDrink, removeDrink, getHydrationDay, initializeMockData, fetchHydrationDay } = useHydrationStore()
 
     const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year'>('day')
     const [viewDate, setViewDate] = useState(new Date())
@@ -62,7 +62,8 @@ export default function HydrationPage() {
         if (!dayData?.entries?.length) {
             initializeMockData()
         }
-    }, [dayData, initializeMockData])
+        void fetchHydrationDay(dateStr)
+    }, [dateStr, dayData, fetchHydrationDay, initializeMockData])
 
     const quickDrinks: QuickDrink[] = [
         { type: 'water', label: 'Glass of Water', amount: 250, factor: 1.0, icon: Droplets, color: 'text-(--chart-blue)', bg: 'bg-(--chart-blue)' },
@@ -71,8 +72,8 @@ export default function HydrationPage() {
         { type: 'sports_drink', label: 'Sports Drink', amount: 400, factor: 1.0, icon: Zap, color: 'text-(--accent)', bg: 'bg-(--accent)' },
     ]
 
-    const handleAdd = (drink: QuickDrink | { type: string, label: string, amount: number, factor: number, caffeine: number }) => {
-        addDrink(dateStr, {
+    const handleAdd = async (drink: QuickDrink | { type: string, label: string, amount: number, factor: number, caffeine: number }) => {
+        await addDrink(dateStr, {
             type: drink.type as DrinkType,
             label: drink.label,
             amountMl: drink.amount,
@@ -83,9 +84,9 @@ export default function HydrationPage() {
         toast.success(`Added ${drink.amount}ml of ${drink.label}`)
     }
 
-    const submitCustomDrink = () => {
+    const submitCustomDrink = async () => {
         if (!customDrink.label || customDrink.amount <= 0) return
-        handleAdd({ type: 'custom', label: customDrink.label, amount: customDrink.amount, factor: 1.0, caffeine: customDrink.caffeine })
+        await handleAdd({ type: 'custom', label: customDrink.label, amount: customDrink.amount, factor: 1.0, caffeine: customDrink.caffeine })
         setShowCustom(false)
         setCustomDrink({ label: '', amount: 250, caffeine: 0, color: 'text-cyan-500', image: null })
     }
@@ -161,7 +162,7 @@ export default function HydrationPage() {
                     {/* Visual Ring Card & Caffeine Monitor */}
                     <div className="flex-1 bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-8 flex flex-col items-center justify-center relative overflow-hidden shadow-sm">
                         <div className="absolute top-6 left-6 right-6 flex items-center justify-between z-10">
-                            <h2 className="font-display font-bold text-[18px] text-(--text-primary)">Today's Progress</h2>
+                            <h2 className="font-display font-bold text-[18px] text-(--text-primary)">Today&apos;s Progress</h2>
                         </div>
 
                         <div className="relative w-[280px] h-[280px] mt-4 z-10">
@@ -220,7 +221,7 @@ export default function HydrationPage() {
                             {quickDrinks.map((drink, i) => (
                                 <button
                                     key={i}
-                                    onClick={() => handleAdd(drink)}
+                                    onClick={() => { void handleAdd(drink) }}
                                     className="bg-(--bg-surface) border border-(--border-subtle) rounded-[20px] p-4 flex flex-col items-center justify-center gap-3 hover:border-(--border-default) hover:bg-[var(--bg-elevated)] transition-all group cursor-pointer shadow-sm"
                                 >
                                     <div className={cn("w-[56px] h-[56px] rounded-full flex items-center justify-center bg-opacity-10 transition-transform group-hover:scale-110", drink.bg)}>
@@ -301,7 +302,7 @@ export default function HydrationPage() {
                                     <div className={cn("w-[10px] h-[10px] rounded-full", entry.type === 'coffee' ? "bg-(--chart-amber)" : "bg-(--chart-blue)")} />
                                     <div>
                                         <span className="block font-body text-[14px] text-(--text-primary) font-semibold">{entry.label}</span>
-                                        {entry.caffeinesMg > 0 && <span className="block font-body text-[11px] text-(--chart-amber) mt-0.5">{entry.caffeinesMg}mg Caffeine</span>}
+                                        {(entry.caffeinesMg ?? 0) > 0 && <span className="block font-body text-[11px] text-(--chart-amber) mt-0.5">{entry.caffeinesMg}mg Caffeine</span>}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-4">
@@ -310,7 +311,10 @@ export default function HydrationPage() {
                                         <span className="block font-body text-[11px] text-(--text-secondary)">{new Date(entry.loggedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                     </div>
                                     <button
-                                        onClick={() => { removeDrink(dateStr, entry.id); toast.success('Entry removed') }}
+                                        onClick={() => {
+                                            void removeDrink(dateStr, entry.id)
+                                            toast.success('Entry removed')
+                                        }}
                                         className="opacity-0 group-hover:opacity-100 p-2 text-(--status-danger) hover:bg-red-500/10 rounded-[8px] transition-all cursor-pointer"
                                     >
                                         <Trash2 className="w-[16px] h-[16px]" />
@@ -394,7 +398,7 @@ export default function HydrationPage() {
                                 </div>
 
                                 <button
-                                    onClick={submitCustomDrink}
+                                    onClick={() => { void submitCustomDrink() }}
                                     className="w-full h-[56px] bg-(--text-primary) text-(--bg-base) font-body font-bold text-[16px] rounded-[16px] hover:opacity-90 transition-opacity mt-4 shadow-[0_4px_14px_rgba(0,0,0,0.1)] flex items-center justify-center gap-2"
                                 >
                                     Log Custom Drink

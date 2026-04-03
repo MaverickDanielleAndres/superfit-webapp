@@ -2,19 +2,37 @@
 
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Activity, TrendingUp, Scale, Ruler, Calendar, Share, Download } from 'lucide-react'
+import dynamic from 'next/dynamic'
+import { Activity, TrendingUp, Scale, Calendar, Share, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-    AreaChart,
-    Area,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-    BarChart,
-    Bar
-} from 'recharts'
+import { toast } from 'sonner'
+
+const WorkoutVolumeChart = dynamic(
+    () => import('@/components/analytics/WorkoutVolumeChart').then((m) => m.WorkoutVolumeChart),
+    {
+        ssr: false,
+        loading: () => <div className="h-full w-full rounded-[12px] bg-[var(--bg-elevated)] animate-pulse" />,
+    }
+)
+
+const BodyWeightChart = dynamic(
+    () => import('@/components/analytics/BodyWeightChart').then((m) => m.BodyWeightChart),
+    {
+        ssr: false,
+        loading: () => <div className="h-full w-full rounded-[12px] bg-[var(--bg-elevated)] animate-pulse" />,
+    }
+)
+
+type VolumePoint = {
+    date?: string
+    month?: string
+    volume: number
+}
+
+type WeightPoint = {
+    date: string
+    weight: number
+}
 
 const volumeData6m = [
     { month: 'Jan', volume: 12000 },
@@ -25,7 +43,7 @@ const volumeData6m = [
     { month: 'Jun', volume: 21000 },
 ]
 
-const volumeDataMap: Record<string, any[]> = {
+const volumeDataMap: Record<string, VolumePoint[]> = {
     '1m': [{ date: 'W1', volume: 4500 }, { date: 'W2', volume: 4800 }, { date: 'W3', volume: 5100 }, { date: 'W4', volume: 5400 }],
     '3m': [{ date: 'Apr', volume: 16200 }, { date: 'May', volume: 18500 }, { date: 'Jun', volume: 21000 }],
     '6m': volumeData6m,
@@ -40,7 +58,7 @@ const weightData1m = [
     { date: 'Week 5', weight: 82.9 },
 ]
 
-const weightDataMap: Record<string, any[]> = {
+const weightDataMap: Record<string, WeightPoint[]> = {
     '1m': weightData1m,
     '3m': [{ date: 'Apr', weight: 86.1 }, { date: 'May', weight: 84.5 }, { date: 'Jun', weight: 82.9 }],
     '6m': [{ date: 'Jan', weight: 88.0 }, { date: 'Feb', weight: 87.2 }, { date: 'Mar', weight: 86.5 }, { date: 'Apr', weight: 85.1 }, { date: 'May', weight: 84.0 }, { date: 'Jun', weight: 82.9 }],
@@ -65,13 +83,13 @@ export default function AnalyticsPage() {
                 </div>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={() => alert("Report exported successfully!")}
+                        onClick={() => toast.success('Report exported successfully!')}
                         className="h-[40px] px-4 rounded-[12px] bg-(--bg-surface) border border-(--border-default) text-(--text-secondary) hover:text-(--text-primary) transition-all flex items-center gap-2 font-body font-semibold text-[13px] cursor-pointer"
                     >
                         <Download className="w-[16px] h-[16px]" /> Export
                     </button>
                     <button
-                        onClick={() => alert("Share dialog opened!")}
+                        onClick={() => toast.info('Share dialog opened!')}
                         className="h-[40px] px-4 rounded-[12px] bg-(--accent) text-white hover:bg-(--accent-hover) transition-all flex items-center gap-2 font-display font-bold text-[13px] cursor-pointer"
                     >
                         <Share className="w-[16px] h-[16px]" /> Share Report
@@ -142,19 +160,7 @@ export default function AnalyticsPage() {
                         </div>
 
                         <div className="h-[300px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={volumeDataMap[timeRange]} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-subtle)" />
-                                    <XAxis dataKey={timeRange === '6m' ? 'month' : 'date'} axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12, fontFamily: 'var(--font-outfit)' }} dy={10} />
-                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12, fontFamily: 'var(--font-outfit)' }} tickFormatter={(val) => `${val / 1000}k`} />
-                                    <Tooltip
-                                        cursor={{ fill: 'var(--bg-elevated)' }}
-                                        contentStyle={{ backgroundColor: 'var(--bg-surface-alt)', border: '1px solid var(--border-default)', borderRadius: '12px', color: 'var(--text-primary)' }}
-                                        itemStyle={{ color: 'var(--accent)', fontWeight: 'bold' }}
-                                    />
-                                    <Bar dataKey="volume" fill="var(--chart-blue)" radius={[6, 6, 0, 0]} barSize={40} />
-                                </BarChart>
-                            </ResponsiveContainer>
+                            <WorkoutVolumeChart data={volumeDataMap[timeRange]} xKey={timeRange === '6m' ? 'month' : 'date'} />
                         </div>
                     </div>
                 </div>
@@ -202,24 +208,7 @@ export default function AnalyticsPage() {
                         </div>
 
                         <div className="h-[300px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={weightDataMap[timeRange]} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                    <defs>
-                                        <linearGradient id="weightColor" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="var(--status-success)" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="var(--status-success)" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-subtle)" />
-                                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12, fontFamily: 'var(--font-outfit)' }} dy={10} />
-                                    <YAxis domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12, fontFamily: 'var(--font-outfit)' }} />
-                                    <Tooltip
-                                        contentStyle={{ backgroundColor: 'var(--bg-surface-alt)', border: '1px solid var(--border-default)', borderRadius: '12px', color: 'var(--text-primary)' }}
-                                        itemStyle={{ color: 'var(--status-success)', fontWeight: 'bold' }}
-                                    />
-                                    <Area type="monotone" dataKey="weight" stroke="var(--status-success)" strokeWidth={3} fillOpacity={1} fill="url(#weightColor)" />
-                                </AreaChart>
-                            </ResponsiveContainer>
+                            <BodyWeightChart data={weightDataMap[timeRange]} />
                         </div>
                     </div>
                 </div>

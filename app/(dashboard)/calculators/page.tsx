@@ -2,12 +2,30 @@
 
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
+import dynamic from 'next/dynamic'
 import { Calculator, Activity, Zap, TrendingDown, Droplet, CheckCircle2, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { BMIWidget } from '@/components/calculators/BMIWidget'
-import { ProteinWidget } from '@/components/calculators/ProteinWidget'
-import { CreatineWidget } from '@/components/calculators/CreatineWidget'
-import { DeficitWidget } from '@/components/calculators/DeficitWidget'
+
+const WidgetLoading = () => (
+    <div className="w-full min-h-[360px] rounded-[16px] border border-(--border-default) bg-[var(--bg-elevated)] animate-pulse" />
+)
+
+const BMIWidget = dynamic(() => import('@/components/calculators/BMIWidget').then((m) => m.BMIWidget), {
+    ssr: false,
+    loading: () => <WidgetLoading />
+})
+const ProteinWidget = dynamic(() => import('@/components/calculators/ProteinWidget').then((m) => m.ProteinWidget), {
+    ssr: false,
+    loading: () => <WidgetLoading />
+})
+const CreatineWidget = dynamic(() => import('@/components/calculators/CreatineWidget').then((m) => m.CreatineWidget), {
+    ssr: false,
+    loading: () => <WidgetLoading />
+})
+const DeficitWidget = dynamic(() => import('@/components/calculators/DeficitWidget').then((m) => m.DeficitWidget), {
+    ssr: false,
+    loading: () => <WidgetLoading />
+})
 
 type CalcTab = 'bmi' | 'protein' | 'creatine' | 'deficit' | 'water'
 
@@ -47,7 +65,7 @@ export default function CalculatorsPage() {
                                 <span className="inline-block px-3 py-1 bg-emerald-500/10 text-emerald-600 rounded-full font-body font-bold text-[12px] uppercase tracking-wider mb-4 w-max">Getting Started</span>
                                 <h2 className="font-display font-bold text-[32px] text-(--text-primary) leading-tight mb-4">Discover Your Perfect Numbers</h2>
                                 <p className="font-body text-[16px] text-(--text-secondary) leading-relaxed mb-8">
-                                    Nutrition isn't one-size-fits-all. Follow our guided setup to find exactly what your body needs to reach its goals efficiently and safely.
+                                    Nutrition isn&apos;t one-size-fits-all. Follow our guided setup to find exactly what your body needs to reach its goals efficiently and safely.
                                 </p>
                                 <div className="flex flex-col gap-4 mb-8">
                                     <div className="flex items-center gap-3">
@@ -86,7 +104,7 @@ export default function CalculatorsPage() {
                                 ].map(opt => (
                                     <button key={opt.title} onClick={() => setWizardStep(3)} className="group text-left border border-(--border-default) rounded-[20px] overflow-hidden hover:border-emerald-500 transition-colors bg-[var(--bg-elevated)] cursor-pointer flex flex-col shadow-sm hover:shadow-md">
                                         <div className="w-full h-[160px] overflow-hidden shrink-0">
-                                            <img src={opt.img} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                            <img src={opt.img} alt={opt.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                         </div>
                                         <div className="p-5 flex-1 bg-[var(--bg-surface)]">
                                             <h3 className="font-display font-bold text-[18px] text-(--text-primary)">{opt.title}</h3>
@@ -111,7 +129,7 @@ export default function CalculatorsPage() {
                                 ].map(opt => (
                                     <button key={opt.title} onClick={() => setWizardStep(4)} className="group text-left border border-(--border-default) rounded-[20px] overflow-hidden hover:border-emerald-500 transition-colors bg-[var(--bg-elevated)] flex flex-col cursor-pointer shadow-sm hover:shadow-md">
                                         <div className="w-full h-[120px] overflow-hidden shrink-0">
-                                            <img src={opt.img} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                            <img src={opt.img} alt={opt.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                         </div>
                                         <div className="p-4 flex-1 bg-[var(--bg-surface)]">
                                             <h3 className="font-display font-bold text-[16px] text-(--text-primary)">{opt.title}</h3>

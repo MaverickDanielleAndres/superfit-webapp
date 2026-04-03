@@ -141,7 +141,7 @@ export function ClientHub() {
                                 onClick={handleStartWorkout}
                                 className="mt-2 w-full h-[36px] bg-emerald-500 hover:bg-emerald-600 text-white rounded-[10px] font-bold text-[13px] flex items-center justify-center transition-colors"
                             >
-                                Start Today's Workout
+                                Start Today&apos;s Workout
                             </button>
                             <button 
                                 onClick={() => toast('Program viewer coming soon')}
@@ -178,7 +178,7 @@ export function ClientHub() {
                 
                 {/* Daily Tasks */}
                 <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">
-                    <h3 className="font-display font-bold text-[18px] text-(--text-primary) mb-4">Today's Tasks</h3>
+                    <h3 className="font-display font-bold text-[18px] text-(--text-primary) mb-4">Today&apos;s Tasks</h3>
                     <div className="flex flex-col gap-3">
                         {tasks.map((task) => (
                             <div key={task.id} className="flex items-center justify-between p-3 bg-[var(--bg-elevated)] border border-(--border-default) rounded-[16px] transition-all hover:bg-[var(--bg-surface)]">
@@ -263,7 +263,7 @@ export function ClientHub() {
                                             <img src={coach.avatar} className="w-[20px] h-[20px] rounded-full object-cover" />
                                             <span className="text-[12px] font-bold text-emerald-600">Coach Feedback</span>
                                         </div>
-                                        <p className="text-[13px] text-(--text-secondary) leading-relaxed">"{fc.coachFeedback}"</p>
+                                        <p className="text-[13px] text-(--text-secondary) leading-relaxed">&ldquo;{fc.coachFeedback}&rdquo;</p>
                                     </div>
                                 )}
                             </div>

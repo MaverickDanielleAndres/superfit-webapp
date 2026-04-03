@@ -1,24 +1,29 @@
 'use client'
 
-import React, { useState } from 'react'
-import { Search, Filter, MessageCircle, Settings, ChevronRight, MoreHorizontal, ArrowDownAZ, ArrowUpZA, Activity } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { Search, MessageCircle, ChevronRight, MoreHorizontal } from 'lucide-react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { useCoachPortalStore } from '@/store/useCoachPortalStore'
 
 export default function ClientsPage() {
     const [filter, setFilter] = useState('All')
     const [search, setSearch] = useState('')
     const [sort, setSort] = useState('name-asc')
 
-    const clients = [
-        { id: '1', name: 'Jake Mitchell', goal: 'Powerlifting Prep', lastActive: '2 hours ago', compliance: 92, weightTrend: [82, 82.5, 83, 82.8, 83.2, 83.5, 84], status: 'Active' },
-        { id: '2', name: 'Samantha Lee', goal: 'Hypertrophy V2', lastActive: '1 day ago', compliance: 75, weightTrend: [65, 64.8, 64.5, 64.5, 64.2, 64.0, 63.8], status: 'Active' },
-        { id: '3', name: 'Chris Evans', goal: 'Custom Diet', lastActive: '3 days ago', compliance: 45, weightTrend: [90, 90, 89.8, 90.2, 89.5, 89.5, 89.0], status: 'Onboarding' },
-        { id: '4', name: 'Emma Wilson', goal: 'Marathon Core', lastActive: 'Just now', compliance: 98, weightTrend: [55, 55.2, 55.1, 55.4, 55.3, 55.1, 55.0], status: 'Active' },
-        { id: '5', name: 'Michael Chang', goal: 'Rehab / Mobility', lastActive: '1 week ago', compliance: 20, weightTrend: [78, 78, 78, 78, 78, 78, 78], status: 'Inactive' },
-    ]
+    const {
+        clients,
+        fetchClients,
+        createOrGetDirectThread,
+        updateClientStatus,
+        addNextAvailableClient,
+    } = useCoachPortalStore()
+
+    useEffect(() => {
+        void fetchClients()
+    }, [fetchClients])
 
     const filtered = clients.filter(c => {
         if (filter !== 'All' && c.status !== filter) return false
@@ -39,7 +44,16 @@ export default function ClientsPage() {
                     <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Client Roster</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Manage your active clients, monitor compliance, and track progress.</p>
                 </div>
-                <button className="h-[40px] px-4 rounded-[12px] bg-emerald-500 text-white font-bold text-[13px] shadow-sm hover:bg-emerald-600 transition-colors">
+                <button
+                    onClick={() => {
+                        void (async () => {
+                            const created = await addNextAvailableClient()
+                            if (created) toast.success('Client added to roster.')
+                            else toast.info('No unassigned active users available.')
+                        })()
+                    }}
+                    className="h-[40px] px-4 rounded-[12px] bg-emerald-500 text-white font-bold text-[13px] shadow-sm hover:bg-emerald-600 transition-colors"
+                >
                     + Add Client
                 </button>
             </div>
@@ -126,16 +140,28 @@ export default function ClientsPage() {
                                     <td className="p-4 pr-6 text-right">
                                         <div className="flex items-center justify-end gap-2">
                                             <button 
-                                                onClick={() => toast.success('Sent message to ' + client.name)}
+                                                onClick={() => {
+                                                    void (async () => {
+                                                        const threadId = await createOrGetDirectThread(client.id)
+                                                        if (threadId) toast.success(`Conversation ready with ${client.name}.`)
+                                                        else toast.error('Unable to open conversation.')
+                                                    })()
+                                                }}
                                                 className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-emerald-500/10 hover:text-emerald-500 border border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors cursor-pointer"
                                                 title="Send Message"
                                             >
                                                 <MessageCircle className="w-[16px] h-[16px]" />
                                             </button>
                                             <button 
-                                                onClick={() => toast('Client actions modal coming soon')}
+                                                onClick={() => {
+                                                    const nextStatus = client.status === 'Active' ? 'Inactive' : 'Active'
+                                                    void (async () => {
+                                                        await updateClientStatus(client.linkId, nextStatus)
+                                                        toast.success(`${client.name} marked as ${nextStatus}.`)
+                                                    })()
+                                                }}
                                                 className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-emerald-500/10 hover:text-emerald-500 border border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors cursor-pointer"
-                                                title="More Actions"
+                                                title="Toggle Active Status"
                                             >
                                                 <MoreHorizontal className="w-[16px] h-[16px]" />
                                             </button>

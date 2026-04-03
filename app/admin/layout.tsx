@@ -11,8 +11,12 @@ export default function AdminLayout({
 }: {
     children: React.ReactNode
 }) {
-    const { isAuthenticated, user, isLoading } = useAuthStore()
+    const { isAuthenticated, user, isLoading, initializeAuth } = useAuthStore()
     const router = useRouter()
+
+    useEffect(() => {
+        void initializeAuth()
+    }, [initializeAuth])
 
     useEffect(() => {
         if (!isLoading) {

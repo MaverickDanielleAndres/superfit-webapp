@@ -11,10 +11,14 @@ import ExercisePickerDrawer from '@/components/workout/ExercisePickerDrawer'
 import RestTimerPill from '@/components/workout/RestTimerPill'
 
 export default function WorkoutPage() {
-    const { activeSession, startSession, endSession, logSet, addExerciseToSession, addSetToExercise, removeSetFromExercise, removeExerciseFromSession } = useWorkoutStore()
+    const { activeSession, startSession, endSession, logSet, addExerciseToSession, addSetToExercise, removeSetFromExercise, removeExerciseFromSession, fetchSessions } = useWorkoutStore()
     const [sessionTimer, setSessionTimer] = useState(0)
     const [showExerciseModal, setShowExerciseModal] = useState(false)
     const [showCreateSheet, setShowCreateSheet] = useState(false)
+
+    useEffect(() => {
+        void fetchSessions()
+    }, [fetchSessions])
 
     // Timer effect for active session
     useEffect(() => {

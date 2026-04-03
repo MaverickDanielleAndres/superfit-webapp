@@ -38,13 +38,16 @@ interface NavItemProps {
     isCollapsed: boolean
     badge?: number
     onClick?: (e: React.MouseEvent) => void
+    onMouseEnter?: () => void
 }
 
-const NavItem = ({ icon: Icon, label, href, isActive, isCollapsed, badge, onClick }: NavItemProps) => (
+const NavItem = ({ icon: Icon, label, href, isActive, isCollapsed, badge, onClick, onMouseEnter }: NavItemProps) => (
     <div className="relative group/navitem w-full">
         <Link
             href={href}
+            prefetch={true}
             onClick={onClick}
+            onMouseEnter={onMouseEnter}
             className={cn(
                 'flex items-center h-[44px] px-3 mx-2 my-0.5 rounded-[10px] gap-2.5 transition-all duration-120 cursor-pointer relative',
                 isActive
@@ -185,6 +188,7 @@ export function Sidebar() {
                         isActive={pathname === item.href}
                         isCollapsed={isCollapsed}
                         onClick={handleLinkClick}
+                        onMouseEnter={() => router.prefetch(item.href)}
                     />
                 ))}
 
