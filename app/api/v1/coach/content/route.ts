@@ -19,6 +19,7 @@ const CoachContentCreateSchema = z.object({
   mediaUrl: z.string().url().optional().nullable(),
   subscribersOnly: z.boolean().default(true),
   mealDays: z.array(MealDaySchema).optional().default([]),
+  tags: z.array(z.string().min(1).max(40)).optional().default([]),
 })
 
 export async function GET(request: Request) {
@@ -67,6 +68,7 @@ export async function GET(request: Request) {
   const posts = Array.isArray(postsData) ? postsData : []
   const postIds = posts.map((row) => String(row.id || '')).filter(Boolean)
   const likeMap = new Map<string, number>()
+  const tagsByPost = new Map<string, string[]>()
 
   if (postIds.length) {
     const { data: likesData, error: likesError } = await (supabase as any)
@@ -91,6 +93,62 @@ export async function GET(request: Request) {
     }
   }
 
+  if (postIds.length) {
+    const { data: linkRows, error: linkError } = await (supabase as any)
+      .from('coach_content_tag_links')
+      .select('post_id,tag_id')
+      .in('post_id', postIds)
+
+    if (linkError) {
+      return problemResponse({
+        status: 500,
+        code: 'COACH_CONTENT_FETCH_FAILED',
+        title: 'Coach Content Fetch Failed',
+        detail: linkError.message,
+        requestId,
+      })
+    }
+
+    const links = Array.isArray(linkRows) ? linkRows : []
+    const tagIds = Array.from(new Set(links.map((row) => String(row.tag_id || '')).filter(Boolean)))
+    const tagById = new Map<string, string>()
+
+    if (tagIds.length) {
+      const { data: tagRows, error: tagError } = await (supabase as any)
+        .from('coach_content_tags')
+        .select('id,label')
+        .in('id', tagIds)
+
+      if (tagError) {
+        return problemResponse({
+          status: 500,
+          code: 'COACH_CONTENT_FETCH_FAILED',
+          title: 'Coach Content Fetch Failed',
+          detail: tagError.message,
+          requestId,
+        })
+      }
+
+      for (const tag of tagRows || []) {
+        const id = String(tag.id || '')
+        if (!id) continue
+        tagById.set(id, String(tag.label || ''))
+      }
+    }
+
+    for (const link of links) {
+      const postId = String(link.post_id || '')
+      const tagId = String(link.tag_id || '')
+      if (!postId || !tagId) continue
+      const label = tagById.get(tagId)
+      if (!label) continue
+      const existing = tagsByPost.get(postId) || []
+      if (!existing.includes(label)) {
+        tagsByPost.set(postId, [...existing, label])
+      }
+    }
+  }
+
   return dataResponse({
     requestId,
     data: {
@@ -103,6 +161,7 @@ export async function GET(request: Request) {
           type: mapPostTypeToLabel(String(row.post_type || 'text')),
           createdAt: String(row.created_at || new Date().toISOString()),
           likes: likeMap.get(id) || 0,
+          tags: tagsByPost.get(id) || [],
         }
       }),
     },
@@ -185,6 +244,51 @@ export async function POST(request: Request) {
     })
   }
 
+  const normalizedTags = normalizeTags(parsed.data.tags)
+  if (normalizedTags.length) {
+    const tagPayload = normalizedTags.map((tag) => ({
+      coach_id: user.id,
+      label: tag,
+      slug: slugify(tag),
+    }))
+
+    const { data: tags, error: tagError } = await (supabase as any)
+      .from('coach_content_tags')
+      .upsert(tagPayload, { onConflict: 'coach_id,slug' })
+      .select('id')
+
+    if (tagError) {
+      return problemResponse({
+        status: 500,
+        code: 'COACH_CONTENT_CREATE_FAILED',
+        title: 'Coach Content Create Failed',
+        detail: tagError.message,
+        requestId,
+      })
+    }
+
+    const links = (tags || []).map((tag: any) => ({
+      tag_id: String(tag.id || ''),
+      post_id: String(data.id),
+    })).filter((row: { tag_id: string; post_id: string }) => row.tag_id.length > 0)
+
+    if (links.length) {
+      const { error: linkError } = await (supabase as any)
+        .from('coach_content_tag_links')
+        .upsert(links, { onConflict: 'tag_id,post_id' })
+
+      if (linkError) {
+        return problemResponse({
+          status: 500,
+          code: 'COACH_CONTENT_CREATE_FAILED',
+          title: 'Coach Content Create Failed',
+          detail: linkError.message,
+          requestId,
+        })
+      }
+    }
+  }
+
   const headline = String(data.content || 'Untitled').split('\n')[0]
 
   return dataResponse({
@@ -197,9 +301,36 @@ export async function POST(request: Request) {
         type: mapPostTypeToLabel(String(data.post_type || 'text')),
         createdAt: String(data.created_at || new Date().toISOString()),
         likes: 0,
+        tags: normalizedTags,
       },
     },
   })
+}
+
+function normalizeTags(tags: string[]): string[] {
+  const seen = new Set<string>()
+  const normalized: string[] = []
+
+  for (const tag of tags || []) {
+    const trimmed = String(tag || '').trim()
+    if (!trimmed) continue
+    const key = trimmed.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    normalized.push(trimmed)
+  }
+
+  return normalized.slice(0, 8)
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 64)
 }
 
 function mapComposerTypeToPostType(type: 'Post' | 'Video' | 'Meal' | 'Challenge'): 'text' | 'progress' | 'meal' | 'challenge' {

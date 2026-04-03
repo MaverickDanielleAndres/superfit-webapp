@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
 const SimulatedCheckoutSchema = z.object({
@@ -13,6 +14,7 @@ const SimulatedCheckoutSchema = z.object({
 export async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -59,7 +61,7 @@ export async function POST(request: NextRequest) {
   const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() || crypto.randomUUID()
   const externalRef = `sim_checkout:${user.id}:${idempotencyKey}`
 
-  const { data: existingTransaction } = await supabase
+  const { data: existingTransaction } = await (db as any)
     .from('payment_transactions')
     .select('id,status,amount_cents,currency,created_at')
     .eq('user_id', user.id)
@@ -83,7 +85,7 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  const { data: transaction, error: transactionError } = await supabase
+  const { data: transaction, error: transactionError } = await (db as any)
     .from('payment_transactions')
     .insert({
       user_id: user.id,
@@ -106,20 +108,10 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  const { error: profileUpdateError } = await supabase
+  const { error: profileUpdateError } = await (db as any)
     .from('profiles')
     .update({ is_premium: true })
     .eq('id', user.id)
-
-  if (profileUpdateError) {
-    return problemResponse({
-      status: 500,
-      code: 'PROFILE_UPDATE_FAILED',
-      title: 'Profile Update Failed',
-      detail: profileUpdateError.message,
-      requestId,
-    })
-  }
 
   return dataResponse({
     requestId,
@@ -132,6 +124,7 @@ export async function POST(request: NextRequest) {
       mode: 'simulation',
       planName: payload.planName,
       idempotentReplay: false,
+      profilePremiumSynced: !profileUpdateError,
     },
   })
 }

@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { createNotification } from '@/lib/notifications'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
 interface RouteContext {
@@ -28,7 +29,7 @@ export async function POST(_request: Request, context: RouteContext) {
 
   const { data: post, error: postError } = await (db as any)
     .from('community_posts')
-    .select('id')
+    .select('id,user_id')
     .eq('id', id)
     .is('deleted_at', null)
     .maybeSingle()
@@ -63,6 +64,19 @@ export async function POST(_request: Request, context: RouteContext) {
         title: 'Post Like Failed',
         detail: error.message,
         requestId,
+      })
+    }
+
+    const ownerId = String(post.user_id || '')
+    if (ownerId && ownerId !== user.id) {
+      await createNotification(db as any, {
+        recipientId: ownerId,
+        actorId: user.id,
+        type: 'community_like',
+        title: 'New like on your post',
+        body: `${user.email?.split('@')[0] || 'Someone'} liked your post.`,
+        actionUrl: '/community',
+        payload: { postId: id },
       })
     }
   }

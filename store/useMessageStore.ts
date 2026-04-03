@@ -7,6 +7,8 @@ import { persist } from 'zustand/middleware'
 import { ChatThread, ChatMessage, MessageAttachment } from '@/types'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 import { requestApi } from '@/lib/api/client'
+import { createClient } from '@/lib/supabase/client'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 
 interface MessageState {
     threads: ChatThread[]
@@ -15,6 +17,8 @@ interface MessageState {
     error: string | null
 
     initialize: () => Promise<void>
+    startRealtime: (userId: string) => void
+    stopRealtime: () => void
     sendMessage: (threadId: string, senderId: string, content: string, attachments?: MessageAttachment[], replyToId?: string) => void
     addReaction: (threadId: string, messageId: string, userId: string, emoji: string) => void
     removeReaction: (threadId: string, messageId: string, userId: string, emoji: string) => void
@@ -69,6 +73,11 @@ const MOCK_MESSAGES: Record<string, ChatMessage[]> = {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
+let messagesChannel: RealtimeChannel | null = null
+let messagesChannelUserId: string | null = null
+let messagesSubscribers = 0
+let messagesRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
 export const useMessageStore = create<MessageState>()(
     persist(
         (set, get) => ({
@@ -96,6 +105,84 @@ export const useMessageStore = create<MessageState>()(
                         threads: state.threads.length ? state.threads : MOCK_THREADS,
                         messages: Object.keys(state.messages).length ? state.messages : MOCK_MESSAGES,
                     }))
+                }
+            },
+
+            startRealtime: (userId) => {
+                if (!isSupabaseAuthEnabled()) return
+                if (!userId) return
+
+                messagesSubscribers += 1
+
+                if (messagesChannel && messagesChannelUserId === userId) {
+                    return
+                }
+
+                if (messagesChannel) {
+                    messagesChannel.unsubscribe()
+                    messagesChannel = null
+                    messagesChannelUserId = null
+                }
+
+                const supabase = createClient()
+                const refresh = () => {
+                    if (messagesRefreshTimer) {
+                        clearTimeout(messagesRefreshTimer)
+                    }
+
+                    messagesRefreshTimer = setTimeout(() => {
+                        void get().initialize()
+                    }, 150)
+                }
+
+                messagesChannel = supabase
+                    .channel(`messages-live-${userId}`)
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: '*',
+                            schema: 'public',
+                            table: 'messages',
+                        },
+                        refresh,
+                    )
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: '*',
+                            schema: 'public',
+                            table: 'message_thread_participants',
+                            filter: `user_id=eq.${userId}`,
+                        },
+                        refresh,
+                    )
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: '*',
+                            schema: 'public',
+                            table: 'message_reactions',
+                        },
+                        refresh,
+                    )
+                    .subscribe()
+
+                messagesChannelUserId = userId
+            },
+
+            stopRealtime: () => {
+                messagesSubscribers = Math.max(0, messagesSubscribers - 1)
+                if (messagesSubscribers > 0) return
+
+                if (messagesRefreshTimer) {
+                    clearTimeout(messagesRefreshTimer)
+                    messagesRefreshTimer = null
+                }
+
+                if (messagesChannel) {
+                    messagesChannel.unsubscribe()
+                    messagesChannel = null
+                    messagesChannelUserId = null
                 }
             },
 

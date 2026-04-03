@@ -1,12 +1,42 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Search, MessageCircle, Bell, Settings2, Moon, Sun, X } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useMessageStore } from '@/store/useMessageStore'
+import { useNotificationStore } from '@/store/useNotificationStore'
+import { requestApi } from '@/lib/api/client'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
+
+interface SearchResult {
+    id: string
+    kind: 'route' | 'user' | 'exercise'
+    title: string
+    subtitle: string
+    href: string
+}
+
+function formatRelativeTime(iso: string): string {
+    const diffMs = Date.now() - new Date(iso).getTime()
+    const minute = 60_000
+    const hour = 60 * minute
+    const day = 24 * hour
+
+    if (diffMs < hour) {
+        const mins = Math.max(1, Math.floor(diffMs / minute))
+        return `${mins}m ago`
+    }
+
+    if (diffMs < day) {
+        const hours = Math.max(1, Math.floor(diffMs / hour))
+        return `${hours}h ago`
+    }
+
+    const days = Math.max(1, Math.floor(diffMs / day))
+    return `${days}d ago`
+}
 
 export function TopBar() {
     const { theme, setTheme } = useTheme()
@@ -19,25 +49,95 @@ export function TopBar() {
     const [isSearchOpen, setIsSearchOpen] = useState(false)
     const [isNotifOpen, setIsNotifOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
+    const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+    const [isSearching, setIsSearching] = useState(false)
     const { user } = useAuthStore()
-    const { getTotalUnread } = useMessageStore()
+    const { getTotalUnread, initialize: initializeMessages, startRealtime: startMessagesRealtime, stopRealtime: stopMessagesRealtime } = useMessageStore()
+    const {
+        notifications,
+        unreadCount: unreadNotifs,
+        initialize,
+        markAllRead,
+        markAllSeen,
+        markRead,
+        startRealtime,
+        stopRealtime,
+    } = useNotificationStore()
     const totalUnread = getTotalUnread()
     const router = useRouter()
 
-    const notifications = [
-        { id: 1, text: "David liked your post", time: "2m ago", read: false },
-        { id: 2, text: "You hit your hydration goal!", time: "1h ago", read: false },
-        { id: 3, text: "New community challenge available", time: "1d ago", read: true },
-    ]
-    const unreadNotifs = notifications.filter(n => !n.read).length
+    useEffect(() => {
+        if (!user?.id) return
+
+        void initialize()
+        void initializeMessages()
+        startRealtime(user.id)
+        startMessagesRealtime(user.id)
+
+        return () => {
+            stopRealtime()
+            stopMessagesRealtime()
+        }
+    }, [initialize, initializeMessages, startMessagesRealtime, startRealtime, stopMessagesRealtime, stopRealtime, user?.id])
+
+    useEffect(() => {
+        if (!isNotifOpen) return
+        void markAllSeen()
+    }, [isNotifOpen, markAllSeen])
+
+    useEffect(() => {
+        if (!isSearchOpen) return
+
+        const query = searchQuery.trim()
+        if (query.length < 2) {
+            setSearchResults([])
+            setIsSearching(false)
+            return
+        }
+
+        const timer = window.setTimeout(() => {
+            void (async () => {
+                try {
+                    setIsSearching(true)
+                    const response = await requestApi<{ results: SearchResult[] }>(`/api/v1/search?q=${encodeURIComponent(query)}`)
+                    setSearchResults(response.data.results)
+                } catch {
+                    setSearchResults([])
+                } finally {
+                    setIsSearching(false)
+                }
+            })()
+        }, 220)
+
+        return () => window.clearTimeout(timer)
+    }, [isSearchOpen, searchQuery])
+
+    const displayedNotifications = useMemo(() => notifications.slice(0, 8), [notifications])
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault()
-        if (searchQuery.trim()) {
+        if (searchQuery.trim() && searchResults.length > 0) {
+            router.push(searchResults[0].href)
             setIsSearchOpen(false)
             setSearchQuery('')
-            // Mock search navigation
-            alert(`Searching for: ${searchQuery}`)
+            setSearchResults([])
+            return
+        }
+
+        if (searchQuery.trim()) {
+            router.push(`/exercises?search=${encodeURIComponent(searchQuery.trim())}`)
+            setIsSearchOpen(false)
+            setSearchQuery('')
+            setSearchResults([])
+        }
+    }
+
+    const openNotification = (notificationId: string, actionUrl: string | null) => {
+        void markRead(notificationId)
+        setIsNotifOpen(false)
+
+        if (actionUrl) {
+            router.push(actionUrl)
         }
     }
 
@@ -100,21 +200,46 @@ export function TopBar() {
                                 >
                                     <div className="p-4 border-b border-(--border-subtle) flex justify-between items-center bg-[var(--bg-elevated)]">
                                         <h3 className="font-display font-bold text-[15px] text-(--text-primary)">Notifications</h3>
-                                        <button className="font-body text-[12px] text-(--accent) font-semibold hover:underline">Mark all read</button>
+                                        <button
+                                            onClick={() => {
+                                                void markAllRead()
+                                            }}
+                                            className="font-body text-[12px] text-(--accent) font-semibold hover:underline"
+                                        >
+                                            Mark all read
+                                        </button>
                                     </div>
                                     <div className="max-h-[300px] overflow-y-auto flex flex-col">
-                                        {notifications.map(n => (
-                                            <div key={n.id} className={`p-4 border-b border-(--border-subtle) last:border-0 hover:bg-[var(--bg-elevated)] cursor-pointer transition-colors ${!n.read ? 'bg-emerald-500/5' : ''}`}>
-                                                <div className="flex justify-between items-start mb-1">
-                                                    <span className={`font-body text-[14px] leading-tight ${!n.read ? 'font-semibold text-(--text-primary)' : 'text-(--text-secondary)'}`}>{n.text}</span>
-                                                    {!n.read && <div className="w-2 h-2 rounded-full bg-(--accent) mt-1 shrink-0" />}
-                                                </div>
-                                                <span className="font-body text-[12px] text-(--text-tertiary)">{n.time}</span>
+                                        {displayedNotifications.length === 0 && (
+                                            <div className="p-6 text-center font-body text-[13px] text-(--text-secondary)">
+                                                You are all caught up.
                                             </div>
+                                        )}
+                                        {displayedNotifications.map((n) => (
+                                            <button
+                                                key={n.id}
+                                                onClick={() => openNotification(n.id, n.actionUrl)}
+                                                className={`w-full text-left p-4 border-b border-(--border-subtle) last:border-0 hover:bg-[var(--bg-elevated)] cursor-pointer transition-colors ${!n.readAt ? 'bg-emerald-500/5' : ''}`}
+                                            >
+                                                <div className="flex justify-between items-start mb-1">
+                                                    <span className={`font-body text-[14px] leading-tight ${!n.readAt ? 'font-semibold text-(--text-primary)' : 'text-(--text-secondary)'}`}>{n.title}</span>
+                                                    {!n.readAt && <div className="w-2 h-2 rounded-full bg-(--accent) mt-1 shrink-0" />}
+                                                </div>
+                                                <span className="font-body text-[12px] text-(--text-secondary) block mb-1">{n.body}</span>
+                                                <span className="font-body text-[12px] text-(--text-tertiary)">{formatRelativeTime(n.createdAt)}</span>
+                                            </button>
                                         ))}
                                     </div>
                                     <div className="p-3 text-center border-t border-(--border-subtle) bg-[var(--bg-elevated)]">
-                                        <button className="font-body text-[13px] text-(--text-secondary) hover:text-(--text-primary) font-semibold">View All Notifications</button>
+                                        <button
+                                            onClick={() => {
+                                                setIsNotifOpen(false)
+                                                router.push('/notifications')
+                                            }}
+                                            className="font-body text-[13px] text-(--text-secondary) hover:text-(--text-primary) font-semibold"
+                                        >
+                                            View All Notifications
+                                        </button>
                                     </div>
                                 </motion.div>
                             </>
@@ -171,14 +296,40 @@ export function TopBar() {
                             </form>
                             <div className="border-t border-(--border-subtle) bg-[var(--bg-elevated)] p-4 flex gap-2">
                                 <span className="text-[12px] font-body text-(--text-tertiary) uppercase tracking-wider font-semibold mr-2 flex items-center">Quick links</span>
-                                {['Workouts', 'Community', 'Diet Plan'].map(term => (
+                                {['Workouts', 'Community', 'Coaching'].map(term => (
                                     <button
                                         key={term}
                                         type="button"
-                                        onClick={() => { setSearchQuery(term); document.activeElement?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); }}
+                                        onClick={() => {
+                                            setSearchQuery(term)
+                                        }}
                                         className="px-3 py-1 rounded-full bg-(--bg-surface) border border-(--border-subtle) text-[12px] font-body text-(--text-secondary) hover:text-(--text-primary) hover:border-(--text-tertiary) transition-colors"
                                     >
                                         {term}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="max-h-[220px] overflow-y-auto border-t border-(--border-subtle)">
+                                {isSearching && (
+                                    <div className="p-4 font-body text-[13px] text-(--text-secondary)">Searching...</div>
+                                )}
+                                {!isSearching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+                                    <div className="p-4 font-body text-[13px] text-(--text-secondary)">No results found.</div>
+                                )}
+                                {!isSearching && searchResults.map((result) => (
+                                    <button
+                                        key={result.id}
+                                        type="button"
+                                        onClick={() => {
+                                            router.push(result.href)
+                                            setIsSearchOpen(false)
+                                            setSearchQuery('')
+                                            setSearchResults([])
+                                        }}
+                                        className="w-full text-left px-4 py-3 hover:bg-[var(--bg-elevated)] border-b border-(--border-subtle) last:border-b-0"
+                                    >
+                                        <p className="font-body text-[14px] font-semibold text-(--text-primary)">{result.title}</p>
+                                        <p className="font-body text-[12px] text-(--text-secondary)">{result.subtitle}</p>
                                     </button>
                                 ))}
                             </div>

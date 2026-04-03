@@ -17,12 +17,13 @@ import { toast } from 'sonner'
 import { useMessageStore } from '@/store/useMessageStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { ChatMessage, ChatThread, MessageAttachment } from '@/types'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
 export default function MessagesPage() {
     const router = useRouter()
-    const { threads, sendMessage, markAsRead, getMessages, addReaction, removeReaction, initialize, isLoading, error } = useMessageStore()
+    const searchParams = useSearchParams()
+    const { threads, sendMessage, markAsRead, getMessages, addReaction, removeReaction, initialize, startRealtime, stopRealtime, isLoading, error } = useMessageStore()
     const { user } = useAuthStore()
     const currentUserId = user?.id || 'me'
     const isSimulationMode = !isSupabaseAuthEnabled()
@@ -65,6 +66,23 @@ export default function MessagesPage() {
     useEffect(() => {
         void initialize()
     }, [initialize])
+
+    useEffect(() => {
+        if (!user?.id) return
+        if (isSimulationMode) return
+
+        startRealtime(user.id)
+        return () => {
+            stopRealtime()
+        }
+    }, [isSimulationMode, startRealtime, stopRealtime, user?.id])
+
+    useEffect(() => {
+        const requestedThreadId = searchParams.get('thread')
+        if (!requestedThreadId) return
+        if (!threads.some((thread) => thread.id === requestedThreadId)) return
+        setActiveThreadId(requestedThreadId)
+    }, [searchParams, threads])
 
     useEffect(() => {
         if (selectedThreadId) markAsRead(selectedThreadId)

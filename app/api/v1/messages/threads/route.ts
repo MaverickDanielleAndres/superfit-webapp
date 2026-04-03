@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { canUsersDirectMessage } from '@/lib/social'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
 const UUID_REGEX =
@@ -76,6 +77,33 @@ export async function POST(request: Request) {
       requestId,
       retriable: false,
     })
+  }
+
+  if (!parsed.data.isGroup) {
+    const otherParticipantIds = participantIds.filter((participantId) => participantId !== user.id)
+
+    if (otherParticipantIds.length !== 1) {
+      return problemResponse({
+        status: 422,
+        code: 'VALIDATION_ERROR',
+        title: 'Validation Error',
+        detail: 'Direct threads must have exactly one other participant.',
+        requestId,
+        retriable: false,
+      })
+    }
+
+    const isAllowed = await canUsersDirectMessage(db as any, user.id, otherParticipantIds[0])
+    if (!isAllowed) {
+      return problemResponse({
+        status: 403,
+        code: 'FORBIDDEN',
+        title: 'Forbidden',
+        detail: 'Direct messaging requires an accepted friendship unless a coach-client relationship exists.',
+        requestId,
+        retriable: false,
+      })
+    }
   }
 
   const { data: createdThread, error: threadError } = await (db as any)

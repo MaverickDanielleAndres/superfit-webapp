@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { createNotification } from '@/lib/notifications'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 import type { Database } from '@/types/supabase'
 
@@ -61,7 +62,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   const { data: parent, error: parentError } = await (db as any)
     .from('community_posts')
-    .select('id')
+    .select('id,user_id')
     .eq('id', id)
     .is('deleted_at', null)
     .maybeSingle()
@@ -97,6 +98,19 @@ export async function POST(request: Request, context: RouteContext) {
       title: 'Comment Create Failed',
       detail: error?.message || 'Unable to create comment.',
       requestId,
+    })
+  }
+
+  const ownerId = String(parent.user_id || '')
+  if (ownerId && ownerId !== user.id) {
+    await createNotification(db as any, {
+      recipientId: ownerId,
+      actorId: user.id,
+      type: 'community_comment',
+      title: 'New comment on your post',
+      body: `${user.email?.split('@')[0] || 'Someone'} commented: ${parsed.data.content.slice(0, 80)}`,
+      actionUrl: '/community',
+      payload: { postId: id, commentId: String(data.id) },
     })
   }
 

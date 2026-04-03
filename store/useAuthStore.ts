@@ -53,7 +53,7 @@ export const useAuthStore = create<AuthState>()(
     persist(
         (set, get) => ({
             isAuthenticated: false,
-            isLoading: false,
+            isLoading: true,
             error: null,
             user: null,
 
@@ -301,7 +301,14 @@ export const useAuthStore = create<AuthState>()(
                 void supabase.from('profiles').update(payload).eq('id', currentUser.id)
             }
         }),
-        { name: 'superfit-auth-storage' }
+        {
+            name: 'superfit-auth-storage',
+            // Persist only durable auth identity fields; keep transient UI/loading state in-memory.
+            partialize: (state) => ({
+                isAuthenticated: state.isAuthenticated,
+                user: state.user,
+            }),
+        }
     )
 )
 
@@ -352,7 +359,7 @@ function mapUserProfile(
         avatar: profile?.avatar_url || base.avatar,
         role,
         isCoach: role === 'coach',
-        isPro: role !== 'user' ? true : base.isPro,
+        isPro: true,
         onboardingComplete: profile?.onboarding_complete ?? base.onboardingComplete,
         age: profile?.age ?? base.age,
         sex: (profile?.sex as Sex | null) ?? base.sex,

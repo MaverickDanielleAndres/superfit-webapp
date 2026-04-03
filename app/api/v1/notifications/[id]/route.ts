@@ -3,14 +3,20 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
-const MarkReadSchema = z.object({
-  threadId: z.string().uuid(),
+const NotificationPatchSchema = z.object({
+  action: z.enum(['read', 'seen', 'unread']),
 })
 
-export async function POST(request: Request) {
+interface RouteContext {
+  params: Promise<{ id: string }>
+}
+
+export async function PATCH(request: Request, context: RouteContext) {
   const requestId = crypto.randomUUID()
+  const { id } = await context.params
   const supabase = await createServerSupabaseClient()
   const db = supabaseAdmin
+
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -40,46 +46,52 @@ export async function POST(request: Request) {
     })
   }
 
-  const parsed = MarkReadSchema.safeParse(body)
+  const parsed = NotificationPatchSchema.safeParse(body)
   if (!parsed.success) {
     return problemResponse({
       status: 422,
       code: 'VALIDATION_ERROR',
       title: 'Validation Error',
-      detail: 'Invalid mark-read payload.',
+      detail: 'Invalid notification action payload.',
       requestId,
       retriable: false,
       errors: parsed.error.flatten(),
     })
   }
 
-  const { error } = await (db as any)
-    .from('message_thread_participants')
-    .update({ last_read_at: new Date().toISOString() })
-    .eq('thread_id', parsed.data.threadId)
-    .eq('user_id', user.id)
+  const nowIso = new Date().toISOString()
+  const patch =
+    parsed.data.action === 'read'
+      ? { read_at: nowIso, seen_at: nowIso }
+      : parsed.data.action === 'seen'
+        ? { seen_at: nowIso }
+        : { read_at: null }
 
-  if (error) {
+  const { data, error } = await (db as any)
+    .from('notifications')
+    .update(patch)
+    .eq('id', id)
+    .eq('recipient_id', user.id)
+    .select('id,read_at,seen_at')
+    .maybeSingle()
+
+  if (error || !data) {
     return problemResponse({
-      status: 500,
-      code: 'MARK_READ_FAILED',
-      title: 'Mark Read Failed',
-      detail: error.message,
+      status: 404,
+      code: 'NOTIFICATION_NOT_FOUND',
+      title: 'Notification Not Found',
+      detail: error?.message || 'Notification does not exist.',
       requestId,
+      retriable: false,
     })
   }
-
-  await (db as any)
-    .from('messages')
-    .update({ status: 'read', updated_at: new Date().toISOString() })
-    .eq('thread_id', parsed.data.threadId)
-    .neq('sender_id', user.id)
 
   return dataResponse({
     requestId,
     data: {
-      threadId: parsed.data.threadId,
-      read: true,
+      id: String(data.id),
+      readAt: data.read_at ? String(data.read_at) : null,
+      seenAt: data.seen_at ? String(data.seen_at) : null,
     },
   })
 }

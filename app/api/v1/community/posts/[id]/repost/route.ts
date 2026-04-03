@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { createNotification } from '@/lib/notifications'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 import type { Database } from '@/types/supabase'
 
@@ -29,7 +30,7 @@ export async function POST(_request: Request, context: RouteContext) {
 
   const { data: source, error: sourceError } = await (db as any)
     .from('community_posts')
-    .select('id,content,post_type,media_urls,poll,workout_ref,meal_ref,pr_ref')
+    .select('id,user_id,content,post_type,media_urls,poll,workout_ref,meal_ref,pr_ref')
     .eq('id', id)
     .is('deleted_at', null)
     .maybeSingle()
@@ -70,6 +71,19 @@ export async function POST(_request: Request, context: RouteContext) {
       title: 'Post Repost Failed',
       detail: error?.message || 'Unable to repost.',
       requestId,
+    })
+  }
+
+  const ownerId = String(source.user_id || '')
+  if (ownerId && ownerId !== user.id) {
+    await createNotification(db as any, {
+      recipientId: ownerId,
+      actorId: user.id,
+      type: 'community_repost',
+      title: 'Your post was reposted',
+      body: `${user.email?.split('@')[0] || 'Someone'} reposted your post.`,
+      actionUrl: '/community',
+      payload: { postId: id, repostId: String(data.id) },
     })
   }
 

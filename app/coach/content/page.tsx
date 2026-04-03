@@ -18,6 +18,7 @@ interface PublicationItem {
     type: PublicationType
     date: string
     likes: number
+    tags: string[]
 }
 
 interface MealDay {
@@ -31,6 +32,7 @@ export default function ContentPublisherPage() {
     const [title, setTitle] = useState('')
     const [postContent, setPostContent] = useState('')
     const [mediaUrl, setMediaUrl] = useState('')
+    const [tagInput, setTagInput] = useState('')
     const [subscribersOnly, setSubscribersOnly] = useState(true)
     const [publications, setPublications] = useState<PublicationItem[]>([])
     const [scheduleTitle, setScheduleTitle] = useState('')
@@ -51,6 +53,7 @@ export default function ContentPublisherPage() {
                     type: PublicationType
                     createdAt: string
                     likes: number
+                    tags?: string[]
                 }>
             }>('/api/v1/coach/content?limit=20')
 
@@ -61,6 +64,7 @@ export default function ContentPublisherPage() {
                     type: publication.type,
                     date: formatDateLabel(publication.createdAt),
                     likes: publication.likes,
+                    tags: Array.isArray(publication.tags) ? publication.tags.map((tag) => String(tag)) : [],
                 })),
             )
         } catch (error) {
@@ -107,6 +111,10 @@ export default function ContentPublisherPage() {
                 type: composerTab,
                 date: 'Just now',
                 likes: 0,
+                tags: tagInput
+                    .split(',')
+                    .map((entry) => entry.trim())
+                    .filter(Boolean),
             }
             setPublications((current) => [mockItem, ...current])
             toast.success('Published locally (Supabase disabled).')
@@ -115,6 +123,11 @@ export default function ContentPublisherPage() {
         }
 
         try {
+            const tags = tagInput
+                .split(',')
+                .map((entry) => entry.trim())
+                .filter(Boolean)
+
             await requestApi<{ publication: { id: string } }>('/api/v1/coach/content', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -123,6 +136,7 @@ export default function ContentPublisherPage() {
                     type: composerTab,
                     mediaUrl: mediaUrl || null,
                     subscribersOnly,
+                    tags,
                     mealDays: mealDays.map((day) => ({ title: day.title, detail: day.detail })),
                 }),
             })
@@ -164,6 +178,7 @@ export default function ContentPublisherPage() {
         setTitle('')
         setPostContent('')
         setMediaUrl('')
+        setTagInput('')
     }
 
     return (
@@ -215,6 +230,12 @@ export default function ContentPublisherPage() {
                                     Attached media: <span className="font-bold text-(--text-primary)">{mediaUrl}</span>
                                 </div>
                             )}
+                            <input
+                                value={tagInput}
+                                onChange={(event) => setTagInput(event.target.value)}
+                                placeholder="Tags (comma separated): hypertrophy, mobility"
+                                className="w-full h-[44px] bg-[var(--bg-elevated)] border border-(--border-default) rounded-[12px] px-4 font-body text-[14px] text-(--text-primary) outline-none focus:border-emerald-500"
+                            />
                             <div className="flex items-center justify-between mt-2 pt-4 border-t border-(--border-subtle)">
                                 <div className="flex gap-2">
                                     <button 
@@ -370,6 +391,18 @@ export default function ContentPublisherPage() {
                                     <div>
                                         <span className="block font-display font-bold text-[15px] text-(--text-primary)">{post.title}</span>
                                         <span className="block font-body text-[12px] text-(--text-secondary)">{post.date}</span>
+                                        {post.tags.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5 mt-2">
+                                                {post.tags.slice(0, 4).map((tag) => (
+                                                    <span
+                                                        key={`${post.id}-${tag}`}
+                                                        className="px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-[11px] font-bold text-emerald-600"
+                                                    >
+                                                        {tag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-6">

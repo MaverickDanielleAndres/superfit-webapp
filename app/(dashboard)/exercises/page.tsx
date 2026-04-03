@@ -7,6 +7,8 @@ import { Search, Plus, Dumbbell, Grid, List as ListIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { Exercise } from '@/types'
+import { requestApi } from '@/lib/api/client'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
 const ExerciseDetailSheet = dynamic(() => import('@/components/exercises/ExerciseDetailSheet'), {
     ssr: false,
@@ -34,15 +36,58 @@ export default function ExercisesPage() {
     const [activeMuscle, setActiveMuscle] = useState('All')
     const [activeEquipment, setActiveEquipment] = useState('All Equipment')
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+    const [remoteExercises, setRemoteExercises] = useState<Exercise[]>([])
+    const [isSearchingRemote, setIsSearchingRemote] = useState(false)
+    const [remoteSource, setRemoteSource] = useState<'exercisedb' | 'fallback' | null>(null)
     
     const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null)
     const [showDetailSheet, setShowDetailSheet] = useState(false)
     const [showCustomModal, setShowCustomModal] = useState(false)
     const [showQuickLog, setShowQuickLog] = useState(false)
+
+    React.useEffect(() => {
+        if (!isSupabaseAuthEnabled()) return
+
+        const query = searchQuery.trim()
+        if (query.length < 2) {
+            setRemoteExercises([])
+            setRemoteSource(null)
+            setIsSearchingRemote(false)
+            return
+        }
+
+        const timer = window.setTimeout(() => {
+            void (async () => {
+                try {
+                    setIsSearchingRemote(true)
+                    const response = await requestApi<{ exercises: Exercise[]; source: 'exercisedb' | 'fallback' }>(
+                        `/api/v1/exercises/search?q=${encodeURIComponent(query)}&limit=20`,
+                    )
+                    setRemoteExercises(response.data.exercises)
+                    setRemoteSource(response.data.source)
+                } catch {
+                    setRemoteExercises([])
+                    setRemoteSource(null)
+                } finally {
+                    setIsSearchingRemote(false)
+                }
+            })()
+        }, 260)
+
+        return () => window.clearTimeout(timer)
+    }, [searchQuery])
     
     const allExercises = useMemo(() => {
-        return [...customExercises, ...exerciseLibrary]
-    }, [exerciseLibrary, customExercises])
+        const seen = new Set<string>()
+        const merged = [...remoteExercises, ...customExercises, ...exerciseLibrary].filter((exercise) => {
+            const key = String(exercise.id || exercise.name).toLowerCase()
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+        })
+
+        return merged
+    }, [exerciseLibrary, customExercises, remoteExercises])
 
     const filteredExercises = useMemo(() => {
         return allExercises.filter(ex => {
@@ -77,6 +122,12 @@ export default function ExercisesPage() {
                 <div>
                     <h1 className="font-display font-bold text-[28px] text-(--text-primary) leading-tight">Exercise Library</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Browse, create, and log individual exercises here.</p>
+                    {isSearchingRemote && <p className="font-body text-[12px] text-(--text-tertiary) mt-1">Searching online exercise database...</p>}
+                    {!isSearchingRemote && remoteSource && searchQuery.trim().length >= 2 && (
+                        <p className="font-body text-[12px] text-(--text-tertiary) mt-1">
+                            Source: {remoteSource === 'exercisedb' ? 'ExerciseDB (RapidAPI)' : 'Fallback library'}
+                        </p>
+                    )}
                 </div>
                 <div className="flex items-center gap-3">
                     <button onClick={() => setShowCustomModal(true)} className="h-[44px] px-4 rounded-[14px] bg-[var(--bg-surface)] border-2 border-dashed border-(--border-default) text-(--text-secondary) font-body font-bold text-[13px] transition-all hover:bg-[var(--bg-elevated)] hover:text-(--text-primary) flex items-center gap-2 shadow-sm">

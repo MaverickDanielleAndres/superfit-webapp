@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { canUsersDirectMessage } from '@/lib/social'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
 const DirectThreadSchema = z.object({
@@ -60,6 +61,18 @@ export async function POST(request: Request) {
       data: {
         threadId: existingThreadId,
       },
+    })
+  }
+
+  const isAllowed = await canUsersDirectMessage(db as any, user.id, parsed.data.participantId)
+  if (!isAllowed) {
+    return problemResponse({
+      status: 403,
+      code: 'FORBIDDEN',
+      title: 'Forbidden',
+      detail: 'Direct messaging requires an accepted friendship unless a coach-client relationship exists.',
+      requestId,
+      retriable: false,
     })
   }
 

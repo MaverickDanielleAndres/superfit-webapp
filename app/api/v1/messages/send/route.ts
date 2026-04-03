@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { createNotifications } from '@/lib/notifications'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 import type { Json } from '@/types/supabase'
 
@@ -123,6 +124,33 @@ export async function POST(request: Request) {
     .from('message_threads')
     .update({ updated_at: new Date().toISOString() })
     .eq('id', parsed.data.threadId)
+
+  const { data: participantRows } = await (db as any)
+    .from('message_thread_participants')
+    .select('user_id')
+    .eq('thread_id', parsed.data.threadId)
+
+  const recipientIds = (participantRows || [])
+    .map((row: any) => String(row.user_id || ''))
+    .filter((participantId: string) => !!participantId && participantId !== user.id)
+
+  if (recipientIds.length) {
+    await createNotifications(
+      db as any,
+      recipientIds.map((recipientId: string) => ({
+        recipientId,
+        actorId: user.id,
+        type: 'message',
+        title: 'New message',
+        body: parsed.data.text.trim() || 'You received an attachment.',
+        actionUrl: '/messages',
+        payload: {
+          threadId: parsed.data.threadId,
+          messageId: String(message.id),
+        },
+      })),
+    )
+  }
 
   return dataResponse({
     requestId,

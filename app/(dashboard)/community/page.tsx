@@ -14,13 +14,16 @@ import {
     MoreHorizontal, BadgeCheck, CheckCircle2, Users, Bookmark, ChevronDown
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { requestApi } from '@/lib/api/client'
 import { toast } from 'sonner'
 import { useCommunityStore } from '@/store/useCommunityStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { CommunityPost } from '@/types'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { useRouter } from 'next/navigation'
 
 export default function CommunityPage() {
+    const router = useRouter()
     const [feedTab, setFeedTab] = useState<'foryou' | 'following'>('foryou')
     const [activeTab, setActiveTab] = useState<'feed' | 'leaderboard'>('feed')
 
@@ -210,6 +213,42 @@ export default function CommunityPage() {
             toast.success('Post link copied to clipboard.')
         } catch {
             toast.error('Unable to copy post link.')
+        }
+    }
+
+    const handleMessageUser = async (targetUserId: string, targetName: string) => {
+        if (!user?.id || !targetUserId || targetUserId === user.id) return
+
+        if (!isSupabaseAuthEnabled()) {
+            toast.info('Messaging in simulation mode is available in the Messages page.')
+            router.push('/messages')
+            return
+        }
+
+        try {
+            const response = await requestApi<{ threadId: string }>('/api/v1/messages/direct-thread', {
+                method: 'POST',
+                body: JSON.stringify({ participantId: targetUserId }),
+            })
+
+            router.push(`/messages?thread=${encodeURIComponent(response.data.threadId)}`)
+            return
+        } catch (error: unknown) {
+            if (typeof error === 'object' && error !== null && 'status' in error && Number((error as { status?: unknown }).status) === 403) {
+                try {
+                    await requestApi<{ friendshipId: string; status: string }>('/api/v1/friends', {
+                        method: 'POST',
+                        body: JSON.stringify({ targetUserId }),
+                    })
+                    toast.success(`Friend request sent to ${targetName}. You can message once accepted.`)
+                    return
+                } catch {
+                    toast.error('Unable to send friend request right now.')
+                    return
+                }
+            }
+
+            toast.error('Unable to open conversation right now.')
         }
     }
 
@@ -721,6 +760,14 @@ export default function CommunityPage() {
                                     className={cn("px-4 py-1.5 rounded-full font-bold text-[14px] transition-opacity cursor-pointer border", followingIds.includes(u.id) ? "bg-transparent text-(--text-primary) border-(--border-subtle) hover:border-red-500 hover:text-red-500" : "bg-(--text-primary) text-(--bg-base) border-transparent hover:opacity-90")}
                                 >
                                     {followingIds.includes(u.id) ? 'Following' : 'Follow'}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        void handleMessageUser(u.id, u.name)
+                                    }}
+                                    className="px-3 py-1.5 rounded-full font-bold text-[13px] border border-(--border-subtle) text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors"
+                                >
+                                    Message
                                 </button>
                             </div>
                         ))}

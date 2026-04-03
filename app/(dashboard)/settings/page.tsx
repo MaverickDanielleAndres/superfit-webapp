@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { LogOut } from 'lucide-react'
+import { requestApi } from '@/lib/api/client'
 
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState<'profile' | 'integrations' | 'privacy'>('profile')
@@ -22,6 +23,7 @@ export default function SettingsPage() {
         email: user?.email || '',
         username: user?.email ? `@${user.email.split('@')[0]}` : '@user',
         location: 'New York, NY',
+        avatarUrl: user?.avatar || '',
         currentPassword: '',
         newPassword: ''
     })
@@ -39,6 +41,46 @@ export default function SettingsPage() {
     const [isDeactivateModalOpen, setIsDeactivateModalOpen] = useState(false)
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
     const [is2FAModalOpen, setIs2FAModalOpen] = useState(false)
+    const [isSaving, setIsSaving] = useState(false)
+    const [savedSnapshot, setSavedSnapshot] = useState('')
+
+    const currentSnapshot = JSON.stringify({
+        profileForm,
+        profileVisibility,
+        shareWorkouts,
+        shareWeightData,
+        unitSystem,
+        weekStart,
+        integrations,
+        isTwoFactorEnabled,
+    })
+
+    const isDirty = savedSnapshot.length > 0 && currentSnapshot !== savedSnapshot
+
+    React.useEffect(() => {
+        if (!user?.id) return
+
+        void (async () => {
+            try {
+                const response = await requestApi<{
+                    fullName: string
+                    email: string
+                    avatarUrl: string
+                    measurementSystem: 'metric' | 'imperial'
+                }>('/api/v1/settings/profile')
+
+                setProfileForm((current) => ({
+                    ...current,
+                    name: response.data.fullName,
+                    email: response.data.email,
+                    avatarUrl: response.data.avatarUrl,
+                }))
+                setUnitSystem(response.data.measurementSystem)
+            } catch {
+                // Keep local defaults if server settings are not available.
+            }
+        })()
+    }, [user?.id])
 
     React.useEffect(() => {
         try {
@@ -53,6 +95,7 @@ export default function SettingsPage() {
                 weekStart?: 'Monday' | 'Sunday'
                 location?: string
                 username?: string
+                avatarUrl?: string
                 isTwoFactorEnabled?: boolean
             }
 
@@ -70,14 +113,51 @@ export default function SettingsPage() {
             if (typeof persistedUsername === 'string') {
                 setProfileForm((current) => ({ ...current, username: persistedUsername }))
             }
+            const persistedAvatarUrl = parsed.avatarUrl
+            if (typeof persistedAvatarUrl === 'string') {
+                setProfileForm((current) => ({ ...current, avatarUrl: persistedAvatarUrl }))
+            }
             if (typeof parsed.isTwoFactorEnabled === 'boolean') setIsTwoFactorEnabled(parsed.isTwoFactorEnabled)
         } catch {
             // Ignore invalid persisted settings.
         }
     }, [])
 
-    const handleSaveProfile = () => {
-        updateProfile({ name: profileForm.name, email: profileForm.email, measurementSystem: unitSystem })
+    React.useEffect(() => {
+        if (!savedSnapshot) {
+            setSavedSnapshot(currentSnapshot)
+        }
+    }, [currentSnapshot, savedSnapshot])
+
+    const handleSaveProfile = async () => {
+        setIsSaving(true)
+
+        try {
+            await requestApi<{
+                saved: boolean
+                passwordUpdated: boolean
+                fullName: string
+                email: string
+                avatarUrl: string
+                measurementSystem: 'metric' | 'imperial'
+            }>('/api/v1/settings/profile', {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    fullName: profileForm.name,
+                    email: profileForm.email,
+                    avatarUrl: profileForm.avatarUrl || null,
+                    measurementSystem: unitSystem,
+                    currentPassword: profileForm.currentPassword,
+                    newPassword: profileForm.newPassword,
+                }),
+            })
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Unable to save settings.')
+            setIsSaving(false)
+            return
+        }
+
+        updateProfile({ name: profileForm.name, email: profileForm.email, avatar: profileForm.avatarUrl, measurementSystem: unitSystem })
 
         localStorage.setItem(
             'superfit-user-settings-ui',
@@ -90,14 +170,23 @@ export default function SettingsPage() {
                 weekStart,
                 username: profileForm.username,
                 location: profileForm.location,
+                avatarUrl: profileForm.avatarUrl,
                 isTwoFactorEnabled,
             }),
         )
 
-        if (profileForm.currentPassword && profileForm.newPassword) {
-            toast.info('Password change request captured. Connect password reset endpoint to finalize this flow.')
-            setProfileForm((current) => ({ ...current, currentPassword: '', newPassword: '' }))
-        }
+        setProfileForm((current) => ({ ...current, currentPassword: '', newPassword: '' }))
+        setSavedSnapshot(JSON.stringify({
+            profileForm: { ...profileForm, currentPassword: '', newPassword: '' },
+            profileVisibility,
+            shareWorkouts,
+            shareWeightData,
+            unitSystem,
+            weekStart,
+            integrations,
+            isTwoFactorEnabled,
+        }))
+        setIsSaving(false)
 
         setSaveSuccess(true)
         setTimeout(() => setSaveSuccess(false), 3000)
@@ -340,13 +429,22 @@ export default function SettingsPage() {
                                     <h3 className="font-display font-bold text-[20px] text-(--text-primary) mb-6">Personal Information</h3>
                                     <div className="flex items-center gap-6 mb-8">
                                         <div className="relative">
-                                            <div className="w-[88px] h-[88px] rounded-full bg-emerald-500 flex items-center justify-center text-white font-display font-bold text-[32px] shadow-md">
-                                                {user?.name?.charAt(0) || 'U'}
-                                            </div>
+                                            <img
+                                                src={profileForm.avatarUrl || user?.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${user?.id || 'user'}`}
+                                                alt="Profile avatar"
+                                                className="w-[88px] h-[88px] rounded-full object-cover border border-(--border-subtle)"
+                                            />
                                             <button className="absolute bottom-0 right-0 w-[28px] h-[28px] rounded-full bg-(--bg-elevated) flex items-center justify-center text-(--text-primary) border border-(--border-subtle) shadow-sm hover:scale-110 transition-transform"><Plus className="w-[14px] h-[14px]" /></button>
                                         </div>
                                         <div>
-                                            <button className="h-[40px] px-5 rounded-[12px] border border-(--border-subtle) bg-(--bg-elevated) text-(--text-primary) font-body font-semibold text-[14px] hover:border-(--border-default) transition-colors">Change Avatar</button>
+                                            <p className="font-body text-[13px] text-(--text-secondary) mb-2">Avatar URL</p>
+                                            <input
+                                                type="url"
+                                                value={profileForm.avatarUrl}
+                                                onChange={e => setProfileForm(f => ({ ...f, avatarUrl: e.target.value }))}
+                                                placeholder="https://..."
+                                                className="h-[40px] w-[280px] rounded-[12px] border border-(--border-subtle) bg-(--bg-elevated) text-(--text-primary) font-body text-[13px] px-3 outline-none focus:border-(--accent)"
+                                            />
                                         </div>
                                     </div>
 
@@ -405,10 +503,13 @@ export default function SettingsPage() {
                                 </div>
 
                                 <div className="pt-6 mt-2 border-t border-(--border-subtle) flex items-center justify-between">
-                                    <button onClick={handleSaveProfile} className="h-[52px] px-8 rounded-[14px] bg-(--accent) text-white font-display font-bold text-[15px] hover:bg-(--accent-hover) transition-colors flex items-center justify-center gap-2">
-                                        {saveSuccess ? <><Check className="w-[18px] h-[18px]" /> Saved!</> : 'Save Changes'}
+                                    <button onClick={() => { void handleSaveProfile() }} className="h-[52px] px-8 rounded-[14px] bg-(--accent) text-white font-display font-bold text-[15px] hover:bg-(--accent-hover) transition-colors flex items-center justify-center gap-2 disabled:opacity-70" disabled={isSaving}>
+                                        {saveSuccess ? <><Check className="w-[18px] h-[18px]" /> Saved!</> : isSaving ? 'Saving...' : 'Save Changes'}
                                     </button>
-                                    {saveSuccess && <span className="font-body text-[14px] text-emerald-600 block animate-in fade-in duration-300">Changes saved successfully.</span>}
+                                    <div className="text-right">
+                                        {isDirty && <span className="font-body text-[13px] text-amber-500 block">Unsaved changes</span>}
+                                        {saveSuccess && <span className="font-body text-[14px] text-emerald-600 block animate-in fade-in duration-300">Changes saved successfully.</span>}
+                                    </div>
                                 </div>
                             </motion.div>
                         </AnimatePresence>
