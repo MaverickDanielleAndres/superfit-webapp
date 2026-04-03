@@ -49,7 +49,7 @@ export default function CoachingPage() {
                 {/* Page Header */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between mb-6 gap-4">
                     <div>
-                        <h1 className="font-display font-bold text-[28px] text-(--text-primary) leading-tight mb-2">
+                        <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary) leading-tight mb-2">
                             {activeTab === 'marketplace' ? 'Coaching Marketplace' : 'Client Hub'}
                         </h1>
                         <p className="font-body text-[14px] text-(--text-secondary)">

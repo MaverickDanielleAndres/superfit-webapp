@@ -103,7 +103,7 @@ export default function MarketplacePage() {
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-4xl mx-auto h-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Marketplace Listing</h1>
+                    <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Marketplace Listing</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Manage your public profile and subscription tiers to attract new clients.</p>
                 </div>
                 <div className="flex items-center gap-3 bg-(--bg-surface) border border-(--border-subtle) px-4 py-2 rounded-[16px] shadow-sm">

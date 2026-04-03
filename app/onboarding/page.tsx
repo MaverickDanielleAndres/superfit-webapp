@@ -89,7 +89,7 @@ export default function OnboardingPage() {
             case 2:
                 return (
                     <div className="space-y-6">
-                        <h2 className="font-display font-bold text-[28px] text-(--text-primary)">Basic Biometrics</h2>
+                        <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Basic Biometrics</h2>
                         <p className="font-body text-(--text-secondary) text-[14px]">Let&apos;s tailor SuperFit to your body.</p>
 
                         <div className="space-y-4">
@@ -133,7 +133,7 @@ export default function OnboardingPage() {
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
                             <Target className="w-[32px] h-[32px] text-blue-500" />
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary)">What&apos;s your primary goal?</h2>
+                            <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">What&apos;s your primary goal?</h2>
                         </div>
                         <div className="flex flex-col gap-3">
                             {[
@@ -165,7 +165,7 @@ export default function OnboardingPage() {
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
                             <Activity className="w-[32px] h-[32px] text-orange-500" />
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary)">Base Activity Level</h2>
+                            <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Base Activity Level</h2>
                         </div>
                         <p className="font-body text-(--text-secondary) text-[14px]">How active are you outside of purposeful workouts?</p>
                         <div className="flex flex-col gap-3">
@@ -193,7 +193,7 @@ export default function OnboardingPage() {
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
                             <Dumbbell className="w-[32px] h-[32px] text-zinc-500" />
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary)">Workout Frequency</h2>
+                            <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Workout Frequency</h2>
                         </div>
                         <p className="font-body text-(--text-secondary) text-[14px]">How many training sessions per week are you committing to?</p>
 
@@ -236,7 +236,7 @@ export default function OnboardingPage() {
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
                             <Utensils className="w-[32px] h-[32px] text-green-500" />
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary)">Dietary Profile</h2>
+                            <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Dietary Profile</h2>
                         </div>
                         <p className="font-body text-(--text-secondary) text-[14px]">This defines how your macronutrients are split.</p>
 
@@ -257,7 +257,7 @@ export default function OnboardingPage() {
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
                             <Pill className="w-[32px] h-[32px] text-purple-500" />
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary)">Supplement Use</h2>
+                            <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Supplement Use</h2>
                         </div>
                         <p className="font-body text-(--text-secondary) text-[14px]">Select any supplements you take to help us build your daily stacked schedule.</p>
 
@@ -297,7 +297,7 @@ export default function OnboardingPage() {
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
                             <HeartPulse className="w-[32px] h-[32px] text-red-500" />
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary)">Health Flags (Optional)</h2>
+                            <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Health Flags (Optional)</h2>
                         </div>
                         <p className="font-body text-(--text-secondary) text-[14px]">Do you have any conditions we should account for when recommending meals or exercises?</p>
 
@@ -328,7 +328,7 @@ export default function OnboardingPage() {
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
                             <Droplet className="w-[32px] h-[32px] text-cyan-500" />
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary)">Water Assessment</h2>
+                            <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Water Assessment</h2>
                         </div>
                         <p className="font-body text-(--text-secondary) text-[14px]">Hydration limits fatigue and improves fat oxidation.</p>
 
@@ -359,7 +359,7 @@ export default function OnboardingPage() {
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
                             <Scale className="w-[32px] h-[32px] text-emerald-500" />
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary)">Your Blueprints</h2>
+                            <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Your Blueprints</h2>
                         </div>
                         <p className="font-body text-(--text-secondary) text-[14px]">We have crunched the numbers.</p>
 
@@ -367,7 +367,7 @@ export default function OnboardingPage() {
                             <div className="bg-[var(--bg-elevated)] p-4 rounded-[16px] border border-(--border-subtle)">
                                 <span className="font-body text-[12px] text-(--text-tertiary) uppercase tracking-wider font-semibold">Current BMI</span>
                                 <div className="flex items-end gap-2 mt-1">
-                                    <span className="font-display font-bold text-[28px] leading-none text-(--text-primary)">{bmi}</span>
+                                    <span className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] leading-none text-(--text-primary)">{bmi}</span>
                                 </div>
                                 <div className="font-body text-[12px] mt-2 text-(--text-secondary)">
                                     Category: <span className={category === 'Healthy weight' ? 'text-(--status-success)' : 'text-(--status-warning)'}>{category}</span>
@@ -376,7 +376,7 @@ export default function OnboardingPage() {
                             <div className="bg-[var(--bg-elevated)] p-4 rounded-[16px] border border-(--border-subtle)">
                                 <span className="font-body text-[12px] text-(--text-tertiary) uppercase tracking-wider font-semibold">TDEE</span>
                                 <div className="flex items-end gap-2 mt-1">
-                                    <span className="font-display font-bold text-[28px] leading-none text-(--text-primary)">{Math.round(tdee)}</span>
+                                    <span className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] leading-none text-(--text-primary)">{Math.round(tdee)}</span>
                                     <span className="font-body text-[12px] text-(--text-secondary) mb-1">kcal</span>
                                 </div>
                                 <div className="font-body text-[12px] mt-2 text-(--text-secondary)">

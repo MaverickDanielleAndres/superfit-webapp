@@ -10,8 +10,6 @@ import {
     Target,
     CalendarDays,
     Settings,
-    HelpCircle,
-    Edit2,
     ChevronLeft,
     Users,
     Calculator,
@@ -68,7 +66,7 @@ const NavItem = ({ icon: Icon, label, href, isActive, isCollapsed, badge, onClic
             )}
         </Link>
         {isCollapsed && (
-            <div className="fixed left-[72px] mt-[-34px] px-2.5 py-1.5 bg-(--bg-elevated) border border-(--border-default) rounded-md text-[13px] font-medium text-(--text-primary) shadow-lg opacity-0 pointer-events-none group-hover/navitem:opacity-100 transition-opacity whitespace-nowrap z-50">
+            <div className="hidden lg:block fixed left-[72px] mt-[-34px] px-2.5 py-1.5 bg-(--bg-elevated) border border-(--border-default) rounded-md text-[13px] font-medium text-(--text-primary) shadow-lg opacity-0 pointer-events-none group-hover/navitem:opacity-100 transition-opacity whitespace-nowrap z-50">
                 {label}
             </div>
         )}
@@ -76,7 +74,12 @@ const NavItem = ({ icon: Icon, label, href, isActive, isCollapsed, badge, onClic
 )
 
 export function Sidebar() {
-    const { isSidebarCollapsed: isCollapsed, toggleSidebar } = useUIStore()
+    const {
+        isSidebarCollapsed: isCollapsed,
+        toggleSidebar,
+        isMobileNavOpen,
+        closeMobileNav,
+    } = useUIStore()
     const pathname = usePathname()
     const router = useRouter()
     const { user, logout } = useAuthStore()
@@ -85,15 +88,43 @@ export function Sidebar() {
 
     const handleLogout = (e: React.MouseEvent) => {
         e.stopPropagation()
+        closeMobileNav()
         logout()
         router.push('/auth')
     }
 
     const handleLinkClick = () => {
+        if (isMobileNavOpen) {
+            closeMobileNav()
+            return
+        }
+
         if (isCollapsed) {
             toggleSidebar()
         }
     }
+
+    React.useEffect(() => {
+        closeMobileNav()
+    }, [pathname, closeMobileNav])
+
+    React.useEffect(() => {
+        if (!isMobileNavOpen) return
+
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                closeMobileNav()
+            }
+        }
+
+        document.body.style.overflow = 'hidden'
+        window.addEventListener('keydown', handleEscape)
+
+        return () => {
+            document.body.style.overflow = ''
+            window.removeEventListener('keydown', handleEscape)
+        }
+    }, [isMobileNavOpen, closeMobileNav])
 
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
@@ -115,14 +146,27 @@ export function Sidebar() {
     ]
 
     return (
-        <aside
-            className={cn(
-                'fixed top-0 left-0 h-screen z-40 bg-(--sidebar-bg) border-r border-(--sidebar-border) overflow-y-auto flex flex-col',
-                'transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
-                '[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]',
-                isCollapsed ? 'w-[64px] cursor-pointer' : 'w-[240px]'
-            )}
-        >
+        <>
+            <button
+                type="button"
+                aria-label="Close navigation"
+                onClick={closeMobileNav}
+                className={cn(
+                    'fixed inset-0 z-40 bg-black/45 transition-opacity lg:hidden',
+                    isMobileNavOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                )}
+            />
+
+            <aside
+                className={cn(
+                    'fixed top-0 left-0 h-screen z-50 bg-(--sidebar-bg) border-r border-(--sidebar-border) overflow-y-auto flex flex-col',
+                    'transition-[width,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
+                    '[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]',
+                    'w-[280px] sm:w-[320px] lg:w-[240px]',
+                    isCollapsed ? 'lg:w-[64px]' : '',
+                    isMobileNavOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+                )}
+            >
             {/* 1. Logo Header */}
             <div className="h-[72px] px-4 flex items-center gap-[10px] shrink-0">
                 <div className="w-[32px] h-[32px] shrink-0 rounded-[10px] bg-(--accent) flex items-center justify-center shadow-sm">
@@ -200,7 +244,7 @@ export function Sidebar() {
                             {!isCollapsed && <span className="text-[14px]">Log Out</span>}
                         </button>
                         {isCollapsed && (
-                            <div className="fixed left-[72px] mt-[-34px] px-2.5 py-1.5 bg-(--bg-elevated) border border-(--border-default) rounded-md text-[13px] font-medium text-(--text-primary) shadow-lg opacity-0 pointer-events-none group-hover/navitem:opacity-100 transition-opacity whitespace-nowrap z-50">
+                            <div className="hidden lg:block fixed left-[72px] mt-[-34px] px-2.5 py-1.5 bg-(--bg-elevated) border border-(--border-default) rounded-md text-[13px] font-medium text-(--text-primary) shadow-lg opacity-0 pointer-events-none group-hover/navitem:opacity-100 transition-opacity whitespace-nowrap z-50">
                                 Log Out
                             </div>
                         )}
@@ -214,13 +258,14 @@ export function Sidebar() {
                     e.stopPropagation()
                     toggleSidebar()
                 }}
-                className="fixed bottom-[24px] left-[228px] w-[24px] h-[24px] rounded-full bg-(--bg-elevated) border border-(--border-default) z-50 flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:scale-110 shadow-sm transition-all duration-300 cursor-pointer"
+                className="hidden lg:flex fixed bottom-[24px] left-[228px] w-[24px] h-[24px] rounded-full bg-(--bg-elevated) border border-(--border-default) z-50 items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:scale-110 shadow-sm transition-all duration-300 cursor-pointer"
                 style={{
                     transform: isCollapsed ? 'translateX(-176px) rotate(180deg)' : 'none',
                 }}
             >
                 <ChevronLeft className="w-[14px] h-[14px]" />
             </button>
-        </aside>
+            </aside>
+        </>
     )
 }

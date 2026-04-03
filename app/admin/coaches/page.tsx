@@ -23,17 +23,17 @@ export default function AdminCoachesPage() {
     )
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-6xl mx-auto h-full">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 w-full max-w-6xl mx-auto h-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Coach Directory</h1>
+                    <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Coach Directory</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Manage certified coaches, verify credentials, and monitor performance.</p>
                 </div>
             </div>
 
             <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] shadow-sm overflow-hidden flex flex-col">
                 <div className="p-4 border-b border-(--border-subtle) bg-[var(--bg-elevated)] flex flex-col sm:flex-row gap-4 justify-between">
-                    <div className="relative flex-1 max-w-[400px]">
+                    <div className="relative flex-1 w-full sm:max-w-[400px]">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-[16px] h-[16px] text-(--text-tertiary)" />
                         <input
                             type="text"
@@ -45,7 +45,52 @@ export default function AdminCoachesPage() {
                     </div>
                 </div>
 
-                <div className="overflow-x-auto min-h-[400px]">
+                <div className="md:hidden p-4 flex flex-col gap-3">
+                    {filteredCoaches.map((coach) => (
+                        <div key={coach.id} className="rounded-[16px] border border-(--border-subtle) bg-[var(--bg-elevated)] p-4">
+                            <div className="flex items-center gap-3 mb-3">
+                                <img src={`https://api.dicebear.com/7.x/notionists/svg?seed=${coach.name}`} alt={`${coach.name} avatar`} className="w-[40px] h-[40px] rounded-[10px] border border-(--border-subtle)" />
+                                <div className="min-w-0">
+                                    <p className="font-display font-bold text-[15px] text-(--text-primary) truncate">{coach.name}</p>
+                                    <p className="font-body text-[12px] text-(--text-secondary) truncate">{coach.email}</p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 mb-3">
+                                <span className={cn("px-2 py-1 rounded-[8px] font-bold text-[11px] uppercase tracking-wider text-center", coach.status === 'Verified' ? 'bg-blue-500/10 text-blue-600' : 'bg-[var(--status-warning-bg)]/30 text-[var(--status-warning)]')}>{coach.status}</span>
+                                <span className="px-2 py-1 rounded-[8px] bg-(--bg-surface) border border-(--border-default) text-(--text-secondary) font-bold text-[11px] text-center">{coach.clients} clients</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="font-bold text-[13px] text-(--text-primary)">{coach.revenue}</span>
+                                <div className="flex items-center gap-2 text-(--text-secondary)">
+                                    <button
+                                        onClick={() => {
+                                            router.push(`/admin/applications?email=${encodeURIComponent(coach.email)}`)
+                                        }}
+                                        className="w-[36px] h-[36px] rounded-[10px] hover:bg-(--border-subtle) flex items-center justify-center transition-colors"
+                                        title="View Verification Details"
+                                    >
+                                        <ShieldCheck className="w-[16px] h-[16px]" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            void (async () => {
+                                                const nextStatus = coach.status === 'Suspended' ? 'Active' : 'Suspended'
+                                                await updateUserStatus(coach.id, nextStatus)
+                                                toast.success(`${coach.name} marked as ${nextStatus}.`)
+                                            })()
+                                        }}
+                                        className="w-[36px] h-[36px] rounded-[10px] hover:bg-(--border-subtle) flex items-center justify-center transition-colors"
+                                        title="More Actions"
+                                    >
+                                        <MoreVertical className="w-[16px] h-[16px]" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="hidden md:block overflow-x-auto min-h-[400px]">
                     <table className="w-full text-left font-body text-[14px]">
                         <thead className="border-b border-(--border-subtle) text-(--text-secondary) font-bold text-[12px] uppercase tracking-wider bg-[var(--bg-elevated)]/50">
                             <tr>

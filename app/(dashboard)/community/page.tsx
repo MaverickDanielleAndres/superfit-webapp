@@ -521,7 +521,7 @@ export default function CommunityPage() {
             <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="max-w-6xl mx-auto h-full flex flex-col md:flex-row gap-6 lg:gap-8 pb-20 pt-2"
+                className="w-full max-w-6xl mx-auto h-full flex flex-col md:flex-row gap-6 lg:gap-8 pb-20 pt-2"
             >
                 {/* Main Feed Column */}
                 <div className="flex-1 flex flex-col max-w-[600px] w-full mx-auto md:mx-0 border-x border-(--border-subtle) bg-(--bg-surface) min-h-screen">

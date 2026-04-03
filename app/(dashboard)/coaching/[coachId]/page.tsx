@@ -280,7 +280,7 @@ export default function CoachProfilePage() {
 
     if (!coachId) {
         return (
-            <div className="max-w-5xl mx-auto py-20 text-center">
+            <div className="w-full max-w-5xl mx-auto py-20 text-center">
                 <p className="font-display font-bold text-[24px] text-(--text-primary)">Invalid coach profile</p>
                 <p className="mt-2 text-(--text-secondary)">The selected coach page cannot be opened.</p>
             </div>
@@ -289,7 +289,7 @@ export default function CoachProfilePage() {
 
     if (isLoadingOverview && !overview) {
         return (
-            <div className="max-w-5xl mx-auto py-20 flex items-center justify-center gap-3 text-(--text-secondary)">
+            <div className="w-full max-w-5xl mx-auto py-20 flex items-center justify-center gap-3 text-(--text-secondary)">
                 <Loader2 className="w-[18px] h-[18px] animate-spin" />
                 <span className="font-body text-[14px]">Loading coach profile...</span>
             </div>

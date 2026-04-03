@@ -140,7 +140,7 @@ export default function HydrationPage() {
         <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="max-w-5xl mx-auto h-full flex flex-col gap-6 pb-20"
+            className="w-full max-w-5xl mx-auto h-full flex flex-col gap-6 pb-20"
         >
             {/* Header with Advanced Navigation */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">

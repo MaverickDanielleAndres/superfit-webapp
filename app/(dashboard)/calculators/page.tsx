@@ -46,10 +46,10 @@ export default function CalculatorsPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
-            className="max-w-5xl mx-auto h-full flex flex-col"
+            className="w-full max-w-5xl mx-auto h-full flex flex-col"
         >
             <div className="mb-[24px]">
-                <h1 className="font-display font-bold text-[28px] text-(--text-primary) leading-tight mb-2">
+                <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary) leading-tight mb-2">
                     Health & Nutrition Calculators
                 </h1>
                 <p className="font-body text-[14px] text-(--text-secondary)">
@@ -94,7 +94,7 @@ export default function CalculatorsPage() {
                     {wizardStep === 2 && (
                         <div className="p-8 lg:p-12 flex flex-col items-center w-full flex-1">
                             <span className="block font-body text-[13px] text-emerald-500 font-bold tracking-wider uppercase mb-2">Step 1 of 3</span>
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary) mb-2 text-center">What is your primary fitness goal?</h2>
+                            <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary) mb-2 text-center">What is your primary fitness goal?</h2>
                             <p className="font-body text-[15px] text-(--text-secondary) mb-8 text-center max-w-lg">This determines your calorie & macronutrient baselines to ensure calculations match your physique objectives.</p>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl">
                                 {[
@@ -118,7 +118,7 @@ export default function CalculatorsPage() {
                     {wizardStep === 3 && (
                         <div className="p-8 lg:p-12 flex flex-col items-center w-full flex-1">
                             <span className="block font-body text-[13px] text-emerald-500 font-bold tracking-wider uppercase mb-2">Step 2 of 3</span>
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary) mb-2 text-center">How active are you?</h2>
+                            <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary) mb-2 text-center">How active are you?</h2>
                             <p className="font-body text-[15px] text-(--text-secondary) mb-8 text-center max-w-lg">Select your weekly exercise frequency to compute your total daily energy expenditure (TDEE).</p>
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full max-w-4xl">
                                 {[
@@ -146,7 +146,7 @@ export default function CalculatorsPage() {
                             <div className="w-[80px] h-[80px] rounded-full bg-blue-500/10 flex items-center justify-center mb-6">
                                 <Droplet className="w-[40px] h-[40px] text-blue-500" />
                             </div>
-                            <h2 className="font-display font-bold text-[28px] text-(--text-primary) mb-2">Current Water Intake?</h2>
+                            <h2 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary) mb-2">Current Water Intake?</h2>
                             <p className="font-body text-[15px] text-(--text-secondary) mb-8 max-w-md">How much water do you typically drink daily? We will customize a hydration plan for your biometrics.</p>
                             <div className="flex flex-wrap items-center justify-center gap-4 w-full max-w-2xl mb-8">
                                 {['Less than 1L', '1L - 2L', '2L - 3L', 'Over 3L'].map(opt => (

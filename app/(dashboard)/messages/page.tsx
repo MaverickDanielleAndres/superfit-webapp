@@ -235,18 +235,18 @@ export default function MessagesPage() {
 
     if (isLoading) {
         return (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-6xl mx-auto h-[calc(100vh-120px)] min-h-[600px] flex gap-6 pb-6 pt-2">
-                <div className="w-[340px] shrink-0 rounded-[24px] border border-(--border-subtle) bg-(--bg-surface) p-4 animate-pulse" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-6xl mx-auto min-h-[600px] flex flex-col lg:flex-row gap-4 lg:gap-6 pb-6 pt-2">
+                <div className="w-full lg:w-[340px] lg:shrink-0 rounded-[24px] border border-(--border-subtle) bg-(--bg-surface) p-4 animate-pulse" />
                 <div className="flex-1 rounded-[24px] border border-(--border-subtle) bg-(--bg-surface) p-4 animate-pulse" />
             </motion.div>
         )
     }
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto h-[calc(100vh-120px)] min-h-[600px] flex gap-6 pb-6 pt-2">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-6xl mx-auto min-h-[600px] flex flex-col lg:flex-row gap-4 lg:gap-6 pb-6 pt-2">
 
             {/* Sidebar List */}
-            <div className="w-[340px] shrink-0 bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] overflow-hidden flex flex-col shadow-sm">
+            <div className="w-full lg:w-[340px] lg:shrink-0 max-h-[42vh] lg:max-h-none bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] overflow-hidden flex flex-col shadow-sm">
                 <div className="p-5 border-b border-(--border-subtle) bg-[var(--bg-elevated)]">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex flex-col">
@@ -278,7 +278,7 @@ export default function MessagesPage() {
                     </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto overflow-x-hidden p-2">
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
                     {filteredThreads.map(thread => {
                         const title = getThreadTitle(thread)
                         const avatar = getThreadAvatar(thread)
@@ -323,7 +323,7 @@ export default function MessagesPage() {
 
             {/* Chat Area Right Panel */}
             {activeThread ? (
-                <div className="flex-1 bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] overflow-hidden flex flex-col shadow-sm relative">
+                <div className="flex-1 min-h-[420px] lg:min-h-0 bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] overflow-hidden flex flex-col shadow-sm relative">
 
                     {/* Header */}
                     <div className="h-[72px] px-6 border-b border-(--border-subtle) bg-[var(--bg-elevated)] flex items-center justify-between shrink-0 z-20">
@@ -401,7 +401,7 @@ export default function MessagesPage() {
                                         </div>
                                     )}
 
-                                    <div className="flex items-end gap-2 max-w-[75%] relative">
+                                    <div className="flex items-end gap-2 max-w-[88%] sm:max-w-[75%] relative">
 
                                         {/* Avatar (Left side, only bottom message of cluster) */}
                                         {!isMe && (
@@ -534,7 +534,7 @@ export default function MessagesPage() {
 
                         {/* Dummy Typing Indicator */}
                         {inputText.length > 5 && !editingMessageId && (
-                            <div className="flex items-end gap-2 max-w-[75%] ml-[36px]">
+                            <div className="flex items-end gap-2 max-w-[88%] sm:max-w-[75%] ml-[36px]">
                                 <div className="bg-[var(--bg-elevated)] border border-(--border-default) rounded-[20px] rounded-bl-[4px] px-4 py-3 flex items-center gap-1.5 shadow-sm h-[42px]">
                                     <div className="w-[6px] h-[6px] bg-(--text-tertiary) rounded-full animate-bounce" />
                                     <div className="w-[6px] h-[6px] bg-(--text-tertiary) rounded-full animate-bounce" style={{ animationDelay: '0.15s' }} />

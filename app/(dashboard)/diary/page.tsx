@@ -414,7 +414,7 @@ export default function DiaryPage() {
                             {scanState === 'analyzing' && (
                                 <div className="absolute inset-0 bg-black/40 backdrop-blur-sm shadow-[inset_0_0_100px_rgba(16,185,129,0.3)] flex flex-col items-center justify-center z-30">
                                     <div className="w-[120px] h-[120px] rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-6 drop-shadow-[0_0_20px_rgba(16,185,129,0.8)]" />
-                                    <h2 className="font-display font-black text-[28px] text-white mb-2">Analyzing Meal...</h2>
+                                    <h2 className="font-display font-black text-[22px] sm:text-[24px] lg:text-[28px] text-white mb-2">Analyzing Meal...</h2>
                                     <p className="font-body text-emerald-400 font-medium">Detecting macro profile and ingredients</p>
                                 </div>
                             )}

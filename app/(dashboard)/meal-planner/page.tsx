@@ -450,7 +450,7 @@ export default function MealPlannerPage() {
         <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="max-w-6xl mx-auto h-full flex flex-col gap-8 pb-20"
+            className="w-full max-w-6xl mx-auto h-full flex flex-col gap-8 pb-20"
         >
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
                 <div>

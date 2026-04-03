@@ -374,7 +374,7 @@ export default function SettingsPage() {
             <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="max-w-5xl mx-auto h-full flex flex-col md:flex-row gap-8 pb-20"
+                className="w-full max-w-5xl mx-auto h-full flex flex-col md:flex-row gap-8 pb-20"
             >
                 {/* Settings Navigation */}
                 <div className="w-full md:w-[260px] shrink-0">

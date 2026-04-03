@@ -76,22 +76,22 @@ export default function ProgramsPage() {
 
     if (builderState.isOpen) {
         return (
-            <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col h-full bg-(--bg-base) rounded-[24px] overflow-hidden -mt-4 border border-(--border-subtle)">
-                <div className="h-[72px] shrink-0 border-b border-(--border-subtle) bg-(--bg-surface) flex items-center justify-between px-6 z-10">
-                    <div className="flex items-center gap-4">
+            <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col h-full bg-(--bg-base) rounded-[24px] overflow-hidden -mt-2 sm:-mt-4 border border-(--border-subtle)">
+                <div className="min-h-[72px] shrink-0 border-b border-(--border-subtle) bg-(--bg-surface) flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 sm:px-6 py-3 z-10">
+                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                         <button onClick={() => setBuilderState((prev) => ({ ...prev, isOpen: false, programId: null }))} className="w-[36px] h-[36px] rounded-full bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary)">
                             <ArrowLeft className="w-[18px] h-[18px]" />
                         </button>
                         <input 
                             value={builderState.name}
                             onChange={(e) => setBuilderState({...builderState, name: e.target.value})}
-                            className="font-display font-black text-[20px] bg-transparent border-none outline-none text-(--text-primary) w-[300px]"
+                            className="font-display font-black text-[16px] sm:text-[18px] lg:text-[20px] bg-transparent border-none outline-none text-(--text-primary) w-[170px] sm:w-[240px] md:w-[300px]"
                             placeholder="Program Name"
                             defaultValue={builderState.name}
                         />
                     </div>
-                    <div className="flex items-center gap-3">
-                        <span className="text-[13px] text-(--text-secondary) font-bold mr-2">Changes saved</span>
+                    <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                        <span className="text-[12px] sm:text-[13px] text-(--text-secondary) font-bold">Changes saved</span>
                         <button
                             onClick={() => {
                                 void (async () => {
@@ -114,15 +114,15 @@ export default function ProgramsPage() {
                                     setBuilderState((prev) => ({ ...prev, isOpen: false, programId: null }))
                                 })()
                             }}
-                            className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 h-[40px] rounded-[12px] font-bold text-[14px]"
+                            className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 sm:px-6 h-[40px] rounded-[12px] font-bold text-[13px] sm:text-[14px]"
                         >
                             Publish Program
                         </button>
                     </div>
                 </div>
-                <div className="flex-1 overflow-y-auto p-8 flex gap-6 items-start overflow-x-auto">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 flex gap-4 sm:gap-6 items-start overflow-x-auto">
                     {builderDays.map(day => (
-                        <div key={day.id} className="w-[340px] shrink-0 bg-(--bg-surface) border border-(--border-subtle) rounded-[20px] shadow-sm flex flex-col max-h-full">
+                        <div key={day.id} className="w-[280px] sm:w-[320px] md:w-[340px] shrink-0 bg-(--bg-surface) border border-(--border-subtle) rounded-[20px] shadow-sm flex flex-col max-h-full">
                             <div className="p-4 border-b border-(--border-subtle) flex items-center justify-between bg-[var(--bg-elevated)] rounded-t-[20px]">
                                 <h4 className="font-display font-bold text-[16px]">{day.name}</h4>
                                 <MoreVertical className="w-[16px] h-[16px] text-(--text-tertiary)" />
@@ -167,7 +167,7 @@ export default function ProgramsPage() {
                         onClick={() => {
                             setBuilderDays([...builderDays, {id: 'd' + Date.now(), name: `Day ${builderDays.length + 1}`, exercises: []}])
                         }}
-                        className="w-[340px] shrink-0 h-[60px] bg-(--bg-surface) border border-dashed border-(--border-subtle) rounded-[20px] flex items-center justify-center gap-2 text-(--text-secondary) font-bold text-[14px] hover:bg-[var(--bg-elevated)] hover:text-(--text-primary) transition-colors"
+                        className="w-[280px] sm:w-[320px] md:w-[340px] shrink-0 h-[60px] bg-(--bg-surface) border border-dashed border-(--border-subtle) rounded-[20px] flex items-center justify-center gap-2 text-(--text-secondary) font-bold text-[14px] hover:bg-[var(--bg-elevated)] hover:text-(--text-primary) transition-colors"
                     >
                         <Plus className="w-[18px] h-[18px]" /> Add Day
                     </button>
@@ -177,10 +177,10 @@ export default function ProgramsPage() {
     }
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-6xl mx-auto h-full">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 w-full max-w-6xl mx-auto h-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-(--border-subtle) pb-6">
                 <div>
-                    <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Program Builder</h1>
+                    <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Program Builder</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Create and manage your reusable workout templates and master programs.</p>
                 </div>
                 <button onClick={() => setBuilderState({isOpen: true, name: 'Untitled Program', programId: null, difficulty: 'Beginner', length: '4 Weeks', cover: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&fit=crop'})} className="h-[44px] px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2">

@@ -38,10 +38,10 @@ export default function ClientsPage() {
     })
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-6xl mx-auto h-full">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 w-full max-w-6xl mx-auto h-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Client Roster</h1>
+                    <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Client Roster</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Manage your active clients, monitor compliance, and track progress.</p>
                 </div>
                 <button
@@ -52,7 +52,7 @@ export default function ClientsPage() {
                             else toast.info('No unassigned active users available.')
                         })()
                     }}
-                    className="h-[40px] px-4 rounded-[12px] bg-emerald-500 text-white font-bold text-[13px] shadow-sm hover:bg-emerald-600 transition-colors"
+                    className="h-[40px] w-full sm:w-auto px-4 rounded-[12px] bg-emerald-500 text-white font-bold text-[13px] shadow-sm hover:bg-emerald-600 transition-colors"
                 >
                     + Add Client
                 </button>
@@ -60,7 +60,7 @@ export default function ClientsPage() {
 
             <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] shadow-sm overflow-hidden flex flex-col">
                 <div className="p-4 border-b border-(--border-subtle) bg-[var(--bg-elevated)] flex flex-col sm:flex-row gap-4 justify-between">
-                    <div className="relative flex-1 max-w-[400px]">
+                    <div className="relative flex-1 w-full sm:max-w-[400px]">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-[16px] h-[16px] text-(--text-tertiary)" />
                         <input
                             type="text"
@@ -95,7 +95,56 @@ export default function ClientsPage() {
                     </div>
                 </div>
 
-                <div className="overflow-x-auto min-h-[400px]">
+                <div className="md:hidden p-4 flex flex-col gap-3">
+                    {filtered.map((client) => (
+                        <div key={client.id} className="rounded-[16px] border border-(--border-subtle) bg-[var(--bg-elevated)] p-4">
+                            <div className="flex items-center gap-3 mb-3">
+                                <img src={`https://api.dicebear.com/7.x/notionists/svg?seed=${client.name}`} alt={`${client.name} avatar`} className="w-[40px] h-[40px] rounded-full border border-(--border-subtle)" />
+                                <div className="min-w-0">
+                                    <p className="font-display font-bold text-[15px] text-(--text-primary) truncate">{client.name}</p>
+                                    <p className="text-[12px] text-(--text-secondary)">{client.goal}</p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 mb-3 text-[12px]">
+                                <span className="px-2 py-1 rounded-[8px] bg-(--bg-surface) border border-(--border-default) text-(--text-secondary)">Last active: {client.lastActive}</span>
+                                <span className={cn("px-2 py-1 rounded-[8px] font-bold text-center", client.compliance >= 80 ? 'bg-emerald-500/10 text-emerald-600' : client.compliance >= 50 ? 'bg-[var(--status-warning-bg)]/30 text-[var(--status-warning)]' : 'bg-red-500/10 text-red-600')}>{client.compliance}% compliance</span>
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                                <button 
+                                    onClick={() => {
+                                        void (async () => {
+                                            const threadId = await createOrGetDirectThread(client.id)
+                                            if (threadId) toast.success(`Conversation ready with ${client.name}.`)
+                                            else toast.error('Unable to open conversation.')
+                                        })()
+                                    }}
+                                    className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-surface)] border border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors"
+                                    title="Send Message"
+                                >
+                                    <MessageCircle className="w-[16px] h-[16px]" />
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        const nextStatus = client.status === 'Active' ? 'Inactive' : 'Active'
+                                        void (async () => {
+                                            await updateClientStatus(client.linkId, nextStatus)
+                                            toast.success(`${client.name} marked as ${nextStatus}.`)
+                                        })()
+                                    }}
+                                    className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-surface)] border border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors"
+                                    title="Toggle Active Status"
+                                >
+                                    <MoreHorizontal className="w-[16px] h-[16px]" />
+                                </button>
+                                <Link href={`/coach/clients/${client.id}`} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-surface)] border border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors" title="View Profile">
+                                    <ChevronRight className="w-[18px] h-[18px]" />
+                                </Link>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="hidden md:block overflow-x-auto min-h-[400px]">
                     <table className="w-full text-left font-body text-[14px]">
                         <thead className="border-b border-(--border-subtle) text-(--text-secondary) font-bold text-[12px] uppercase tracking-wider bg-[var(--bg-elevated)]/50">
                             <tr>

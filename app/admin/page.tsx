@@ -34,12 +34,12 @@ export default function AdminPage() {
     )
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto h-full flex flex-col gap-6 pb-20">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-6xl mx-auto h-full flex flex-col gap-6 pb-20">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <div className="flex items-center gap-3">
                         <Shield className="w-[26px] h-[26px] text-(--status-warning)" />
-                        <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Admin Console</h1>
+                        <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Admin Console</h1>
                     </div>
                     <p className="font-body text-[14px] text-(--text-secondary) mt-1">Live moderation, approvals, and account governance.</p>
                 </div>

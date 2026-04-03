@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { Search, MessageCircle, Bell, Settings2, Moon, Sun, X } from 'lucide-react'
+import { Search, MessageCircle, Bell, Settings2, Moon, Sun, X, Menu } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useMessageStore } from '@/store/useMessageStore'
@@ -9,6 +9,7 @@ import { useNotificationStore } from '@/store/useNotificationStore'
 import { requestApi } from '@/lib/api/client'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useUIStore } from '@/store/useUIStore'
 
 interface SearchResult {
     id: string
@@ -65,6 +66,7 @@ export function TopBar() {
     } = useNotificationStore()
     const totalUnread = getTotalUnread()
     const router = useRouter()
+    const { toggleMobileNav } = useUIStore()
 
     useEffect(() => {
         if (!user?.id) return
@@ -142,30 +144,41 @@ export function TopBar() {
     }
 
     return (
-        <header className="sticky top-0 z-30 h-[64px] bg-(--bg-base) px-[28px] flex items-center justify-between border-b border-(--border-subtle)">
+        <header className="sticky top-0 z-30 h-[64px] bg-(--bg-base) px-3 sm:px-4 md:px-5 lg:px-[28px] flex items-center justify-between border-b border-(--border-subtle)">
             {/* Left Block: Greeting */}
-            <div className="flex flex-col justify-center translate-y-2">
-                <span className="font-body font-medium text-[13px] text-(--text-secondary) leading-none mb-1">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                <button
+                    type="button"
+                    onClick={toggleMobileNav}
+                    className="lg:hidden w-[38px] h-[38px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+                    aria-label="Open navigation"
+                >
+                    <Menu className="w-[20px] h-[20px]" />
+                </button>
+
+                <div className="flex flex-col justify-center min-w-0 translate-y-1 sm:translate-y-2">
+                    <span className="hidden sm:block font-body font-medium text-[12px] sm:text-[13px] text-(--text-secondary) leading-none mb-1">
                     {greeting}
-                </span>
-                <h2 className="font-display font-semibold text-[20px] text-(--text-primary) leading-none m-0 p-0">
-                    {user?.name ? `${user.name}!` : 'Welcome Back!'}
-                </h2>
+                    </span>
+                    <h2 className="font-display font-semibold text-[16px] sm:text-[18px] lg:text-[20px] text-(--text-primary) leading-none m-0 p-0 truncate max-w-[170px] sm:max-w-[260px] lg:max-w-none">
+                        {user?.name ? `${user.name}!` : 'Welcome Back!'}
+                    </h2>
+                </div>
             </div>
 
             {/* Right Block: Icons */}
-            <div className="flex items-center gap-1 relative">
+            <div className="flex items-center gap-0.5 sm:gap-1 relative">
                 <button
                     onClick={() => setIsSearchOpen(true)}
-                    className="w-[40px] h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+                    className="w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
                 >
-                    <Search className="w-[20px] h-[20px]" />
+                    <Search className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />
                 </button>
                 <button
                     onClick={() => { router.push('/messages'); setIsNotifOpen(false); }}
-                    className="relative w-[40px] h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+                    className="relative w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
                 >
-                    <MessageCircle className="w-[20px] h-[20px]" />
+                    <MessageCircle className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />
                     {totalUnread > 0 && (
                         <span className="absolute top-[-4px] right-[-4px] w-[18px] h-[18px] rounded-full bg-emerald-500 text-white font-body font-bold text-[10px] flex items-center justify-center border-2 border-(--bg-base)">
                             {totalUnread > 9 ? '9+' : totalUnread}
@@ -177,9 +190,9 @@ export function TopBar() {
                 <div className="relative">
                     <button
                         onClick={() => setIsNotifOpen(!isNotifOpen)}
-                        className="relative w-[40px] h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+                        className="relative w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
                     >
-                        <Bell className="w-[20px] h-[20px]" />
+                        <Bell className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />
                         {unreadNotifs > 0 && (
                             <span className="absolute top-[-4px] right-[-4px] w-[18px] h-[18px] rounded-full bg-(--accent) text-white font-body font-bold text-[10px] flex items-center justify-center border-2 border-(--bg-base)">
                                 {unreadNotifs}
@@ -196,7 +209,7 @@ export function TopBar() {
                                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    className="absolute right-0 top-[50px] w-[320px] bg-(--bg-surface) border border-(--border-subtle) rounded-[16px] shadow-lg z-50 overflow-hidden"
+                                    className="absolute right-0 top-[50px] w-[min(320px,calc(100vw-1rem))] bg-(--bg-surface) border border-(--border-subtle) rounded-[16px] shadow-lg z-50 overflow-hidden"
                                 >
                                     <div className="p-4 border-b border-(--border-subtle) flex justify-between items-center bg-[var(--bg-elevated)]">
                                         <h3 className="font-display font-bold text-[15px] text-(--text-primary)">Notifications</h3>
@@ -249,17 +262,17 @@ export function TopBar() {
 
                 <button
                     onClick={() => router.push('/settings')}
-                    className="w-[40px] h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+                    className="w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
                 >
-                    <Settings2 className="w-[20px] h-[20px]" />
+                    <Settings2 className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />
                 </button>
 
                 {/* Theme Toggle */}
                 <button
                     onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                    className="w-[40px] h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+                    className="w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
                 >
-                    {theme === 'dark' ? <Sun className="w-[20px] h-[20px]" /> : <Moon className="w-[20px] h-[20px]" />}
+                    {theme === 'dark' ? <Sun className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" /> : <Moon className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />}
                 </button>
             </div>
 

@@ -52,7 +52,7 @@ export default function ClientDetailPage() {
     }
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-6xl mx-auto h-full pb-20 pt-2">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 w-full max-w-6xl mx-auto h-full pb-20 pt-2">
             <Link href="/coach/clients" className="inline-flex items-center gap-2 text-(--text-secondary) hover:text-(--text-primary) font-body font-bold text-[14px] mb-2 transition-colors w-fit">
                 <ArrowLeft className="w-[16px] h-[16px]" /> Back to Roster
             </Link>

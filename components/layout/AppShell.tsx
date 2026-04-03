@@ -23,7 +23,7 @@ export function AppShell({ children }: AppShellProps) {
     }, [initialize, user?.id])
 
     return (
-        <div className="min-h-screen bg-(--bg-base) flex">
+        <div className="min-h-screen bg-(--bg-base) flex overflow-x-hidden">
             <Sidebar />
             {/* 
         Sidebar width is handled via CSS transition. Default expanded is 240px. 
@@ -31,11 +31,11 @@ export function AppShell({ children }: AppShellProps) {
       */}
             <div className={cn(
                 "flex-1 flex flex-col min-w-0 transition-all duration-250 ease-[cubic-bezier(0.16,1,0.3,1)]",
-                isSidebarCollapsed ? "pl-[64px]" : "pl-[240px]"
+                isSidebarCollapsed ? "lg:pl-[64px]" : "lg:pl-[240px]"
             )}>
                 <TopBar />
                 {/* Main Content Area */}
-                <main className="flex-1 p-[24px] md:px-[28px] md:pb-[24px]">
+                <main className="flex-1 p-4 sm:p-5 md:p-6 lg:p-[24px] lg:px-[28px] lg:pb-[24px] overflow-x-hidden">
                     {children}
                 </main>
             </div>

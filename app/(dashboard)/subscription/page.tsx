@@ -36,7 +36,7 @@ export default function SubscriptionPage() {
         <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="max-w-5xl mx-auto h-full flex flex-col gap-8 pb-20 items-center justify-center min-h-[calc(100vh-140px)]"
+            className="w-full max-w-5xl mx-auto h-full flex flex-col gap-8 pb-20 items-center justify-center min-h-[calc(100vh-140px)]"
         >
             <div className="text-center max-w-2xl mx-auto mb-6">
                 <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-(--accent) bg-opacity-10 text-(--accent) font-body text-[13px] font-bold uppercase tracking-wider mb-4 border border-(--accent) border-opacity-20">

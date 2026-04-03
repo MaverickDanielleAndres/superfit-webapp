@@ -30,10 +30,10 @@ export default function AnalyticsPage() {
     }, [clients])
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-6xl mx-auto h-full">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 w-full max-w-6xl mx-auto h-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-(--border-subtle) pb-6">
                 <div>
-                    <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Analytics & Reports</h1>
+                    <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Analytics & Reports</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Monitor client quality, retention signals, and operational throughput.</p>
                 </div>
                 <button

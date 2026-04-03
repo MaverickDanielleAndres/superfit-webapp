@@ -37,11 +37,11 @@ export default function CoachDashboardPage() {
         <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="max-w-6xl mx-auto h-full flex flex-col gap-6 pb-20"
+            className="w-full max-w-6xl mx-auto h-full flex flex-col gap-6 pb-20"
         >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
                 <div>
-                    <h1 className="font-display font-bold text-[28px] text-(--text-primary) leading-tight">Coach Portal</h1>
+                    <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary) leading-tight">Coach Portal</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Manage your clients, content, and business metrics.</p>
                 </div>
                 <div className="flex items-center gap-3">

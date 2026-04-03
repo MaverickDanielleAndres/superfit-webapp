@@ -140,9 +140,9 @@ export default function BroadcastPage() {
     }
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-5xl mx-auto h-full">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 w-full max-w-5xl mx-auto h-full">
             <div>
-                <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Broadcast Center</h1>
+                <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Broadcast Center</h1>
                 <p className="font-body text-[14px] text-(--text-secondary)">Send mass messages to specific client segments.</p>
             </div>
 

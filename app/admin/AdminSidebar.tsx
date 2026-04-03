@@ -16,15 +16,43 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
 
-export function AdminSidebar() {
+interface AdminSidebarProps {
+    isMobileOpen: boolean
+    onCloseMobile: () => void
+}
+
+export function AdminSidebar({ isMobileOpen, onCloseMobile }: AdminSidebarProps) {
     const pathname = usePathname()
     const router = useRouter()
-    const { user, logout } = useAuthStore()
+    const { logout } = useAuthStore()
 
     const handleLogout = () => {
+        onCloseMobile()
         logout()
         router.push('/auth')
     }
+
+    React.useEffect(() => {
+        onCloseMobile()
+    }, [pathname, onCloseMobile])
+
+    React.useEffect(() => {
+        if (!isMobileOpen) return
+
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                onCloseMobile()
+            }
+        }
+
+        document.body.style.overflow = 'hidden'
+        window.addEventListener('keydown', handleEscape)
+
+        return () => {
+            document.body.style.overflow = ''
+            window.removeEventListener('keydown', handleEscape)
+        }
+    }, [isMobileOpen, onCloseMobile])
 
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', href: '/admin' },
@@ -37,12 +65,25 @@ export function AdminSidebar() {
     ]
 
     return (
-        <aside
-            className={cn(
-                'fixed top-0 left-0 h-screen z-40 bg-(--sidebar-bg) border-r border-(--sidebar-border) overflow-y-auto flex flex-col',
-                'w-[240px]'
-            )}
-        >
+        <>
+            <button
+                type="button"
+                aria-label="Close admin navigation"
+                onClick={onCloseMobile}
+                className={cn(
+                    'fixed inset-0 z-40 bg-black/45 transition-opacity lg:hidden',
+                    isMobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                )}
+            />
+
+            <aside
+                className={cn(
+                    'fixed top-0 left-0 h-screen z-50 bg-(--sidebar-bg) border-r border-(--sidebar-border) overflow-y-auto flex flex-col',
+                    'transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
+                    'w-[280px] sm:w-[320px] lg:w-[240px]',
+                    isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+                )}
+            >
             <div className="h-[72px] px-4 flex items-center gap-[10px] shrink-0">
                 <div className="w-[32px] h-[32px] shrink-0 rounded-[10px] bg-red-600 flex items-center justify-center shadow-sm">
                     <span className="font-display font-bold text-[14px] text-white">AD</span>
@@ -63,6 +104,7 @@ export function AdminSidebar() {
                         <Link
                             key={item.label}
                             href={item.href}
+                            onClick={onCloseMobile}
                             className={cn(
                                 'flex items-center h-[44px] px-3 mx-2 my-0.5 rounded-[10px] gap-2.5 transition-all duration-120 cursor-pointer',
                                 isActive
@@ -79,6 +121,7 @@ export function AdminSidebar() {
                 <div className="mt-auto pt-4 border-t border-(--border-subtle) mx-4 flex flex-col gap-2">
                     <Link
                         href="/"
+                        onClick={onCloseMobile}
                         className="flex items-center h-[44px] px-3 rounded-[10px] gap-2.5 text-(--text-secondary) hover:bg-(--bg-elevated) hover:text-(--text-primary) transition-all"
                     >
                         <ArrowLeft className="w-[18px] h-[18px] shrink-0" />
@@ -93,6 +136,7 @@ export function AdminSidebar() {
                     </button>
                 </div>
             </nav>
-        </aside>
+            </aside>
+        </>
     )
 }

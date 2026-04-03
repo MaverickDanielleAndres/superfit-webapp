@@ -148,7 +148,7 @@ export default function CreateWorkoutSheet({ isOpen, onClose }: { isOpen: boolea
                 </div>
 
                 {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-32">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-6">
                     
                     {/* Top Forms */}
                     <div className="space-y-4 mb-8">
@@ -285,11 +285,11 @@ export default function CreateWorkoutSheet({ isOpen, onClose }: { isOpen: boolea
 
                 </div>
 
-                {/* Footer fixed at bottom */}
-                <div className="absolute bottom-0 left-0 right-0 bg-(--bg-base) border-t border-(--border-subtle) p-4 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] flex items-center justify-between">
-                    <div className="flex flex-col">
+                {/* Footer */}
+                <div className="shrink-0 bg-(--bg-base) border-t border-(--border-subtle) px-4 sm:px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-10px_30px_rgba(0,0,0,0.05)] flex flex-col sm:flex-row sm:items-center gap-4 sm:justify-between">
+                    <div className="flex w-full sm:w-auto flex-col items-center sm:items-start text-center sm:text-left">
                         <span className="font-body text-[12px] font-bold text-(--text-tertiary) uppercase tracking-wider">Summary</span>
-                        <div className="flex items-center gap-2 font-display font-bold text-[14px]">
+                        <div className="flex flex-wrap items-center gap-2 font-display font-bold text-[14px]">
                             <span className="text-(--text-secondary)">{exercises.length} Ex</span>
                             <span className="text-(--border-subtle)">•</span>
                             <span className="text-(--text-secondary)">~{estimatedDuration}m</span>
@@ -298,14 +298,14 @@ export default function CreateWorkoutSheet({ isOpen, onClose }: { isOpen: boolea
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        <button onClick={onClose} className="px-4 h-[44px] rounded-[12px] font-display font-bold text-[15px] text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors">Cancel</button>
+                    <div className="flex w-full sm:w-auto flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+                        <button onClick={onClose} className="w-full sm:w-auto px-4 h-[44px] rounded-[12px] font-display font-bold text-[15px] text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors">Cancel</button>
                         <button 
                             onClick={handleSave} 
                             disabled={isSaving}
-                            className="px-6 h-[44px] rounded-[12px] bg-(--accent) text-white font-display font-bold text-[15px] hover:bg-(--accent-hover) transition-colors flex items-center justify-center disabled:opacity-70 disabled:pointer-events-none"
+                            className="w-full sm:w-auto sm:min-w-[176px] px-6 h-[44px] rounded-[12px] bg-(--accent) !text-white font-display font-bold text-[15px] tracking-[0.01em] hover:bg-(--accent-hover) transition-colors flex items-center justify-center disabled:opacity-70 disabled:pointer-events-none"
                         >
-                            {isSaving ? <div className="w-[18px] h-[18px] border-2 border-white/30 border-t-white rounded-full animate-spin" /> : "Save Workout"}
+                            {isSaving ? <div className="w-[18px] h-[18px] border-2 border-white/30 border-t-white rounded-full animate-spin" /> : "Finish Workout"}
                         </button>
                     </div>
                 </div>

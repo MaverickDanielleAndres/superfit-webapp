@@ -41,10 +41,10 @@ export default function CoachDashboard() {
     )
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto h-full flex flex-col gap-6 pb-20">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-6xl mx-auto h-full flex flex-col gap-6 pb-20">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Coach HQ</h1>
+                    <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Coach HQ</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">A live overview of your clients, programs, forms, and schedule.</p>
                 </div>
                 <div className="flex gap-3">

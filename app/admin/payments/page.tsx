@@ -43,10 +43,10 @@ export default function AdminPaymentsPage() {
     const pendingTotal = pendingPayouts.reduce((sum, payment) => sum + payment.amountValue, 0)
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-6xl mx-auto h-full">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 w-full max-w-6xl mx-auto h-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Payments & Subscriptions</h1>
+                    <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Payments & Subscriptions</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Monitor platform revenue, handle refunds, and view transaction history.</p>
                 </div>
                 <button 
@@ -81,7 +81,7 @@ export default function AdminPaymentsPage() {
                         URL.revokeObjectURL(url)
                         toast.success('CSV downloaded.')
                     }}
-                    className="h-[40px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) text-(--text-primary) font-bold text-[13px] shadow-sm hover:bg-[var(--bg-surface-alt)] transition-colors flex items-center gap-2"
+                    className="h-[40px] w-full sm:w-auto px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) text-(--text-primary) font-bold text-[13px] shadow-sm hover:bg-[var(--bg-surface-alt)] transition-colors flex items-center justify-center gap-2"
                 >
                     <Download className="w-[16px] h-[16px]" /> Export CSV
                 </button>
@@ -142,7 +142,7 @@ export default function AdminPaymentsPage() {
 
             <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] shadow-sm overflow-hidden flex flex-col mt-4">
                 <div className="p-4 border-b border-(--border-subtle) bg-[var(--bg-elevated)] flex flex-col sm:flex-row gap-4 justify-between">
-                    <div className="relative flex-1 max-w-[400px]">
+                    <div className="relative flex-1 w-full sm:max-w-[400px]">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-[16px] h-[16px] text-(--text-tertiary)" />
                         <input
                             type="text"
@@ -152,8 +152,8 @@ export default function AdminPaymentsPage() {
                             className="w-full h-[40px] pl-9 pr-4 rounded-[12px] bg-(--bg-surface) border border-(--border-default) focus:border-red-500 font-body text-[14px] outline-none"
                         />
                     </div>
-                    <div className="flex gap-2">
-                        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-[40px] px-3 rounded-[12px] bg-(--bg-surface) border border-(--border-default) font-body text-[13px] font-bold outline-none cursor-pointer">
+                    <div className="flex gap-2 w-full sm:w-auto">
+                        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-[40px] w-full sm:w-auto px-3 rounded-[12px] bg-(--bg-surface) border border-(--border-default) font-body text-[13px] font-bold outline-none cursor-pointer">
                             <option value="all">Status: All</option>
                             <option value="succeeded">Succeeded</option>
                             <option value="failed">Failed</option>
@@ -163,7 +163,31 @@ export default function AdminPaymentsPage() {
                     </div>
                 </div>
 
-                <div className="overflow-x-auto min-h-[400px]">
+                <div className="md:hidden p-4 flex flex-col gap-3">
+                    {filteredPayments.map((txn) => (
+                        <div key={txn.id} className="rounded-[16px] border border-(--border-subtle) bg-[var(--bg-elevated)] p-4">
+                            <div className="flex items-center justify-between gap-3 mb-2">
+                                <span className="font-display font-medium text-[12px] text-(--text-tertiary) truncate">{txn.id}</span>
+                                <span className={cn(
+                                    "px-2.5 py-1 rounded-[8px] font-bold text-[11px] uppercase tracking-wider",
+                                    txn.statusLabel === 'Succeeded' ? 'bg-emerald-500/10 text-emerald-600' :
+                                    txn.statusLabel === 'Failed' ? 'bg-red-500/10 text-red-600' :
+                                    'bg-[var(--status-warning-bg)]/30 text-[var(--status-warning)]'
+                                )}>
+                                    {txn.statusLabel}
+                                </span>
+                            </div>
+                            <p className="font-bold text-[14px] text-(--text-primary)">{txn.user}</p>
+                            <p className="text-[12px] text-(--text-secondary) mb-2">to {txn.coach}</p>
+                            <div className="flex items-center justify-between">
+                                <span className="font-display font-bold text-[15px] text-(--text-primary)">{txn.amount}</span>
+                                <span className="text-[12px] text-(--text-secondary)">{txn.date}</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="hidden md:block overflow-x-auto min-h-[400px]">
                     <table className="w-full text-left font-body text-[14px]">
                         <thead className="border-b border-(--border-subtle) text-(--text-secondary) font-bold text-[12px] uppercase tracking-wider bg-[var(--bg-elevated)]/50">
                             <tr>

@@ -91,10 +91,10 @@ export default function FormsPage() {
     }
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-5xl mx-auto h-full">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 w-full max-w-5xl mx-auto h-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="font-display font-bold text-[28px] text-(--text-primary)">Forms & Assessments</h1>
+                    <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Forms & Assessments</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Create custom questionnaires for client onboarding and weekly check-ins.</p>
                 </div>
                 <button 
@@ -104,14 +104,44 @@ export default function FormsPage() {
                             toast.success('Created draft form.')
                         })()
                     }}
-                    className="h-[44px] px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2"
+                    className="h-[44px] w-full sm:w-auto px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2"
                 >
                     <Plus className="w-[18px] h-[18px]" /> Create Form
                 </button>
             </div>
 
             <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] shadow-sm overflow-hidden">
-                <div className="overflow-x-auto min-h-[400px]">
+                <div className="md:hidden p-4 flex flex-col gap-3">
+                    {forms.map((form) => (
+                        <div key={form.id} className="rounded-[16px] border border-(--border-subtle) bg-[var(--bg-elevated)] p-4">
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-surface)] border border-(--border-subtle) flex items-center justify-center text-(--text-secondary)">
+                                    <FileText className="w-[18px] h-[18px]" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="font-display font-bold text-[15px] text-(--text-primary) truncate">{form.name}</p>
+                                    <p className="text-[12px] text-(--text-secondary)">{form.lastUpdated}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center justify-between mb-3">
+                                <span className={`px-3 py-1 rounded-full font-bold text-[11px] uppercase tracking-wider ${form.status === 'Active' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-(--border-subtle) text-(--text-secondary)'}`}>
+                                    {form.status}
+                                </span>
+                                <button onClick={() => toast.info('Response viewer will open in the next slice.')} className="text-[12px] font-bold text-(--text-primary)">
+                                    {form.submissions} submissions
+                                </button>
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                                <button onClick={() => handleAction('Sending/Assigning', form.id)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-surface)] border border-(--border-default) flex items-center justify-center text-(--text-secondary)" title="Send/Assign"><Send className="w-[16px] h-[16px]" /></button>
+                                <button onClick={() => handleAction('Duplicating', form.id)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-surface)] border border-(--border-default) flex items-center justify-center text-(--text-secondary)" title="Duplicate"><Copy className="w-[16px] h-[16px]" /></button>
+                                <button onClick={() => handleAction('Editing', form.id)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-surface)] border border-(--border-default) flex items-center justify-center text-(--text-secondary)" title="Edit"><Edit2 className="w-[16px] h-[16px]" /></button>
+                                <button onClick={() => handleAction('Deleting', form.id)} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-surface)] border border-(--border-default) flex items-center justify-center text-(--text-secondary)" title="Delete"><Trash2 className="w-[16px] h-[16px]" /></button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="hidden md:block overflow-x-auto min-h-[400px]">
                     <table className="w-full text-left font-body text-[14px]">
                         <thead className="border-b border-(--border-subtle) text-(--text-secondary) font-bold text-[12px] uppercase tracking-wider bg-[var(--bg-elevated)]/50">
                             <tr>
