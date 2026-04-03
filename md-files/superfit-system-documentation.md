@@ -1,6 +1,6 @@
 # SuperFit System Documentation (Detailed)
 
-Last updated: 2026-04-02
+Last updated: 2026-04-03
 Documentation mode: implementation-accurate
 
 ## 1. Purpose
@@ -58,6 +58,7 @@ The app is organized around three role-specific portals plus auth/onboarding:
 - `/hydration`
 - `/meal-planner`
 - `/messages`
+- `/notifications`
 - `/progress`
 - `/settings`
 - `/subscription`
@@ -88,7 +89,66 @@ The app is organized around three role-specific portals plus auth/onboarding:
 - `/admin/settings`
 - `/admin/users`
 
-## 5. Shared Layout Components
+## 5. Backend API Inventory
+
+API route handlers are implemented under `app/api/v1` and are consumed by dashboard, coach, and admin portals.
+
+### 5.1 Auth And Core User Domains
+
+- Auth/session:
+  - `/api/v1/auth/me`
+
+- User progress domains:
+  - `/api/v1/workouts`, `/api/v1/workouts/[id]`
+  - `/api/v1/goals`, `/api/v1/goals/[id]`
+  - `/api/v1/hydration`, `/api/v1/hydration/[id]`
+  - `/api/v1/nutrition`, `/api/v1/nutrition/[id]`
+  - `/api/v1/nutrition/foods/search`, `/api/v1/nutrition/ai-scan`
+
+- Social and communication:
+  - `/api/v1/messages/*`
+  - `/api/v1/notifications`, `/api/v1/notifications/[id]`
+  - `/api/v1/community/posts/*`
+  - `/api/v1/friends/*`
+
+- Settings and account:
+  - `/api/v1/settings/profile`
+  - `/api/v1/subscription`
+  - `/api/v1/simulated-checkout`
+
+- Utility/search:
+  - `/api/v1/search`
+  - `/api/v1/health`
+  - `/api/v1/exercises/search`
+  - `/api/v1/meal-planner/recipes/search`
+
+### 5.2 Coach Domains
+
+- Portal routes:
+  - `/api/v1/coach/clients*`
+  - `/api/v1/coach/programs*`
+  - `/api/v1/coach/forms*`
+  - `/api/v1/coach/content`
+  - `/api/v1/coach/broadcast*`
+  - `/api/v1/coach/schedule-events`
+  - `/api/v1/coach/marketplace`
+  - `/api/v1/coach/settings`
+
+- Marketplace/profile/reviews:
+  - `/api/v1/coaching/[coachId]/overview`
+  - `/api/v1/coaching/[coachId]/reviews`
+  - `/api/v1/coaching/reviews/[reviewId]/reply`
+
+### 5.3 Admin Domains
+
+- `/api/v1/admin/users*`
+- `/api/v1/admin/coaches`
+- `/api/v1/admin/applications*`
+- `/api/v1/admin/payments*`
+- `/api/v1/admin/reports*`
+- `/api/v1/admin/settings`
+
+## 6. Shared Layout Components
 
 `components/layout/` contains shell primitives:
 
@@ -101,11 +161,11 @@ Role-specific sidebars:
 - `app/coach/CoachSidebar.tsx`
 - `app/admin/AdminSidebar.tsx`
 
-## 6. State Management
+## 7. State Management
 
 State is organized by business domain and persisted locally.
 
-### 6.1 Store Registry
+### 7.1 Store Registry
 
 - `useAuthStore` (`superfit-auth-storage`)
   - Handles login/signup/logout/error/user session
@@ -132,19 +192,28 @@ State is organized by business domain and persisted locally.
 - `useMessageStore` (`superfit-messages-storage-v2`)
   - Threads, message arrays, reactions, unread counters
 
+- `useNotificationStore` (`superfit-notifications-storage-v1`)
+  - Notifications list, unread state, mark-read/seen actions, realtime subscriptions
+
 - `useCoachingStore` (`superfit-coaching-storage`)
   - Coach marketplace and client hub data model
+
+- `useCoachPortalStore` (non-persisted operational domain state)
+  - Coach client/program/form/event/broadcast state backed by `/api/v1/coach/*`
+
+- `useAdminPortalStore` (non-persisted operational domain state)
+  - Admin users/coaches/applications/payments/reports/settings backed by `/api/v1/admin/*`
 
 - `useUIStore` (`superfit-ui-storage`)
   - Sidebar collapse state
 
-### 6.2 Important Note
+### 7.2 Important Note
 
-Both auth and user profile concerns currently exist in `useAuthStore` and `useUserStore`. This dual ownership is acceptable for MVP but should be unified during backend migration.
+Both auth and user profile concerns currently exist in `useAuthStore` and `useUserStore`. This dual ownership is acceptable for MVP but should be unified during deeper backend hardening.
 
-## 7. Domain Modules
+## 8. Domain Modules
 
-### 7.1 Calculations Layer
+### 8.1 Calculations Layer
 
 `lib/calculations.ts` provides deterministic utility functions:
 
@@ -156,7 +225,7 @@ Both auth and user profile concerns currently exist in `useAuthStore` and `useUs
 - Creatine load/maintenance suggestion
 - Deficit scenarios for weight-loss timelines
 
-### 7.2 Mock Data Layer
+### 8.2 Mock Data Layer
 
 `lib/mockData.ts` seeds:
 
@@ -165,7 +234,7 @@ Both auth and user profile concerns currently exist in `useAuthStore` and `useUs
 
 Many UI routes also include local mock arrays and optimistic interactions.
 
-### 7.3 Type System
+### 8.3 Type System
 
 `types/index.ts` centralizes type contracts for:
 
@@ -173,9 +242,9 @@ Many UI routes also include local mock arrays and optimistic interactions.
 - Messaging and community
 - Coaching entities
 
-## 8. Design System Wiring
+## 9. Design System Wiring
 
-### 8.1 Theme Tokens
+### 9.1 Theme Tokens
 
 Tokens are defined in `app/globals.css` and mapped via Tailwind theme custom properties.
 
@@ -188,7 +257,7 @@ Token groups:
 - Chart
 - Sidebar
 
-### 8.2 Typography
+### 9.2 Typography
 
 `app/layout.tsx` sets font variables:
 
@@ -196,22 +265,24 @@ Token groups:
 - Body: Inter
 - Mono: JetBrains Mono
 
-### 8.3 Motion And Feedback
+### 9.3 Motion And Feedback
 
 - Framer Motion for page and modal animations
 - Sonner for toast notifications
 
-## 9. Functional Coverage Snapshot
+## 10. Functional Coverage Snapshot
 
-### 9.1 Strongly Implemented
+### 10.1 Strongly Implemented
 
 - Shell/navigation/theming framework
 - Role-based route protection and redirect logic
 - Workout session tracking flow
 - Goal CRUD state
+- Coach and admin core API-backed workflows
+- Notifications API integration with realtime updates
 - Calculator workflows and utility-backed outputs
 
-### 9.2 Implemented But Mock-Heavy
+### 10.2 Implemented But Mock-Heavy
 
 - Community feed and social interactions
 - Messages/attachments workflow
@@ -219,14 +290,15 @@ Token groups:
 - Meal planning and AI scan experience
 - Analytics panels in user/coach/admin spaces
 
-### 9.3 Explicitly Partial
+### 10.3 Explicitly Partial
 
 Known "coming soon" hooks are present in selected coach and client hub actions (for example filters/actions/planner/program viewer).
 
-## 10. Documentation Maintenance Rules
+## 11. Documentation Maintenance Rules
 
 When features change:
 
 1. Update this file and `superfit-all-functionalities-list.md` together.
 2. Mark partial/mocked behavior clearly.
-3. Do not claim production API/payment/integration support unless implemented.
+3. Reflect new `/api/v1` additions/removals in the API inventory section.
+4. Do not claim production API/payment/integration support unless implemented.
