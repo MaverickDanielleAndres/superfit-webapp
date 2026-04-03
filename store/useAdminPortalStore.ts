@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import { createClient } from '@/lib/supabase/client'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { requestApi } from '@/lib/api/client'
 
 export interface AdminUserItem {
   id: string
@@ -130,225 +130,220 @@ export const useAdminPortalStore = create<AdminPortalState>((set, get) => ({
   },
 
   fetchUsers: async () => {
-    const supabase = createClient()
-    const { data, error } = await (supabase as any)
-      .from('profiles')
-      .select('id,full_name,email,role,account_status,is_premium,created_at')
-      .order('created_at', { ascending: false })
+    try {
+      const response = await requestApi<{
+        users: Array<{
+          id: string
+          full_name: string | null
+          email: string | null
+          role: string | null
+          account_status: string | null
+          is_premium: boolean | null
+          created_at: string | null
+        }>
+      }>('/api/v1/admin/users')
 
-    if (error) {
-      set({ error: error.message })
+      const users: AdminUserItem[] = (response.data.users || []).map((row) => ({
+        id: String(row.id),
+        name: String(row.full_name || row.email || 'User'),
+        email: String(row.email || ''),
+        role: normalizeRole(row.role),
+        status: normalizeAccountStatus(row.account_status),
+        joined: formatDateLabel(String(row.created_at || new Date().toISOString())),
+        isPremium: Boolean(row.is_premium),
+      }))
+
+      set({ users })
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to fetch users.') })
       return
     }
-
-    const users: AdminUserItem[] = (data || []).map((row: any) => ({
-      id: String(row.id),
-      name: String(row.full_name || row.email || 'User'),
-      email: String(row.email || ''),
-      role: normalizeRole(row.role),
-      status: normalizeAccountStatus(row.account_status),
-      joined: formatDateLabel(String(row.created_at || new Date().toISOString())),
-      isPremium: Boolean(row.is_premium),
-    }))
-
-    set({ users })
   },
 
   fetchCoaches: async () => {
-    const supabase = createClient()
-    const { data: coachesData, error: coachesError } = await (supabase as any)
-      .from('profiles')
-      .select('id,full_name,email,account_status')
-      .eq('role', 'coach')
-      .order('created_at', { ascending: false })
+    try {
+      const response = await requestApi<{
+        coaches: Array<{
+          id: string
+          full_name: string | null
+          email: string | null
+          account_status: string | null
+        }>
+        clientLinks: Array<{ coach_id: string | null }>
+        payments: Array<{ coach_id: string | null; amount_cents: number | null; status: string | null }>
+      }>('/api/v1/admin/coaches')
 
-    if (coachesError) {
-      set({ error: coachesError.message })
+      const clientCountMap = new Map<string, number>()
+      for (const link of response.data.clientLinks || []) {
+        const coachId = String(link.coach_id || '')
+        clientCountMap.set(coachId, (clientCountMap.get(coachId) || 0) + 1)
+      }
+
+      const revenueMap = new Map<string, number>()
+      for (const payment of response.data.payments || []) {
+        const coachId = String(payment.coach_id || '')
+        if (String(payment.status || '').toLowerCase() !== 'succeeded') continue
+        revenueMap.set(coachId, (revenueMap.get(coachId) || 0) + Number(payment.amount_cents || 0))
+      }
+
+      const coaches: AdminCoachItem[] = (response.data.coaches || []).map((row) => {
+        const coachId = String(row.id)
+        return {
+          id: coachId,
+          name: String(row.full_name || row.email || 'Coach'),
+          email: String(row.email || ''),
+          clients: clientCountMap.get(coachId) || 0,
+          status: row.account_status === 'suspended' ? 'Suspended' : 'Verified',
+          revenue: formatCurrencyCents(revenueMap.get(coachId) || 0),
+        }
+      })
+
+      set({ coaches })
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to fetch coaches.') })
       return
     }
-
-    const coachIds = (coachesData || []).map((row: any) => row.id)
-
-    const [clientLinksResult, paymentResult] = await Promise.all([
-      (supabase as any)
-        .from('coach_client_links')
-        .select('coach_id')
-        .in('coach_id', coachIds.length ? coachIds : ['00000000-0000-0000-0000-000000000000']),
-      (supabase as any)
-        .from('payment_transactions')
-        .select('coach_id,amount_cents,status')
-        .in('coach_id', coachIds.length ? coachIds : ['00000000-0000-0000-0000-000000000000'])
-    ])
-
-    const clientLinks = clientLinksResult.data || []
-    const payments = paymentResult.data || []
-
-    const clientCountMap = new Map<string, number>()
-    for (const link of clientLinks) {
-      const coachId = String(link.coach_id || '')
-      clientCountMap.set(coachId, (clientCountMap.get(coachId) || 0) + 1)
-    }
-
-    const revenueMap = new Map<string, number>()
-    for (const payment of payments) {
-      const coachId = String(payment.coach_id || '')
-      if (String(payment.status || '').toLowerCase() !== 'succeeded') continue
-      revenueMap.set(coachId, (revenueMap.get(coachId) || 0) + Number(payment.amount_cents || 0))
-    }
-
-    const coaches: AdminCoachItem[] = (coachesData || []).map((row: any) => {
-      const coachId = String(row.id)
-      return {
-        id: coachId,
-        name: String(row.full_name || row.email || 'Coach'),
-        email: String(row.email || ''),
-        clients: clientCountMap.get(coachId) || 0,
-        status: row.account_status === 'suspended' ? 'Suspended' : 'Verified',
-        revenue: formatCurrencyCents(revenueMap.get(coachId) || 0),
-      }
-    })
-
-    set({ coaches })
   },
 
   fetchApplications: async () => {
-    const supabase = createClient()
-    const { data, error } = await (supabase as any)
-      .from('admin_coach_applications')
-      .select('id,applicant_id,full_name,email,specialties,experience_years,certificate_url,status,submitted_at')
-      .order('submitted_at', { ascending: false })
+    try {
+      const response = await requestApi<{
+        applications: Array<{
+          id: string
+          applicant_id: string | null
+          full_name: string | null
+          email: string | null
+          specialties: unknown
+          experience_years: number | null
+          certificate_url: string | null
+          status: string | null
+          submitted_at: string | null
+        }>
+      }>('/api/v1/admin/applications')
 
-    if (error) {
-      set({ error: error.message })
+      const applications: AdminApplicationItem[] = (response.data.applications || []).map((row) => ({
+        id: String(row.id),
+        applicantId: row.applicant_id ? String(row.applicant_id) : undefined,
+        name: String(row.full_name || 'Applicant'),
+        email: String(row.email || ''),
+        specialties: Array.isArray(row.specialties) ? row.specialties.map((entry: unknown) => String(entry)) : [],
+        experienceYears: Number(row.experience_years || 0),
+        certificateUrl: row.certificate_url ? String(row.certificate_url) : undefined,
+        submittedAt: formatDateLabel(String(row.submitted_at || new Date().toISOString())),
+        status: normalizeApplicationStatus(row.status),
+      }))
+
+      set({ applications })
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to fetch applications.') })
       return
     }
-
-    const applications: AdminApplicationItem[] = (data || []).map((row: any) => ({
-      id: String(row.id),
-      applicantId: row.applicant_id ? String(row.applicant_id) : undefined,
-      name: String(row.full_name || 'Applicant'),
-      email: String(row.email || ''),
-      specialties: Array.isArray(row.specialties) ? row.specialties.map((entry: unknown) => String(entry)) : [],
-      experienceYears: Number(row.experience_years || 0),
-      certificateUrl: row.certificate_url ? String(row.certificate_url) : undefined,
-      submittedAt: formatDateLabel(String(row.submitted_at || new Date().toISOString())),
-      status: normalizeApplicationStatus(row.status),
-    }))
-
-    set({ applications })
   },
 
   fetchPayments: async () => {
-    const supabase = createClient()
-    const { data, error } = await (supabase as any)
-      .from('payment_transactions')
-      .select('id,user_id,coach_id,amount_cents,status,currency,created_at')
-      .order('created_at', { ascending: false })
-      .limit(100)
+    try {
+      const response = await requestApi<{
+        payments: Array<{
+          id: string
+          user_id: string | null
+          coach_id: string | null
+          amount_cents: number | null
+          status: string | null
+          currency: string | null
+          created_at: string | null
+        }>
+        profiles: Array<{ id: string; name: string }>
+      }>('/api/v1/admin/payments')
 
-    if (error) {
-      set({ error: error.message })
+      const rows = response.data.payments || []
+      const nameById = new Map<string, string>()
+      for (const profile of response.data.profiles || []) {
+        nameById.set(String(profile.id || ''), String(profile.name || 'User'))
+      }
+
+      const payments: AdminPaymentItem[] = rows.map((row) => ({
+        id: String(row.id),
+        user: nameById.get(String(row.user_id || '')) || 'User',
+        coach: nameById.get(String(row.coach_id || '')) || 'Coach',
+        amount: formatCurrencyCents(Number(row.amount_cents || 0), String(row.currency || 'usd')),
+        status: normalizePaymentStatus(row.status),
+        date: formatDateTimeLabel(String(row.created_at || new Date().toISOString())),
+      }))
+
+      set({ payments })
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to fetch payments.') })
       return
     }
-
-    const rows = data || []
-    const userIds = new Set<string>()
-    for (const row of rows) {
-      if (row.user_id) userIds.add(String(row.user_id))
-      if (row.coach_id) userIds.add(String(row.coach_id))
-    }
-
-    const { data: profilesData } = await (supabase as any)
-      .from('profiles')
-      .select('id,full_name,email')
-      .in('id', Array.from(userIds))
-
-    const nameById = new Map<string, string>()
-    for (const profile of profilesData || []) {
-      const id = String(profile.id || '')
-      const label = String(profile.full_name || profile.email || 'User')
-      nameById.set(id, label)
-    }
-
-    const payments: AdminPaymentItem[] = rows.map((row: any) => ({
-      id: String(row.id),
-      user: nameById.get(String(row.user_id || '')) || 'User',
-      coach: nameById.get(String(row.coach_id || '')) || 'Coach',
-      amount: formatCurrencyCents(Number(row.amount_cents || 0), String(row.currency || 'usd')),
-      status: normalizePaymentStatus(row.status),
-      date: formatDateTimeLabel(String(row.created_at || new Date().toISOString())),
-    }))
-
-    set({ payments })
   },
 
   fetchReports: async () => {
-    const supabase = createClient()
-    const { data, error } = await (supabase as any)
-      .from('admin_moderation_reports')
-      .select('id,reason,content_type,status,created_at,notes,target_user_id,target_post_id,reporter:profiles(full_name,email)')
-      .order('created_at', { ascending: false })
-      .limit(100)
+    try {
+      const response = await requestApi<{
+        reports: Array<{
+          id: string
+          reason: string | null
+          content_type: string | null
+          status: string | null
+          created_at: string | null
+          notes: string | null
+          target_user_id: string | null
+          target_post_id: string | null
+          reporter?: { full_name?: string | null; email?: string | null }
+        }>
+      }>('/api/v1/admin/reports')
 
-    if (error) {
-      set({ error: error.message })
+      const reports: AdminReportItem[] = (response.data.reports || []).map((row) => {
+        const reporter = row.reporter || {}
+        return {
+          id: String(row.id),
+          reporter: String(reporter.full_name || reporter.email || 'User'),
+          reason: String(row.reason || ''),
+          contentType: String(row.content_type || 'post'),
+          status: normalizeReportStatus(row.status),
+          createdAt: formatDateTimeLabel(String(row.created_at || new Date().toISOString())),
+          notes: String(row.notes || ''),
+          targetUserId: row.target_user_id ? String(row.target_user_id) : undefined,
+          targetPostId: row.target_post_id ? String(row.target_post_id) : undefined,
+        }
+      })
+
+      set({ reports })
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to fetch reports.') })
       return
     }
-
-    const reports: AdminReportItem[] = (data || []).map((row: any) => {
-      const reporter = row.reporter || {}
-      return {
-        id: String(row.id),
-        reporter: String(reporter.full_name || reporter.email || 'User'),
-        reason: String(row.reason || ''),
-        contentType: String(row.content_type || 'post'),
-        status: normalizeReportStatus(row.status),
-        createdAt: formatDateTimeLabel(String(row.created_at || new Date().toISOString())),
-        notes: String(row.notes || ''),
-        targetUserId: row.target_user_id ? String(row.target_user_id) : undefined,
-        targetPostId: row.target_post_id ? String(row.target_post_id) : undefined,
-      }
-    })
-
-    set({ reports })
   },
 
   fetchSettings: async () => {
-    const supabase = createClient()
-    const { data, error } = await (supabase as any)
-      .from('platform_settings')
-      .select('setting_key,setting_value')
+    try {
+      const response = await requestApi<{
+        maintenanceMode: boolean
+        platformFeePercent: number
+        autoApproveCoaches: boolean
+      }>('/api/v1/admin/settings')
 
-    if (error) {
-      set({ error: error.message })
+      set({
+        settings: {
+          maintenanceMode: Boolean(response.data.maintenanceMode),
+          platformFeePercent: Number(response.data.platformFeePercent || 10),
+          autoApproveCoaches: Boolean(response.data.autoApproveCoaches),
+        },
+      })
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to fetch admin settings.') })
       return
     }
-
-    const map = new Map<string, any>()
-    for (const row of data || []) {
-      map.set(String(row.setting_key), row.setting_value || {})
-    }
-
-    set({
-      settings: {
-        maintenanceMode: Boolean(map.get('maintenance_mode')?.enabled),
-        platformFeePercent: Number(map.get('platform_fee_percent')?.value || 10),
-        autoApproveCoaches: Boolean(map.get('auto_approve_coaches')?.enabled ?? true),
-      },
-    })
   },
 
   updateUserStatus: async (userId, status) => {
-    const supabase = createClient()
-    const payload = { account_status: status.toLowerCase() }
-
-    const { error } = await (supabase as any)
-      .from('profiles')
-      .update(payload)
-      .eq('id', userId)
-
-    if (error) {
-      set({ error: error.message })
+    try {
+      await requestApi<{ id: string; status: string }>(`/api/v1/admin/users/${userId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to update user status.') })
       return
     }
 
@@ -356,14 +351,13 @@ export const useAdminPortalStore = create<AdminPortalState>((set, get) => ({
   },
 
   togglePremium: async (userId, enabled) => {
-    const supabase = createClient()
-    const { error } = await (supabase as any)
-      .from('profiles')
-      .update({ is_premium: enabled })
-      .eq('id', userId)
-
-    if (error) {
-      set({ error: error.message })
+    try {
+      await requestApi<{ id: string; enabled: boolean }>(`/api/v1/admin/users/${userId}/premium`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      })
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to update premium status.') })
       return
     }
 
@@ -371,127 +365,51 @@ export const useAdminPortalStore = create<AdminPortalState>((set, get) => ({
   },
 
   updateApplicationStatus: async (applicationId, status) => {
-    const adminId = get().adminId ?? (await getAuthenticatedUserId())
-    if (!adminId) return
-
-    const supabase = createClient()
-    const normalizedStatus = status.toLowerCase()
-
-    const { data: application, error: selectError } = await (supabase as any)
-      .from('admin_coach_applications')
-      .select('id,applicant_id')
-      .eq('id', applicationId)
-      .single()
-
-    if (selectError || !application) {
-      set({ error: selectError?.message || 'Application not found.' })
-      return
-    }
-
-    const { error } = await (supabase as any)
-      .from('admin_coach_applications')
-      .update({ status: normalizedStatus, reviewed_at: new Date().toISOString(), reviewed_by: adminId })
-      .eq('id', applicationId)
-
-    if (error) {
-      set({ error: error.message })
-      return
-    }
-
-    if (application.applicant_id && normalizedStatus === 'approved') {
-      await (supabase as any)
-        .from('profiles')
-        .update({ role: 'coach', account_status: 'active' })
-        .eq('id', application.applicant_id)
-    }
-
-    if (isSupabaseAuthEnabled()) {
-      const { error: invokeError } = await supabase.functions.invoke('on-application-status-updated', {
-        body: {
-          applicationId,
-        },
+    try {
+      const response = await requestApi<{ notificationFailed?: boolean; notificationError?: string }>(`/api/v1/admin/applications/${applicationId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
       })
 
-      if (invokeError) {
-        set({ error: `Application updated but notification failed: ${invokeError.message}` })
+      if (response.data.notificationFailed && response.data.notificationError) {
+        set({ error: `Application updated but notification failed: ${response.data.notificationError}` })
       }
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to update application status.') })
+      return
     }
 
     await Promise.all([get().fetchApplications(), get().fetchUsers(), get().fetchCoaches()])
   },
 
   updateReportStatus: async (reportId, status) => {
-    const adminId = get().adminId ?? (await getAuthenticatedUserId())
-    if (!adminId) return
-
-    const supabase = createClient()
-    const { data: report, error: reportLookupError } = await (supabase as any)
-      .from('admin_moderation_reports')
-      .select('id,target_user_id,target_post_id')
-      .eq('id', reportId)
-      .single()
-
-    if (reportLookupError || !report) {
-      set({ error: reportLookupError?.message || 'Report not found.' })
+    try {
+      await requestApi<{ id: string; status: string }>(`/api/v1/admin/reports/${reportId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to update report status.') })
       return
-    }
-
-    const { error } = await (supabase as any)
-      .from('admin_moderation_reports')
-      .update({ status: status.toLowerCase(), reviewed_by: adminId })
-      .eq('id', reportId)
-
-    if (error) {
-      set({ error: error.message })
-      return
-    }
-
-    const normalizedStatus = status.toLowerCase()
-
-    if (normalizedStatus === 'removed' && report.target_post_id) {
-      const { error: removeError } = await (supabase as any)
-        .from('community_posts')
-        .update({ deleted_at: new Date().toISOString() })
-        .eq('id', report.target_post_id)
-
-      if (removeError) {
-        set({ error: removeError.message })
-      }
-    }
-
-    if (normalizedStatus === 'banned' && report.target_user_id) {
-      const { error: banError } = await (supabase as any)
-        .from('profiles')
-        .update({ account_status: 'suspended' })
-        .eq('id', report.target_user_id)
-
-      if (banError) {
-        set({ error: banError.message })
-      }
     }
 
     await Promise.all([get().fetchReports(), get().fetchUsers(), get().fetchCoaches()])
   },
 
   saveSettings: async (next) => {
-    const adminId = get().adminId ?? (await getAuthenticatedUserId())
-    if (!adminId) return
-
     const merged = { ...get().settings, ...next }
 
-    const rows = [
-      { setting_key: 'maintenance_mode', setting_value: { enabled: merged.maintenanceMode }, updated_by: adminId },
-      { setting_key: 'platform_fee_percent', setting_value: { value: merged.platformFeePercent }, updated_by: adminId },
-      { setting_key: 'auto_approve_coaches', setting_value: { enabled: merged.autoApproveCoaches }, updated_by: adminId },
-    ]
-
-    const supabase = createClient()
-    const { error } = await (supabase as any)
-      .from('platform_settings')
-      .upsert(rows, { onConflict: 'setting_key' })
-
-    if (error) {
-      set({ error: error.message })
+    try {
+      await requestApi<{ updated: boolean }>('/api/v1/admin/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          maintenanceMode: merged.maintenanceMode,
+          platformFeePercent: merged.platformFeePercent,
+          autoApproveCoaches: merged.autoApproveCoaches,
+        }),
+      })
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to save admin settings.') })
       return
     }
 
@@ -501,9 +419,13 @@ export const useAdminPortalStore = create<AdminPortalState>((set, get) => ({
 
 async function getAuthenticatedUserId(): Promise<string | null> {
   if (!isSupabaseAuthEnabled()) return null
-  const supabase = createClient()
-  const { data } = await supabase.auth.getUser()
-  return data.user?.id || null
+
+  try {
+    const response = await requestApi<{ id: string }>('/api/v1/auth/me')
+    return String(response.data.id || '') || null
+  } catch {
+    return null
+  }
 }
 
 function toErrorMessage(error: unknown, fallback: string): string {

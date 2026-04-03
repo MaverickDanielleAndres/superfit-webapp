@@ -5,9 +5,9 @@ import { motion } from 'framer-motion'
 import { Image as ImageIcon, Video, Calendar, Edit3, Utensils, Award, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 import { useCoachPortalStore } from '@/store/useCoachPortalStore'
+import { requestApi } from '@/lib/api/client'
 
 type ComposerTab = 'Post' | 'Video' | 'Meal' | 'Challenge'
 type PublicationType = 'Post' | 'Video' | 'Meal' | 'Challenge'
@@ -28,7 +28,6 @@ interface MealDay {
 
 export default function ContentPublisherPage() {
     const [composerTab, setComposerTab] = useState<ComposerTab>('Post')
-    const [coachId, setCoachId] = useState<string | null>(null)
     const [title, setTitle] = useState('')
     const [postContent, setPostContent] = useState('')
     const [mediaUrl, setMediaUrl] = useState('')
@@ -43,47 +42,30 @@ export default function ContentPublisherPage() {
     const sequenceRef = useRef(0)
     const { events, fetchEvents, addScheduleEvent } = useCoachPortalStore()
 
-    const loadPublications = useCallback(async (userId: string) => {
-        const supabase = createClient()
-        const { data: posts, error } = await supabase
-            .from('community_posts')
-            .select('id,content,post_type,created_at')
-            .eq('user_id', userId)
-            .is('deleted_at', null)
-            .is('parent_id', null)
-            .order('created_at', { ascending: false })
-            .limit(20)
+    const loadPublications = useCallback(async () => {
+        try {
+            const response = await requestApi<{
+                publications: Array<{
+                    id: string
+                    title: string
+                    type: PublicationType
+                    createdAt: string
+                    likes: number
+                }>
+            }>('/api/v1/coach/content?limit=20')
 
-        if (error) {
-            toast.error(error.message)
-            return
+            setPublications(
+                response.data.publications.map((publication) => ({
+                    id: publication.id,
+                    title: publication.title,
+                    type: publication.type,
+                    date: formatDateLabel(publication.createdAt),
+                    likes: publication.likes,
+                })),
+            )
+        } catch (error) {
+            toast.error(getErrorMessage(error))
         }
-
-        const ids = (posts || []).map((row) => row.id)
-        const likeMap = new Map<string, number>()
-
-        if (ids.length) {
-            const { data: likes } = await supabase
-                .from('community_post_likes')
-                .select('post_id')
-                .in('post_id', ids)
-
-            for (const row of likes || []) {
-                const key = String(row.post_id || '')
-                likeMap.set(key, (likeMap.get(key) || 0) + 1)
-            }
-        }
-
-        setPublications((posts || []).map((row) => {
-            const [headline] = String(row.content || 'Untitled').split('\n')
-            return {
-                id: row.id,
-                title: headline.replace(/^#\s*/, '').replace(/^\[Subscribers\]\s*/, '').trim() || 'Untitled',
-                type: mapPostTypeToLabel(row.post_type),
-                date: formatDateLabel(row.created_at),
-                likes: likeMap.get(row.id) || 0,
-            }
-        }))
     }, [])
 
     useEffect(() => {
@@ -94,13 +76,7 @@ export default function ContentPublisherPage() {
         void (async () => {
             if (!isSupabaseAuthEnabled()) return
 
-            const supabase = createClient()
-            const { data } = await supabase.auth.getUser()
-            const userId = data.user?.id || null
-            if (!userId) return
-
-            setCoachId(userId)
-            await loadPublications(userId)
+            await loadPublications()
         })()
     }, [loadPublications])
 
@@ -123,11 +99,6 @@ export default function ContentPublisherPage() {
             return
         }
 
-        if (!coachId) {
-            toast.error('You need to sign in before publishing.')
-            return
-        }
-
         if (!isSupabaseAuthEnabled()) {
             sequenceRef.current += 1
             const mockItem: PublicationItem = {
@@ -143,23 +114,26 @@ export default function ContentPublisherPage() {
             return
         }
 
-        const content = buildContentPayload(composerTab, title, postContent, mealDays, subscribersOnly)
-        const supabase = createClient()
-        const { error } = await supabase.from('community_posts').insert({
-            user_id: coachId,
-            content,
-            post_type: mapTabToPostType(composerTab),
-            media_urls: mediaUrl ? [mediaUrl] : [],
-        })
+        try {
+            await requestApi<{ publication: { id: string } }>('/api/v1/coach/content', {
+                method: 'POST',
+                body: JSON.stringify({
+                    title,
+                    description: postContent,
+                    type: composerTab,
+                    mediaUrl: mediaUrl || null,
+                    subscribersOnly,
+                    mealDays: mealDays.map((day) => ({ title: day.title, detail: day.detail })),
+                }),
+            })
 
-        if (error) {
-            toast.error(error.message)
+            await loadPublications()
+            toast.success('Content published successfully.')
+            resetComposer()
+        } catch (error) {
+            toast.error(getErrorMessage(error))
             return
         }
-
-        await loadPublications(coachId)
-        toast.success('Content published successfully.')
-        resetComposer()
     }
 
     const handleSchedule = async () => {
@@ -448,38 +422,6 @@ export default function ContentPublisherPage() {
     )
 }
 
-function mapTabToPostType(tab: ComposerTab): 'text' | 'progress' | 'meal' | 'challenge' {
-    if (tab === 'Meal') return 'meal'
-    if (tab === 'Challenge') return 'challenge'
-    if (tab === 'Video') return 'progress'
-    return 'text'
-}
-
-function mapPostTypeToLabel(postType: string): PublicationType {
-    if (postType === 'meal') return 'Meal'
-    if (postType === 'challenge') return 'Challenge'
-    if (postType === 'progress' || postType === 'workout') return 'Video'
-    return 'Post'
-}
-
-function buildContentPayload(
-    tab: ComposerTab,
-    title: string,
-    content: string,
-    mealDays: MealDay[],
-    subscribersOnly: boolean,
-): string {
-    const visibilityPrefix = subscribersOnly ? '[Subscribers] ' : ''
-    const base = `${visibilityPrefix}# ${title.trim()}\n${content.trim()}`
-
-    if (tab !== 'Meal') return base
-
-    const daysSection = mealDays.length
-        ? `\n\nMeal Days:\n${mealDays.map((day) => `- ${day.title}: ${day.detail}`).join('\n')}`
-        : ''
-    return `${base}${daysSection}`
-}
-
 function formatDateLabel(isoDate: string): string {
     const date = new Date(isoDate)
     return date.toLocaleString([], {
@@ -488,4 +430,9 @@ function formatDateLabel(isoDate: string): string {
         hour: '2-digit',
         minute: '2-digit',
     })
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) return error.message
+    return 'Request failed.'
 }

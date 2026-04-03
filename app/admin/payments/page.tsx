@@ -6,7 +6,7 @@ import { DollarSign, ArrowUpRight, ArrowDownRight, CreditCard, Download, Search 
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useAdminPortalStore } from '@/store/useAdminPortalStore'
-import { createClient } from '@/lib/supabase/client'
+import { requestApi } from '@/lib/api/client'
 
 export default function AdminPaymentsPage() {
     const { payments, fetchPayments } = useAdminPortalStore()
@@ -101,20 +101,17 @@ export default function AdminPaymentsPage() {
                     onClick={() => {
                         void (async () => {
                             const id = toast.loading('Approving payouts...')
-                            const supabase = createClient()
-                            const { data, error } = await supabase
-                                .from('payment_transactions')
-                                .update({ status: 'succeeded' })
-                                .eq('status', 'pending')
-                                .select('id')
+                            try {
+                                const response = await requestApi<{ approvedCount: number }>('/api/v1/admin/payments/approve-pending', {
+                                    method: 'POST',
+                                })
 
-                            if (error) {
-                                toast.error(error.message, { id })
+                                await fetchPayments()
+                                toast.success(`Approved ${response.data.approvedCount} pending payout(s).`, { id })
+                            } catch (error) {
+                                toast.error(error instanceof Error ? error.message : 'Unable to approve payouts.', { id })
                                 return
                             }
-
-                            await fetchPayments()
-                            toast.success(`Approved ${(data || []).length} pending payout(s).`, { id })
                         })()
                     }}
                     className="h-[40px] px-6 rounded-[12px] bg-(--text-primary) text-(--bg-base) font-bold text-[13px] shadow-sm hover:opacity-90 transition-colors whitespace-nowrap"

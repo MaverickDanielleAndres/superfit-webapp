@@ -5,15 +5,14 @@ import { motion } from 'framer-motion'
 import { Globe, TrendingUp, Tags, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 import { useCoachPortalStore } from '@/store/useCoachPortalStore'
 import { useRouter } from 'next/navigation'
+import { requestApi } from '@/lib/api/client'
 
 export default function MarketplacePage() {
     const router = useRouter()
     const [isActive, setIsActive] = useState(true)
-    const [coachId, setCoachId] = useState<string | null>(null)
     const [displayName, setDisplayName] = useState('')
     const [headline, setHeadline] = useState('')
     const [specialties, setSpecialties] = useState('')
@@ -32,43 +31,29 @@ export default function MarketplacePage() {
         void (async () => {
             if (!isSupabaseAuthEnabled()) return
 
-            const supabase = createClient()
-            const { data: authData } = await supabase.auth.getUser()
-            const userId = authData.user?.id
-            if (!userId) return
+            try {
+                const response = await requestApi<{
+                    displayName: string
+                    headline: string
+                    specialties: string[]
+                    coverUrl: string
+                    clientCap: number
+                    isActive: boolean
+                    monthlyRevenueCents: number
+                    transactionCount: number
+                }>('/api/v1/coach/marketplace')
 
-            setCoachId(userId)
-
-            const [{ data: profile }, { data: transactions }] = await Promise.all([
-                supabase
-                    .from('profiles')
-                    .select('full_name,goal,avatar_url,account_status,exercise_preferences,session_duration')
-                    .eq('id', userId)
-                    .single(),
-                supabase
-                    .from('payment_transactions')
-                    .select('amount_cents,created_at,status')
-                    .eq('coach_id', userId),
-            ])
-
-            setDisplayName(String(profile?.full_name || 'Coach Profile'))
-            setHeadline(String(profile?.goal || 'Strength and body composition coaching'))
-            setSpecialties(Array.isArray(profile?.exercise_preferences) ? profile.exercise_preferences.join(', ') : '')
-            setCoverUrl(String(profile?.avatar_url || ''))
-            setClientCap(String(profile?.session_duration || 30))
-            setIsActive(String(profile?.account_status || 'active') === 'active')
-
-            const now = new Date()
-            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-            const monthlyTransactions = (transactions || []).filter((entry) => {
-                if (entry.status !== 'succeeded') return false
-                return new Date(entry.created_at).getTime() >= monthStart.getTime()
-            })
-
-            setTransactionCount(monthlyTransactions.length)
-            setMonthlyRevenue(
-                monthlyTransactions.reduce((sum, entry) => sum + Number(entry.amount_cents || 0), 0) / 100,
-            )
+                setDisplayName(String(response.data.displayName || 'Coach Profile'))
+                setHeadline(String(response.data.headline || 'Strength and body composition coaching'))
+                setSpecialties(Array.isArray(response.data.specialties) ? response.data.specialties.join(', ') : '')
+                setCoverUrl(String(response.data.coverUrl || ''))
+                setClientCap(String(response.data.clientCap || 30))
+                setIsActive(Boolean(response.data.isActive))
+                setTransactionCount(Number(response.data.transactionCount || 0))
+                setMonthlyRevenue(Number(response.data.monthlyRevenueCents || 0) / 100)
+            } catch (error) {
+                toast.error(getErrorMessage(error))
+            }
         })()
     }, [])
 
@@ -83,34 +68,34 @@ export default function MarketplacePage() {
     }, [activeClients, clientCap])
 
     const handleSave = async () => {
-        if (!coachId) {
-            toast.error('Sign in again to update marketplace details.')
+        if (!isSupabaseAuthEnabled()) {
+            toast.success('Simulation mode: marketplace profile updated locally.')
             return
         }
 
         setIsSaving(true)
-        const supabase = createClient()
 
-        const { error } = await supabase
-            .from('profiles')
-            .update({
-                full_name: displayName.trim(),
-                goal: headline.trim(),
-                avatar_url: coverUrl.trim() || null,
-                exercise_preferences: specialties
-                    .split(',')
-                    .map((entry) => entry.trim())
-                    .filter(Boolean),
-                session_duration: Number(clientCap) || 30,
-                account_status: isActive ? 'active' : 'inactive',
+        try {
+            await requestApi<{ saved: boolean }>('/api/v1/coach/marketplace', {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    displayName: displayName.trim(),
+                    headline: headline.trim(),
+                    specialties: specialties
+                        .split(',')
+                        .map((entry) => entry.trim())
+                        .filter(Boolean),
+                    coverUrl: coverUrl.trim() || null,
+                    clientCap: Number(clientCap) || 30,
+                    isActive,
+                }),
             })
-            .eq('id', coachId)
 
-        if (error) {
-            toast.error(error.message)
-        } else {
             toast.success('Marketplace profile updated.')
+        } catch (error) {
+            toast.error(getErrorMessage(error))
         }
+
         setIsSaving(false)
     }
 
@@ -248,4 +233,9 @@ export default function MarketplacePage() {
             </div>
         </motion.div>
     )
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) return error.message
+    return 'Request failed.'
 }

@@ -1,0 +1,714 @@
+{
+  "meta": {
+    "timestamp": "2026-04-03T04:36:47.610Z",
+    "baseUrl": "http://127.0.0.1:3210",
+    "script": "scripts/qa/run-feature-checklist.mjs"
+  },
+  "pageWorkflows": [
+    {
+      "route": "/",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/analytics",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/calculators",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coaching",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coaching/dashboard",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/community",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/diary",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/exercises",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/goals",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/hydration",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/meal-planner",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/messages",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/progress",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/settings",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/subscription",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/timer",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/workout",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coach",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coach/analytics",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coach/broadcast",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coach/clients",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coach/content",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coach/forms",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coach/marketplace",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coach/programs",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coach/schedule",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/coach/settings",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/admin",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/admin/users",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/admin/coaches",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/admin/applications",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/admin/payments",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/admin/content",
+      "status": 307,
+      "pass": true
+    },
+    {
+      "route": "/admin/settings",
+      "status": 307,
+      "pass": true
+    }
+  ],
+  "apiWorkflows": [
+    {
+      "method": "GET",
+      "route": "/api/v1/health",
+      "expected": 200,
+      "status": 200,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/auth/me",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/admin/applications",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/admin/applications/11111111-1111-1111-1111-111111111111/status",
+      "expected": 401,
+      "body": {
+        "status": "Approved"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/admin/coaches",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/admin/payments",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/admin/payments/approve-pending",
+      "expected": 401,
+      "body": {},
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/admin/reports",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/admin/reports/11111111-1111-1111-1111-111111111111/status",
+      "expected": 401,
+      "body": {
+        "status": "Dismissed"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/admin/settings",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/admin/settings",
+      "expected": 401,
+      "body": {
+        "maintenanceMode": false,
+        "platformFeePercent": 10,
+        "autoApproveCoaches": true
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/admin/users",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/admin/users/11111111-1111-1111-1111-111111111111/status",
+      "expected": 401,
+      "body": {
+        "status": "Active"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/admin/users/11111111-1111-1111-1111-111111111111/premium",
+      "expected": 401,
+      "body": {
+        "enabled": true
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coach/broadcast",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coach/broadcast",
+      "expected": 401,
+      "body": {
+        "target": "all_active",
+        "message": "qa"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coach/broadcast/history",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coach/broadcast/history",
+      "expected": 401,
+      "body": {
+        "target": "QA",
+        "message": "qa",
+        "delivered": 1,
+        "read": 0
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coach/clients",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coach/clients",
+      "expected": 401,
+      "body": {
+        "mode": "next-available"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/coach/clients/11111111-1111-1111-1111-111111111111/status",
+      "expected": 401,
+      "body": {
+        "status": "Active"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coach/content",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coach/content",
+      "expected": 401,
+      "body": {
+        "title": "qa",
+        "description": "qa",
+        "type": "Post"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coach/forms",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coach/forms",
+      "expected": 401,
+      "body": {
+        "name": "QA Form"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/coach/forms/11111111-1111-1111-1111-111111111111/status",
+      "expected": 401,
+      "body": {
+        "status": "Active"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coach/forms/11111111-1111-1111-1111-111111111111/assign",
+      "expected": 401,
+      "body": {
+        "clientIds": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "DELETE",
+      "route": "/api/v1/coach/forms/11111111-1111-1111-1111-111111111111",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coach/marketplace",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/coach/marketplace",
+      "expected": 401,
+      "body": {
+        "displayName": "QA",
+        "headline": "QA",
+        "specialties": [
+          "strength"
+        ],
+        "clientCap": 30,
+        "isActive": true
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coach/programs",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coach/programs",
+      "expected": 401,
+      "body": {
+        "name": "QA",
+        "difficulty": "Beginner",
+        "length": "4 Weeks"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/coach/programs/11111111-1111-1111-1111-111111111111",
+      "expected": 401,
+      "body": {
+        "name": "QA2"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coach/programs/assign",
+      "expected": 401,
+      "body": {
+        "programId": "11111111-1111-1111-1111-111111111111",
+        "clientIds": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coach/schedule-events",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coach/schedule-events",
+      "expected": 401,
+      "body": {
+        "title": "QA",
+        "type": "call",
+        "startAt": "2026-01-01T10:00:00.000Z",
+        "endAt": "2026-01-01T10:30:00.000Z"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coach/settings",
+      "expected": 401,
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/coach/settings",
+      "expected": 401,
+      "body": {
+        "fullName": "QA User",
+        "email": "qa@example.com"
+      },
+      "status": 401,
+      "pass": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/messages/direct-thread",
+      "expected": 401,
+      "body": {
+        "participantId": "11111111-1111-1111-1111-111111111111"
+      },
+      "status": 401,
+      "pass": true
+    }
+  ],
+  "backendConnections": [
+    {
+      "feature": "Coach Broadcast",
+      "file": "app/coach/broadcast/page.tsx",
+      "needle": "/api/v1/coach/broadcast",
+      "pass": true
+    },
+    {
+      "feature": "Coach Broadcast History",
+      "file": "store/useCoachPortalStore.ts",
+      "needle": "/api/v1/coach/broadcast/history",
+      "pass": true
+    },
+    {
+      "feature": "Coach Clients",
+      "file": "store/useCoachPortalStore.ts",
+      "needle": "/api/v1/coach/clients",
+      "pass": true
+    },
+    {
+      "feature": "Coach Content",
+      "file": "app/coach/content/page.tsx",
+      "needle": "/api/v1/coach/content",
+      "pass": true
+    },
+    {
+      "feature": "Coach Forms",
+      "file": "store/useCoachPortalStore.ts",
+      "needle": "/api/v1/coach/forms",
+      "pass": true
+    },
+    {
+      "feature": "Coach Marketplace",
+      "file": "app/coach/marketplace/page.tsx",
+      "needle": "/api/v1/coach/marketplace",
+      "pass": true
+    },
+    {
+      "feature": "Coach Programs",
+      "file": "store/useCoachPortalStore.ts",
+      "needle": "/api/v1/coach/programs",
+      "pass": true
+    },
+    {
+      "feature": "Coach Schedule",
+      "file": "store/useCoachPortalStore.ts",
+      "needle": "/api/v1/coach/schedule-events",
+      "pass": true
+    },
+    {
+      "feature": "Coach Settings",
+      "file": "app/coach/settings/page.tsx",
+      "needle": "/api/v1/coach/settings",
+      "pass": true
+    },
+    {
+      "feature": "Admin Users",
+      "file": "store/useAdminPortalStore.ts",
+      "needle": "/api/v1/admin/users",
+      "pass": true
+    },
+    {
+      "feature": "Admin Coaches",
+      "file": "store/useAdminPortalStore.ts",
+      "needle": "/api/v1/admin/coaches",
+      "pass": true
+    },
+    {
+      "feature": "Admin Applications",
+      "file": "store/useAdminPortalStore.ts",
+      "needle": "/api/v1/admin/applications",
+      "pass": true
+    },
+    {
+      "feature": "Admin Payments",
+      "file": "store/useAdminPortalStore.ts",
+      "needle": "/api/v1/admin/payments",
+      "pass": true
+    },
+    {
+      "feature": "Admin Reports",
+      "file": "store/useAdminPortalStore.ts",
+      "needle": "/api/v1/admin/reports",
+      "pass": true
+    },
+    {
+      "feature": "Admin Settings",
+      "file": "store/useAdminPortalStore.ts",
+      "needle": "/api/v1/admin/settings",
+      "pass": true
+    }
+  ],
+  "globalChecks": [
+    {
+      "name": "Theme switching integration",
+      "file": "components/ThemeProvider.tsx",
+      "needle": "next-themes",
+      "pass": true
+    },
+    {
+      "name": "Global shell component AppShell",
+      "file": "components/layout/AppShell.tsx",
+      "needle": "export default",
+      "pass": false
+    },
+    {
+      "name": "Global shell component Sidebar",
+      "file": "components/layout/Sidebar.tsx",
+      "needle": "export",
+      "pass": true
+    },
+    {
+      "name": "Global shell component TopBar",
+      "file": "components/layout/TopBar.tsx",
+      "needle": "export",
+      "pass": true
+    },
+    {
+      "name": "Onboarding page exists",
+      "file": "app/onboarding/page.tsx",
+      "needle": "export default",
+      "pass": true
+    },
+    {
+      "name": "Role guards in dashboard layout",
+      "file": "app/(dashboard)/layout.tsx",
+      "needle": "redirect",
+      "pass": false
+    },
+    {
+      "name": "Role guards in coach layout",
+      "file": "app/coach/layout.tsx",
+      "needle": "redirect",
+      "pass": true
+    },
+    {
+      "name": "Role guards in admin layout",
+      "file": "app/admin/layout.tsx",
+      "needle": "redirect",
+      "pass": false
+    }
+  ],
+  "hotspotChecks": [
+    {
+      "name": "Coach broadcast filters hotspot",
+      "query": "Filter options coming soon",
+      "includePattern": "app/coach/broadcast/page.tsx",
+      "pass": false
+    },
+    {
+      "name": "Coach client notes/action hotspot",
+      "query": "coming soon|Coming soon",
+      "includePattern": "app/coach/clients/[clientId]/page.tsx",
+      "pass": false
+    },
+    {
+      "name": "Coach planner creation hotspot",
+      "query": "coming soon|Coming soon",
+      "includePattern": "app/coach/page.tsx",
+      "pass": false
+    },
+    {
+      "name": "Client hub program viewer hotspot",
+      "query": "coming soon|Coming soon",
+      "includePattern": "components/coaching/ClientHub.tsx",
+      "pass": true
+    }
+  ],
+  "summary": {
+    "total": 100,
+    "passed": 94,
+    "failed": 6,
+    "passRate": 94
+  }
+}

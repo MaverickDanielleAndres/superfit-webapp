@@ -5,7 +5,8 @@ import { motion } from 'framer-motion'
 import { User, Bell, Shield, CreditCard, Save } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
+import { requestApi } from '@/lib/api/client'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState('Account')
@@ -17,23 +18,24 @@ export default function SettingsPage() {
 
     useEffect(() => {
         void (async () => {
-            const supabase = createClient()
-            const { data: authData } = await supabase.auth.getUser()
-            const user = authData.user
-            if (!user) return
+            if (!isSupabaseAuthEnabled()) return
 
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('full_name,email,avatar_url')
-                .eq('id', user.id)
-                .single()
+            try {
+                const response = await requestApi<{
+                    fullName: string
+                    email: string
+                    avatarUrl: string
+                }>('/api/v1/coach/settings')
 
-            const fullName = String(profile?.full_name || user.user_metadata?.full_name || '')
-            const [first = '', ...rest] = fullName.split(' ')
-            setFirstName(first)
-            setLastName(rest.join(' '))
-            setEmail(String(profile?.email || user.email || ''))
-            setAvatarUrl(String(profile?.avatar_url || ''))
+                const fullName = String(response.data.fullName || '')
+                const [first = '', ...rest] = fullName.split(' ')
+                setFirstName(first)
+                setLastName(rest.join(' '))
+                setEmail(String(response.data.email || ''))
+                setAvatarUrl(String(response.data.avatarUrl || ''))
+            } catch (error) {
+                toast.error(getErrorMessage(error))
+            }
         })()
     }, [])
 
@@ -124,30 +126,30 @@ export default function SettingsPage() {
                                 <button 
                                     onClick={() => {
                                         void (async () => {
-                                            setIsSaving(true)
-                                            const id = toast.loading('Saving preferences...')
-                                            const supabase = createClient()
-                                            const { data } = await supabase.auth.getUser()
-                                            const userId = data.user?.id
-
-                                            if (!userId) {
-                                                toast.error('You need to sign in again.', { id })
-                                                setIsSaving(false)
+                                            if (!isSupabaseAuthEnabled()) {
+                                                toast.success('Simulation mode: settings saved locally.')
                                                 return
                                             }
 
+                                            setIsSaving(true)
+                                            const id = toast.loading('Saving preferences...')
                                             const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
 
-                                            const { error } = await supabase
-                                                .from('profiles')
-                                                .update({ full_name: fullName, email, avatar_url: avatarUrl || null })
-                                                .eq('id', userId)
+                                            try {
+                                                await requestApi<{ saved: boolean }>('/api/v1/coach/settings', {
+                                                    method: 'PATCH',
+                                                    body: JSON.stringify({
+                                                        fullName,
+                                                        email,
+                                                        avatarUrl: avatarUrl.trim() || null,
+                                                    }),
+                                                })
 
-                                            if (error) {
-                                                toast.error(error.message, { id })
-                                            } else {
                                                 toast.success('Account settings saved!', { id })
+                                            } catch (error) {
+                                                toast.error(getErrorMessage(error), { id })
                                             }
+
                                             setIsSaving(false)
                                         })()
                                     }}
@@ -196,4 +198,9 @@ export default function SettingsPage() {
             </div>
         </motion.div>
     )
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) return error.message
+    return 'Request failed.'
 }

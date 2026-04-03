@@ -5,9 +5,9 @@ import { motion } from 'framer-motion'
 import { Send, Users, Filter, CheckCircle2, History } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 import { useCoachPortalStore } from '@/store/useCoachPortalStore'
+import { requestApi } from '@/lib/api/client'
 
 type AudienceKey = 'all_active' | 'onboarding' | 'weight_loss' | 'muscle_gain'
 
@@ -27,20 +27,6 @@ interface BroadcastHistoryItem {
     read: number
 }
 
-interface MessageThreadRow {
-    id: string
-}
-
-interface ParticipantMembershipRow {
-    thread_id: string
-    thread: { id: string; is_group: boolean } | null
-}
-
-interface ThreadParticipantRow {
-    thread_id: string
-    user_id: string
-}
-
 const FALLBACK_RECIPIENTS: BroadcastRecipient[] = [
     { id: 'fallback-1', name: 'Jake Mitchell', goal: 'muscle_gain', onboardingComplete: true },
     { id: 'fallback-2', name: 'Samantha Lee', goal: 'weight_loss', onboardingComplete: true },
@@ -51,7 +37,6 @@ const FALLBACK_RECIPIENTS: BroadcastRecipient[] = [
 export default function BroadcastPage() {
     const [message, setMessage] = useState('')
     const [target, setTarget] = useState<AudienceKey>('all_active')
-    const [coachId, setCoachId] = useState<string | null>(null)
     const [recipients, setRecipients] = useState<BroadcastRecipient[]>(FALLBACK_RECIPIENTS)
     const [isSending, setIsSending] = useState(false)
     const [showUnreadOnly, setShowUnreadOnly] = useState(false)
@@ -68,31 +53,10 @@ export default function BroadcastPage() {
             if (!isSupabaseAuthEnabled()) return
 
             try {
-                const supabase = createClient()
-                const { data: authData, error: authError } = await supabase.auth.getUser()
-                const userId = authData.user?.id
-
-                if (authError || !userId) return
+                const response = await requestApi<{ recipients: BroadcastRecipient[] }>('/api/v1/coach/broadcast')
                 if (!isMounted) return
 
-                setCoachId(userId)
-
-                const { data, error } = await supabase
-                    .from('profiles')
-                    .select('id,full_name,goal,onboarding_complete,role')
-                    .neq('id', userId)
-                    .order('full_name', { ascending: true })
-
-                if (error || !Array.isArray(data) || !isMounted) return
-
-                const mapped = data
-                    .filter((profile) => profile.role !== 'coach' && profile.role !== 'admin')
-                    .map((profile) => ({
-                        id: profile.id,
-                        name: profile.full_name || 'Client',
-                        goal: profile.goal || null,
-                        onboardingComplete: Boolean(profile.onboarding_complete),
-                    }))
+                const mapped = response.data.recipients
 
                 if (mapped.length) {
                     setRecipients(mapped)
@@ -141,28 +105,29 @@ export default function BroadcastPage() {
             return
         }
 
-        if (!coachId) {
-            toast.error('Unable to send broadcast. Please sign in again.')
-            return
-        }
-
         const loadingToast = toast.loading('Sending broadcast...')
         setIsSending(true)
 
         try {
-            const deliveredCount = await sendBroadcastMessages({
-                coachId,
-                recipientIds,
-                message: trimmed,
-                audienceLabel: selectedAudience.label,
-            })
-
-            await logBroadcast({
-                target: selectedAudience.label,
-                message: trimmed,
-                delivered: deliveredCount,
-                read: 0,
-            })
+            let deliveredCount = recipientIds.length
+            if (isSupabaseAuthEnabled()) {
+                const response = await requestApi<{ delivered: number; read: number; target: string }>('/api/v1/coach/broadcast', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        target,
+                        message: trimmed,
+                    }),
+                })
+                deliveredCount = response.data.delivered
+                await fetchBroadcasts()
+            } else {
+                await logBroadcast({
+                    target: selectedAudience.label,
+                    message: trimmed,
+                    delivered: deliveredCount,
+                    read: 0,
+                })
+            }
 
             setMessage('')
             toast.success(`Broadcast sent to ${deliveredCount} clients.`, { id: loadingToast })
@@ -266,151 +231,4 @@ export default function BroadcastPage() {
             </div>
         </motion.div>
     )
-}
-
-async function sendBroadcastMessages(params: {
-    coachId: string
-    recipientIds: string[]
-    message: string
-    audienceLabel: string
-}): Promise<number> {
-    const { coachId, recipientIds, message, audienceLabel } = params
-
-    if (!isSupabaseAuthEnabled()) {
-        return recipientIds.length
-    }
-
-    const supabase = createClient()
-    const threadByRecipient = await getDirectThreadsByRecipient(supabase, coachId, recipientIds)
-
-    for (const recipientId of recipientIds) {
-        if (threadByRecipient.has(recipientId)) continue
-
-        const { data: createdThread, error: threadError } = await supabase
-            .from('message_threads')
-            .insert({
-                created_by: coachId,
-                is_group: false,
-                group_name: null,
-                group_avatar: null,
-            })
-            .select('id')
-            .single()
-
-        const threadRow = createdThread as MessageThreadRow | null
-
-        if (threadError || !threadRow?.id) {
-            throw new Error(threadError?.message || 'Unable to create direct message thread.')
-        }
-
-        const { error: participantError } = await supabase
-            .from('message_thread_participants')
-            .insert([
-                { thread_id: threadRow.id, user_id: coachId },
-                { thread_id: threadRow.id, user_id: recipientId },
-            ])
-
-        if (participantError) {
-            throw new Error(participantError.message || 'Unable to add participants to new thread.')
-        }
-
-        threadByRecipient.set(recipientId, threadRow.id)
-    }
-
-    const nowIso = new Date().toISOString()
-    const uniqueThreadIds = Array.from(new Set(Array.from(threadByRecipient.values())))
-
-    const messageRows = recipientIds
-        .map((recipientId) => threadByRecipient.get(recipientId))
-        .filter((threadId): threadId is string => Boolean(threadId))
-        .map((threadId) => ({
-            thread_id: threadId,
-            sender_id: coachId,
-            text: message,
-            status: 'delivered',
-            attachments: [{ kind: 'broadcast', audience: audienceLabel }],
-        }))
-
-    const { error: messageError } = await supabase
-        .from('messages')
-        .insert(messageRows)
-
-    if (messageError) {
-        throw new Error(messageError.message || 'Unable to save broadcast messages.')
-    }
-
-    if (uniqueThreadIds.length) {
-        await supabase
-            .from('message_threads')
-            .update({ updated_at: nowIso })
-            .in('id', uniqueThreadIds)
-    }
-
-    return messageRows.length
-}
-
-async function getDirectThreadsByRecipient(
-    supabase: ReturnType<typeof createClient>,
-    coachId: string,
-    recipientIds: string[]
-): Promise<Map<string, string>> {
-    const threadByRecipient = new Map<string, string>()
-
-    const { data: membershipRows, error: membershipError } = await supabase
-        .from('message_thread_participants')
-        .select('thread_id,thread:message_threads(id,is_group)')
-        .eq('user_id', coachId)
-
-    if (membershipError) {
-        throw new Error(membershipError.message)
-    }
-
-    const directMembershipRows = (membershipRows || []) as unknown as ParticipantMembershipRow[]
-
-    const directThreadIds = directMembershipRows
-        .filter((row) => !row.thread?.is_group)
-        .map((row) => String(row.thread_id || ''))
-        .filter(Boolean)
-
-    if (!directThreadIds.length) {
-        return threadByRecipient
-    }
-
-    const { data: participantRows, error: participantError } = await supabase
-        .from('message_thread_participants')
-        .select('thread_id,user_id')
-        .in('thread_id', directThreadIds)
-
-    if (participantError) {
-        throw new Error(participantError.message)
-    }
-
-    const participantsByThread = new Map<string, string[]>()
-    const participantRecords = (participantRows || []) as unknown as ThreadParticipantRow[]
-
-    for (const row of participantRecords) {
-        const threadId = String(row.thread_id || '')
-        const userId = String(row.user_id || '')
-        if (!threadId || !userId) continue
-
-        const existing = participantsByThread.get(threadId) || []
-        participantsByThread.set(threadId, [...existing, userId])
-    }
-
-    for (const recipientId of recipientIds) {
-        const matchingThread = directThreadIds.find((threadId) => {
-            const participants = participantsByThread.get(threadId) || []
-            return (
-                participants.length === 2 &&
-                participants.includes(coachId) &&
-                participants.includes(recipientId)
-            )
-        })
-
-        if (matchingThread) {
-            threadByRecipient.set(recipientId, matchingThread)
-        }
-    }
-
-    return threadByRecipient
 }

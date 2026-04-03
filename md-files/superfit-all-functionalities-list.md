@@ -1,6 +1,6 @@
 # SuperFit Functionality Inventory
 
-Last updated: 2026-04-02
+Last updated: 2026-04-03
 Reference: Actual repository implementation (not aspirational roadmap)
 
 ## Status Legend
@@ -49,27 +49,27 @@ Reference: Actual repository implementation (not aspirational roadmap)
 |---|---|---|
 | `/coach` | Partial | HQ dashboard with KPI blocks and workflow tabs; some planner actions marked coming soon. |
 | `/coach/analytics` | Partial | Analytics dashboard available; revenue/chart sections include placeholders. |
-| `/coach/broadcast` | Partial | Broadcast composer exists; filters action explicitly marked coming soon. |
-| `/coach/clients` | Partial | Client roster and search implemented; some action modals marked coming soon. |
+| `/coach/broadcast` | Partial | Audience segmentation/send/history now use `/api/v1/coach/broadcast` and `/api/v1/coach/broadcast/history`, delivering persisted messages/logs; advanced filter controls are still limited. |
+| `/coach/clients` | Partial | Client roster load, status updates, and "add next available client" now run through `/api/v1/coach/clients` APIs; some action modals remain coming soon. |
 | `/coach/clients/[clientId]` | Partial | Client profile drill-down with tabs and notes; some side panels marked coming soon. |
-| `/coach/content` | Partial | Post and meal-plan content workflows present with local/mock persistence. |
-| `/coach/forms` | Partial | Form management UX available, not API-backed. |
-| `/coach/marketplace` | Partial | Marketplace management interface present with mock data. |
-| `/coach/programs` | Partial | Program management and assignment UX present; still local-state oriented. |
-| `/coach/schedule` | Partial | Calendar screen exists but week grid/events are mocked. |
-| `/coach/settings` | Partial | Settings and payout integration flows are mocked (for example Stripe connect toast). |
+| `/coach/content` | Partial | Post and meal-plan publishing now uses `/api/v1/coach/content` with persisted `community_posts`; scheduling panel remains coach-schedule based and broader content ops are still evolving. |
+| `/coach/forms` | Partial | Form listing/create/delete/status/assignment now runs through `/api/v1/coach/forms` APIs; advanced analytics and template tooling are still limited. |
+| `/coach/marketplace` | Partial | Marketplace listing load/save now runs through `/api/v1/coach/marketplace`; public listing optimization and richer package tooling remain limited. |
+| `/coach/programs` | Partial | Program fetch/create/update/day edits and assignments now run through `/api/v1/coach/programs` APIs; richer lifecycle tools (archive/versioning) remain limited. |
+| `/coach/schedule` | Partial | Event list/create flows now use `/api/v1/coach/schedule-events`; richer calendar interactions and advanced scheduling automation remain limited. |
+| `/coach/settings` | Partial | Account settings load/save now runs through `/api/v1/coach/settings`; notifications/security and full payout lifecycle remain partially mocked. |
 
 ## 4. Admin Portal (`app/admin`)
 
 | Route | Status | Key Capabilities |
 |---|---|---|
 | `/admin` | Partial | High-level metrics and administrative search controls are implemented in UI. |
-| `/admin/users` | Partial | User listing/search interface implemented with mock/local data. |
-| `/admin/coaches` | Partial | Coach management interface exists with search/filter UX. |
-| `/admin/applications` | Partial | Application review layout present. |
-| `/admin/payments` | Partial | Payment tracking interface present; no real payment backend wiring. |
-| `/admin/content` | Partial | Content moderation style UI surface available. |
-| `/admin/settings` | Partial | Admin setting controls available in local/front-end scope. |
+| `/admin/users` | Partial | User listing and status/premium actions now run through `/api/v1/admin/users` endpoints; deeper lifecycle tooling remains limited. |
+| `/admin/coaches` | Partial | Coach management data now loads through `/api/v1/admin/coaches` with client/revenue aggregation; extended coach operations remain limited. |
+| `/admin/applications` | Partial | Application review status updates now run through `/api/v1/admin/applications` and `/api/v1/admin/applications/[id]/status` with approval side effects. |
+| `/admin/payments` | Partial | Payment list and pending payout approvals now run through `/api/v1/admin/payments` and `/api/v1/admin/payments/approve-pending`; external settlement integration is still pending. |
+| `/admin/content` | Partial | Moderation report retrieval/status actions now run through `/api/v1/admin/reports` APIs; policy automation and richer moderation ops are still evolving. |
+| `/admin/settings` | Partial | Settings load/save now runs through `/api/v1/admin/settings`; broader platform configuration surface and audit controls are still limited. |
 
 ## 5. Shared Functional Modules
 
@@ -93,5 +93,6 @@ The following are currently hardcoded as incomplete actions:
 ## 7. Integration Readiness Summary
 
 - Front-end scaffolding and interaction design are advanced.
-- Core gaps are backend/API integration, real-time sync, and replacement of mocked datasets.
+- Backend/API integration is now in place for key coach/admin flows (coach clients, content, broadcast/history, forms, programs, schedule events, marketplace, settings, direct-thread creation; admin applications, users/coaches, reports, payments, settings) but several modules still rely on local/mock patterns.
+- Core remaining gaps are deeper domain coverage (for example richer client-detail workflows and coach/admin advanced operations), real-time sync, and replacement of remaining mocked datasets.
 - Documentation and product messaging should continue to label these as MVP/local-state features until integrations are completed.
