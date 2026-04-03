@@ -116,6 +116,10 @@ function hashString(value: string): number {
 function pickTemplateByHints(hints: string[], entropySeed: string): FoodTemplate {
   const joined = hints.join(' ').toLowerCase()
 
+  if (!joined.trim()) {
+    return FOOD_TEMPLATES[0]
+  }
+
   if (joined.includes('salmon') || joined.includes('fish')) return FOOD_TEMPLATES[0]
   if (joined.includes('chicken') || joined.includes('rice')) return FOOD_TEMPLATES[1]
   if (joined.includes('oat') || joined.includes('oatmeal')) return FOOD_TEMPLATES[2]

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 import type { Database } from '@/types/supabase'
 
@@ -15,6 +16,7 @@ export async function POST(request: Request, context: RouteContext) {
   const requestId = crypto.randomUUID()
   const { id } = await context.params
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -57,7 +59,7 @@ export async function POST(request: Request, context: RouteContext) {
     })
   }
 
-  const { data: parent, error: parentError } = await (supabase as any)
+  const { data: parent, error: parentError } = await (db as any)
     .from('community_posts')
     .select('id')
     .eq('id', id)
@@ -82,7 +84,7 @@ export async function POST(request: Request, context: RouteContext) {
     post_type: 'text',
   }
 
-  const { data, error } = await (supabase as any)
+  const { data, error } = await (db as any)
     .from('community_posts')
     .insert(payload)
     .select('id,created_at,content')

@@ -126,7 +126,7 @@ export default function ExerciseDetailSheet({ exercise, isOpen, onClose }: { exe
                                 <TrendingUp className="w-[16px] h-[16px] text-emerald-500" />
                             </div>
                             <div className="h-[140px] w-full">
-                                <ResponsiveContainer width="100%" height="100%">
+                                <ResponsiveContainer width="100%" height="100%" minWidth={260} minHeight={120}>
                                     <LineChart data={mockProgressionData}>
                                         <XAxis dataKey="date" hide />
                                         <YAxis domain={['dataMin - 5', 'dataMax + 5']} hide />
@@ -146,7 +146,7 @@ export default function ExerciseDetailSheet({ exercise, isOpen, onClose }: { exe
                         <div className="bg-[var(--bg-surface)] border border-(--border-subtle) p-4 rounded-[16px]">
                             <div className="font-body text-[14px] font-bold text-(--text-primary) mb-4">Weekly Volume</div>
                             <div className="h-[120px] w-full">
-                                <ResponsiveContainer width="100%" height="100%">
+                                <ResponsiveContainer width="100%" height="100%" minWidth={260} minHeight={100}>
                                     <BarChart data={mockVolumeData}>
                                         <Tooltip 
                                             cursor={{ fill: 'var(--bg-elevated)' }}

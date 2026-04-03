@@ -90,7 +90,12 @@ export const useMessageStore = create<MessageState>()(
                         error: null,
                     })
                 } catch (error) {
-                    set({ isLoading: false, error: getErrorMessage(error) })
+                    set((state) => ({
+                        isLoading: false,
+                        error: getErrorMessage(error),
+                        threads: state.threads.length ? state.threads : MOCK_THREADS,
+                        messages: Object.keys(state.messages).length ? state.messages : MOCK_MESSAGES,
+                    }))
                 }
             },
 

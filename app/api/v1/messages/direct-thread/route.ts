@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
 const DirectThreadSchema = z.object({
@@ -9,6 +10,7 @@ const DirectThreadSchema = z.object({
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const existingThreadId = await findDirectThreadId(supabase as any, user.id, parsed.data.participantId)
+  const existingThreadId = await findDirectThreadId(db as any, user.id, parsed.data.participantId)
   if (existingThreadId) {
     return dataResponse({
       requestId,
@@ -61,7 +63,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const { data: threadData, error: threadError } = await (supabase as any)
+  const { data: threadData, error: threadError } = await (db as any)
     .from('message_threads')
     .insert({
       created_by: user.id,
@@ -80,7 +82,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const { error: participantsError } = await (supabase as any)
+  const { error: participantsError } = await (db as any)
     .from('message_thread_participants')
     .insert([
       { thread_id: threadData.id, user_id: user.id },
@@ -109,14 +111,27 @@ export async function POST(request: Request) {
 async function findDirectThreadId(supabase: any, currentUserId: string, participantId: string): Promise<string | null> {
   const { data: memberships, error: membershipError } = await supabase
     .from('message_thread_participants')
-    .select('thread_id,thread:message_threads(is_group)')
+    .select('thread_id')
     .eq('user_id', currentUserId)
 
   if (membershipError) return null
 
-  const directThreadIds = (memberships || [])
-    .filter((row: any) => !row.thread?.is_group)
+  const candidateThreadIds = (memberships || [])
     .map((row: any) => String(row.thread_id || ''))
+    .filter(Boolean)
+
+  if (!candidateThreadIds.length) return null
+
+  const { data: threadRows, error: threadError } = await supabase
+    .from('message_threads')
+    .select('id,is_group')
+    .in('id', candidateThreadIds)
+
+  if (threadError) return null
+
+  const directThreadIds = (threadRows || [])
+    .filter((row: any) => row?.is_group === false)
+    .map((row: any) => String(row.id || ''))
     .filter(Boolean)
 
   if (!directThreadIds.length) return null

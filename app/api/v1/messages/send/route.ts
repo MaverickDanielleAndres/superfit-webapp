@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 import type { Json } from '@/types/supabase'
 
@@ -23,6 +24,7 @@ const SendMessageSchema = z.object({
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -76,7 +78,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const { data: membership, error: membershipError } = await (supabase as any)
+  const { data: membership, error: membershipError } = await (db as any)
     .from('message_thread_participants')
     .select('thread_id')
     .eq('thread_id', parsed.data.threadId)
@@ -94,7 +96,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const { data: message, error } = await (supabase as any)
+  const { data: message, error } = await (db as any)
     .from('messages')
     .insert({
       thread_id: parsed.data.threadId,
@@ -117,7 +119,7 @@ export async function POST(request: Request) {
     })
   }
 
-  await (supabase as any)
+  await (db as any)
     .from('message_threads')
     .update({ updated_at: new Date().toISOString() })
     .eq('id', parsed.data.threadId)

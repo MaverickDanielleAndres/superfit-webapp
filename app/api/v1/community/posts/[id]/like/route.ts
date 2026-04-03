@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
 interface RouteContext {
@@ -9,6 +10,7 @@ export async function POST(_request: Request, context: RouteContext) {
   const requestId = crypto.randomUUID()
   const { id } = await context.params
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -24,7 +26,7 @@ export async function POST(_request: Request, context: RouteContext) {
     })
   }
 
-  const { data: post, error: postError } = await (supabase as any)
+  const { data: post, error: postError } = await (db as any)
     .from('community_posts')
     .select('id')
     .eq('id', id)
@@ -42,7 +44,7 @@ export async function POST(_request: Request, context: RouteContext) {
     })
   }
 
-  const { data: existing } = await (supabase as any)
+  const { data: existing } = await (db as any)
     .from('community_post_likes')
     .select('post_id')
     .eq('post_id', id)
@@ -50,7 +52,7 @@ export async function POST(_request: Request, context: RouteContext) {
     .maybeSingle()
 
   if (!existing) {
-    const { error } = await (supabase as any)
+    const { error } = await (db as any)
       .from('community_post_likes')
       .insert({ post_id: id, user_id: user.id })
 
@@ -78,6 +80,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
   const requestId = crypto.randomUUID()
   const { id } = await context.params
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -93,7 +96,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     })
   }
 
-  const { error } = await (supabase as any)
+  const { error } = await (db as any)
     .from('community_post_likes')
     .delete()
     .eq('post_id', id)

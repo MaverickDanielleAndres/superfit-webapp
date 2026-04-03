@@ -37,7 +37,7 @@ interface NavItemProps {
     isActive: boolean
     isCollapsed: boolean
     badge?: number
-    onClick?: (e: React.MouseEvent) => void
+    onClick?: () => void
     onMouseEnter?: () => void
 }
 
@@ -46,7 +46,7 @@ const NavItem = ({ icon: Icon, label, href, isActive, isCollapsed, badge, onClic
         <Link
             href={href}
             prefetch={true}
-            onClick={onClick}
+            onClick={() => onClick?.()}
             onMouseEnter={onMouseEnter}
             className={cn(
                 'flex items-center h-[44px] px-3 mx-2 my-0.5 rounded-[10px] gap-2.5 transition-all duration-120 cursor-pointer relative',
@@ -89,14 +89,7 @@ export function Sidebar() {
         router.push('/auth')
     }
 
-    const handleLinkClick = (e: React.MouseEvent) => {
-        e.stopPropagation()
-        if (isCollapsed) {
-            toggleSidebar()
-        }
-    }
-
-    const handleSidebarClick = () => {
+    const handleLinkClick = () => {
         if (isCollapsed) {
             toggleSidebar()
         }
@@ -123,7 +116,6 @@ export function Sidebar() {
 
     return (
         <aside
-            onClick={handleSidebarClick}
             className={cn(
                 'fixed top-0 left-0 h-screen z-40 bg-(--sidebar-bg) border-r border-(--sidebar-border) overflow-y-auto flex flex-col',
                 'transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',

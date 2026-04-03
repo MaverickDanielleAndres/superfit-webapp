@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
 const UUID_REGEX =
@@ -15,6 +16,7 @@ const ThreadCreateSchema = z.object({
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -76,7 +78,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const { data: createdThread, error: threadError } = await (supabase as any)
+  const { data: createdThread, error: threadError } = await (db as any)
     .from('message_threads')
     .insert({
       created_by: user.id,
@@ -102,7 +104,7 @@ export async function POST(request: Request) {
     user_id: participantId,
   }))
 
-  const { error: participantsError } = await (supabase as any)
+  const { error: participantsError } = await (db as any)
     .from('message_thread_participants')
     .insert(participants)
 

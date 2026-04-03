@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
 const MarkReadSchema = z.object({
@@ -9,6 +10,7 @@ const MarkReadSchema = z.object({
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const { error } = await (supabase as any)
+  const { error } = await (db as any)
     .from('message_thread_participants')
     .update({ last_read_at: new Date().toISOString() })
     .eq('thread_id', parsed.data.threadId)

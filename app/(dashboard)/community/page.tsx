@@ -6,7 +6,7 @@
  * reposts, likes, and deep engagement buttons.
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     Heart, MessageCircle, Share2, Trophy, Flame, Search,
@@ -28,14 +28,19 @@ export default function CommunityPage() {
     const [showComposer, setShowComposer] = useState(false)
     const [newPostContent, setNewPostContent] = useState('')
     const [isPosting, setIsPosting] = useState(false)
+    const [composerMediaUrls, setComposerMediaUrls] = useState<string[]>([])
+    const [showPollComposer, setShowPollComposer] = useState(false)
+    const [pollQuestion, setPollQuestion] = useState('')
+    const [pollOptions, setPollOptions] = useState<string[]>(['', ''])
 
     // Interaction state (UI mocks for threads)
     const [expandedPostId, setExpandedPostId] = useState<string | null>(null)
-    const [replyText, setReplyText] = useState('')
+    const [replyDraftByPost, setReplyDraftByPost] = useState<Record<string, string>>({})
+    const [repliesByPost, setRepliesByPost] = useState<Record<string, Array<{ id: string; userName: string; userHandle: string; userAvatar: string; content: string; createdAt: string }>>>({})
     const [postMenuOpenId, setPostMenuOpenId] = useState<string | null>(null)
 
     const [pollVotes, setPollVotes] = useState<Record<string, string>>({})
-    const [followingIds, setFollowingIds] = useState<string[]>(['user_2', 'user_3', 'coach_1'])
+    const [followingIds, setFollowingIds] = useState<string[]>([])
     const [hiddenPostIds, setHiddenPostIds] = useState<string[]>([])
     const [mutedUserIds, setMutedUserIds] = useState<string[]>([])
     const [blockedUserIds, setBlockedUserIds] = useState<string[]>([])
@@ -47,6 +52,7 @@ export default function CommunityPage() {
     const { posts, addPost, likePost, repostPost, addComment, deletePost, fetchPosts, isLoading, error } = useCommunityStore()
     const { user } = useAuthStore()
     const isSimulationMode = !isSupabaseAuthEnabled()
+    const composerFileInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
         if (!user?.id) return
@@ -58,6 +64,75 @@ export default function CommunityPage() {
         ? visiblePosts
         : visiblePosts.filter((post) => post.userId === user?.id || followingIds.includes(post.userId))
 
+    const suggestions = useMemo(() => {
+        const byUser = new Map<string, { id: string; name: string; handle: string; avatar: string; verified: boolean }>()
+
+        for (const post of posts) {
+            if (!post.userId || post.userId === user?.id || byUser.has(post.userId)) continue
+            byUser.set(post.userId, {
+                id: post.userId,
+                name: post.userName,
+                handle: post.userHandle,
+                avatar: post.userAvatar,
+                verified: !!post.isVerified,
+            })
+        }
+
+        return Array.from(byUser.values()).slice(0, 6)
+    }, [posts, user?.id])
+
+    useEffect(() => {
+        if (followingIds.length > 0) return
+        if (!suggestions.length) return
+        setFollowingIds(suggestions.slice(0, 3).map((item) => item.id))
+    }, [followingIds.length, suggestions])
+
+    const leaderboard = useMemo(() => {
+        const byUser = new Map<string, { userId: string; name: string; handle: string; avatar: string; score: number; posts: number; likes: number; comments: number; reposts: number }>()
+
+        for (const post of posts) {
+            const existing = byUser.get(post.userId) || {
+                userId: post.userId,
+                name: post.userName,
+                handle: post.userHandle,
+                avatar: post.userAvatar,
+                score: 0,
+                posts: 0,
+                likes: 0,
+                comments: 0,
+                reposts: 0,
+            }
+
+            existing.posts += 1
+            existing.likes += post.likes || 0
+            existing.comments += post.comments || 0
+            existing.reposts += post.reposts || 0
+            existing.score = existing.posts * 10 + existing.likes * 3 + existing.comments * 2 + existing.reposts * 4
+            byUser.set(post.userId, existing)
+        }
+
+        const rows = Array.from(byUser.values())
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 10)
+            .map((row, index) => ({
+                rank: index + 1,
+                name: row.name,
+                handle: row.handle,
+                score: row.score,
+                isYou: row.userId === user?.id,
+                trend: row.score >= 100 ? 'up' : row.score >= 40 ? 'same' : 'down',
+                avatar: row.avatar,
+            }))
+
+        if (rows.length) return rows
+
+        return [
+            { rank: 1, name: user?.name || 'You', handle: `@${user?.email?.split('@')[0] || 'you'}`, score: 120, isYou: true, trend: 'up', avatar: user?.avatar || '' },
+            { rank: 2, name: 'SuperFit User', handle: '@superfit_member', score: 80, isYou: false, trend: 'same', avatar: '' },
+            { rank: 3, name: 'Coach Marcus', handle: '@coach_marcus', score: 65, isYou: false, trend: 'up', avatar: '' },
+        ]
+    }, [posts, user?.id])
+
     const handlePost = async () => {
         if (!newPostContent.trim() || !user) return
 
@@ -68,6 +143,20 @@ export default function CommunityPage() {
 
         setIsPosting(true)
         await new Promise(r => setTimeout(r, 600))
+
+        const normalizedOptions = pollOptions.map((option) => option.trim()).filter(Boolean)
+        const pollPayload = showPollComposer && pollQuestion.trim().length > 0 && normalizedOptions.length >= 2
+            ? {
+                question: pollQuestion.trim(),
+                options: normalizedOptions.map((option, index) => ({
+                    id: `opt_${index + 1}`,
+                    text: option,
+                    votes: 0,
+                })),
+                totalVotes: 0,
+            }
+            : undefined
+
         addPost({
             userId: user.id || 'usr_x',
             userName: user.name || 'Current User',
@@ -75,12 +164,28 @@ export default function CommunityPage() {
             userAvatar: user.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=new_${user.id}`,
             isCoach: false,
             content: newPostContent,
-            type: 'text',
+            type: pollPayload ? 'challenge' : 'text',
+            mediaUrls: composerMediaUrls,
+            poll: pollPayload,
             postedAt: new Date().toISOString(),
         })
         setNewPostContent('')
+        setComposerMediaUrls([])
+        setShowPollComposer(false)
+        setPollQuestion('')
+        setPollOptions(['', ''])
         setShowComposer(false)
         setIsPosting(false)
+    }
+
+    const handleComposerFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0]
+        if (!file) return
+
+        const objectUrl = URL.createObjectURL(file)
+        setComposerMediaUrls((current) => [...current, objectUrl])
+        event.target.value = ''
+        toast.success(`${file.name} added to post.`)
     }
 
     const handleBookmarkToggle = (postId: string) => {
@@ -92,6 +197,15 @@ export default function CommunityPage() {
     const handleShare = async (postId: string) => {
         const shareUrl = `${window.location.origin}/community?post=${postId}`
         try {
+            if (navigator.share) {
+                await navigator.share({
+                    title: 'SuperFit Community Post',
+                    text: 'Check out this post on SuperFit',
+                    url: shareUrl,
+                })
+                toast.success('Post shared.')
+                return
+            }
             await navigator.clipboard.writeText(shareUrl)
             toast.success('Post link copied to clipboard.')
         } catch {
@@ -100,18 +214,35 @@ export default function CommunityPage() {
     }
 
     const handleReplyPost = (postId: string) => {
-        if (!replyText.trim() || !user) return
+        const replyText = (replyDraftByPost[postId] || '').trim()
+        if (!replyText || !user) return
+
         addComment(postId, {
             authorId: user.id,
             authorName: user.name || 'Current User',
             authorHandle: `@${user.email?.split('@')[0] || 'user'}`,
             authorAvatar: user.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=reply_${user.id}`,
-            content: replyText.trim(),
+            content: replyText,
             timestamp: new Date().toISOString(),
         })
+
+        setRepliesByPost((current) => ({
+            ...current,
+            [postId]: [
+                ...(current[postId] || []),
+                {
+                    id: `reply_${Date.now()}`,
+                    userName: user.name || 'Current User',
+                    userHandle: `@${user.email?.split('@')[0] || 'user'}`,
+                    userAvatar: user.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=reply_${user.id}`,
+                    content: replyText,
+                    createdAt: new Date().toISOString(),
+                },
+            ],
+        }))
+
         toast.success('Reply posted.')
-        setReplyText('')
-        setExpandedPostId(null)
+        setReplyDraftByPost((current) => ({ ...current, [postId]: '' }))
     }
 
     const handleEditStart = (post: CommunityPost) => {
@@ -129,14 +260,6 @@ export default function CommunityPage() {
         setNewPostContent('')
         toast.success('Post updated.')
     }
-
-    const leaderboard = [
-        { rank: 1, name: 'Alex Thompson', handle: '@alex_t', score: 14200, trend: 'up' },
-        { rank: 2, name: 'Sarah Jenkins', handle: '@sarahj_lifts', score: 13500, trend: 'up' },
-        { rank: 3, name: user?.name || 'You', handle: `@${user?.email?.split('@')[0] || 'you'}`, score: 12400, trend: 'same', isYou: true },
-        { rank: 4, name: 'David Kim', handle: '@dkim99', score: 11800, trend: 'down' },
-        { rank: 5, name: 'Emma Watson', handle: '@emma_w', score: 10500, trend: 'up' },
-    ]
 
     const formatTimestamp = (iso: string) => {
         const date = new Date(iso)
@@ -317,30 +440,32 @@ export default function CommunityPage() {
                 <AnimatePresence>
                     {expandedPostId === post.id && (
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="pl-[52px] sm:pl-[64px] mt-2 overflow-hidden">
-                            <div className="flex gap-3 mb-4">
-                                <img src={getSafeAvatar('', 'reply-1')} className="w-[36px] h-[36px] rounded-full border border-(--border-subtle)" alt="Reply avatar" />
-                                <div>
-                                    <div className="flex gap-1 items-center">
-                                        <span className="font-display font-bold text-[14px] text-(--text-primary)">Jake Fitness</span>
-                                        <span className="font-body text-[13px] text-(--text-tertiary)">@jake_f · 2h</span>
+                            {(repliesByPost[post.id] || []).map((reply) => (
+                                <div key={reply.id} className="flex gap-3 mb-4">
+                                    <img src={getSafeAvatar(reply.userAvatar, reply.id)} className="w-[36px] h-[36px] rounded-full border border-(--border-subtle)" alt={`${reply.userName} avatar`} loading="lazy" />
+                                    <div>
+                                        <div className="flex gap-1 items-center">
+                                            <span className="font-display font-bold text-[14px] text-(--text-primary)">{reply.userName}</span>
+                                            <span className="font-body text-[13px] text-(--text-tertiary)">{reply.userHandle} · {formatTimestamp(reply.createdAt)}</span>
+                                        </div>
+                                        <p className="font-body text-[14px] text-(--text-primary) mt-0.5">{reply.content}</p>
                                     </div>
-                                    <p className="font-body text-[14px] text-(--text-primary) mt-0.5">Absolute unit! Great job on that PR.</p>
                                 </div>
-                            </div>
+                            ))}
                             <div className="flex gap-3 items-center">
                                 <img src={getSafeAvatar(user?.avatar, 'you')} className="w-[36px] h-[36px] rounded-full border border-(--border-subtle)" alt="Your avatar" />
                                 <input
                                     autoFocus
                                     type="text"
                                     placeholder="Post your reply"
-                                    value={replyText}
-                                    onChange={(e) => setReplyText(e.target.value)}
+                                    value={replyDraftByPost[post.id] || ''}
+                                    onChange={(e) => setReplyDraftByPost((current) => ({ ...current, [post.id]: e.target.value }))}
                                     className="flex-1 bg-transparent border-none text-[15px] font-body text-(--text-primary) placeholder:text-(--text-tertiary) focus:ring-0 outline-none"
                                 />
                                 <button 
                                     onClick={() => handleReplyPost(post.id)}
                                     className="px-4 py-1.5 bg-emerald-500 text-white font-bold text-[13px] rounded-full disabled:opacity-50 hover:bg-emerald-600 transition-colors cursor-pointer" 
-                                    disabled={!replyText.trim()}
+                                    disabled={!(replyDraftByPost[post.id] || '').trim()}
                                 >
                                     Reply
                                 </button>
@@ -427,10 +552,49 @@ export default function CommunityPage() {
                                         placeholder="What's happening in your fitness journey?!"
                                         className="w-full bg-transparent border-none text-[20px] font-body text-(--text-primary) placeholder:text-(--text-tertiary) resize-none min-h-[60px] focus:ring-0 outline-none overflow-hidden"
                                     />
+
+                                    {composerMediaUrls.length > 0 && (
+                                        <div className="mt-2 flex gap-2 overflow-x-auto pb-2">
+                                            {composerMediaUrls.map((mediaUrl, index) => (
+                                                <div key={`${mediaUrl}-${index}`} className="relative w-[96px] h-[96px] rounded-[12px] overflow-hidden border border-(--border-subtle)">
+                                                    <img src={mediaUrl} alt="Post media preview" className="w-full h-full object-cover" loading="lazy" />
+                                                    <button onClick={() => setComposerMediaUrls((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="absolute top-1 right-1 w-[20px] h-[20px] rounded-full bg-black/60 text-white flex items-center justify-center">
+                                                        <X className="w-[12px] h-[12px]" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {showPollComposer && (
+                                        <div className="mt-3 rounded-[14px] border border-(--border-default) bg-[var(--bg-elevated)] p-3 space-y-2">
+                                            <input
+                                                value={pollQuestion}
+                                                onChange={(event) => setPollQuestion(event.target.value)}
+                                                placeholder="Poll question"
+                                                className="w-full h-[40px] rounded-[10px] border border-(--border-subtle) bg-(--bg-surface) px-3 text-[13px] text-(--text-primary) outline-none focus:border-emerald-500"
+                                            />
+                                            {pollOptions.map((option, index) => (
+                                                <input
+                                                    key={index}
+                                                    value={option}
+                                                    onChange={(event) => setPollOptions((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
+                                                    placeholder={`Option ${index + 1}`}
+                                                    className="w-full h-[36px] rounded-[10px] border border-(--border-subtle) bg-(--bg-surface) px-3 text-[13px] text-(--text-primary) outline-none focus:border-emerald-500"
+                                                />
+                                            ))}
+                                            <div className="flex items-center justify-between">
+                                                <button onClick={() => setPollOptions((current) => current.length >= 4 ? current : [...current, ''])} className="text-[12px] font-bold text-emerald-600 hover:underline">Add option</button>
+                                                <button onClick={() => { setShowPollComposer(false); setPollQuestion(''); setPollOptions(['', '']) }} className="text-[12px] font-bold text-(--text-secondary) hover:underline">Remove poll</button>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-(--border-subtle)">
                                         <div className="flex items-center gap-1 text-emerald-500">
-                                            <button onClick={() => setNewPostContent((current) => `${current}${current ? '\n\n' : ''}https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=1200&fit=crop`)} className="p-2 hover:bg-emerald-500/10 rounded-full transition-colors cursor-pointer"><ImageIcon className="w-[20px] h-[20px]" /></button>
-                                            <button onClick={() => setNewPostContent((current) => `${current}${current ? '\n\n' : ''}Quick poll:\n- Option A\n- Option B`)} className="p-2 hover:bg-emerald-500/10 rounded-full transition-colors cursor-pointer"><BarChart2 className="w-[20px] h-[20px]" /></button>
+                                            <button onClick={() => composerFileInputRef.current?.click()} className="p-2 hover:bg-emerald-500/10 rounded-full transition-colors cursor-pointer"><ImageIcon className="w-[20px] h-[20px]" /></button>
+                                            <button onClick={() => setShowPollComposer((current) => !current)} className={cn("p-2 rounded-full transition-colors cursor-pointer", showPollComposer ? 'bg-emerald-500/10 text-emerald-600' : 'hover:bg-emerald-500/10')}><BarChart2 className="w-[20px] h-[20px]" /></button>
+                                            <input ref={composerFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleComposerFileSelect} />
                                         </div>
                                         <button
                                             onClick={handlePost}
@@ -482,7 +646,7 @@ export default function CommunityPage() {
                                         {u.rank}
                                     </div>
                                     <div className="flex-1 flex items-center gap-3 px-4">
-                                        <img src={`https://api.dicebear.com/7.x/notionists/svg?seed=${u.rank}`} className="w-[44px] h-[44px] rounded-full border border-(--border-subtle)" />
+                                        <img src={getSafeAvatar(u.avatar, `leader-${u.rank}`)} className="w-[44px] h-[44px] rounded-full border border-(--border-subtle)" alt={u.name} loading="lazy" />
                                         <div className="flex flex-col">
                                             <span className="font-display font-bold text-[16px] text-(--text-primary) flex items-center gap-1">
                                                 {u.name} {u.rank <= 3 && <BadgeCheck className="w-[14px] h-[14px] text-blue-500" />}
@@ -532,13 +696,13 @@ export default function CommunityPage() {
 
                     <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[16px] p-5 flex flex-col gap-4">
                         <h3 className="font-display font-black text-[20px] text-(--text-primary)">Who to follow</h3>
-                        {[
-                            { id: 'coach_1', name: 'Coach Marcus', handle: '@marcus_strength', verified: true },
-                            { id: 'user_2', name: 'Sarah Jenkins', handle: '@sarahj_lifts', verified: true },
-                            { id: 'user_3', name: 'Mike Chen', handle: '@mike_runs', verified: false }
-                        ].map((u, i) => (
+                        {(suggestions.length ? suggestions : [
+                            { id: 'coach_1', name: 'Coach Marcus', handle: '@marcus_strength', verified: true, avatar: '' },
+                            { id: 'user_2', name: 'Sarah Jenkins', handle: '@sarahj_lifts', verified: true, avatar: '' },
+                            { id: 'user_3', name: 'Mike Chen', handle: '@mike_runs', verified: false, avatar: '' },
+                        ]).map((u, i) => (
                             <div key={i} className="flex items-center justify-between gap-3 hover:bg-[var(--bg-elevated)] -mx-5 px-5 py-2 cursor-pointer transition-colors">
-                                <img src={getSafeAvatar('', u.handle)} className="w-[40px] h-[40px] rounded-full border border-(--border-subtle)" alt={u.name} />
+                                <img src={getSafeAvatar(u.avatar, u.handle)} className="w-[40px] h-[40px] rounded-full border border-(--border-subtle)" alt={u.name} loading="lazy" />
                                 <div className="flex-1 min-w-0 flex flex-col">
                                     <span className="font-body font-bold text-[15px] text-(--text-primary) truncate flex items-center gap-1">
                                         {u.name} {u.verified && <BadgeCheck className="w-[14px] h-[14px] text-blue-500 shrink-0" />}
@@ -575,7 +739,7 @@ export default function CommunityPage() {
                         className="fixed inset-0 z-[100] bg-(--bg-surface) sm:hidden flex flex-col"
                     >
                         <div className="flex justify-between items-center px-4 h-[56px] border-b border-(--border-subtle)">
-                            <button onClick={() => { setShowComposer(false); setEditingPostId(null); setNewPostContent('') }} className="text-(--text-primary)"><X className="w-[24px] h-[24px]" /></button>
+                            <button onClick={() => { setShowComposer(false); setEditingPostId(null); setNewPostContent(''); setComposerMediaUrls([]); setShowPollComposer(false); setPollQuestion(''); setPollOptions(['', '']) }} className="text-(--text-primary)"><X className="w-[24px] h-[24px]" /></button>
                             <button
                                 onClick={handlePost}
                                 disabled={!newPostContent.trim() || isPosting}
@@ -586,13 +750,58 @@ export default function CommunityPage() {
                         </div>
                         <div className="flex-1 p-4 flex gap-3">
                             <img src={getSafeAvatar(user?.avatar, 'you')} className="w-[40px] h-[40px] rounded-full" alt="Your avatar" />
-                            <textarea
-                                autoFocus
-                                value={newPostContent}
-                                onChange={e => setNewPostContent(e.target.value)}
-                                placeholder="What's happening?"
-                                className="flex-1 bg-transparent border-none text-[18px] font-body text-(--text-primary) placeholder:text-(--text-tertiary) resize-none outline-none mt-2"
-                            />
+                            <div className="flex-1 flex flex-col gap-3">
+                                <textarea
+                                    autoFocus
+                                    value={newPostContent}
+                                    onChange={e => setNewPostContent(e.target.value)}
+                                    placeholder="What's happening?"
+                                    className="flex-1 bg-transparent border-none text-[18px] font-body text-(--text-primary) placeholder:text-(--text-tertiary) resize-none outline-none mt-2"
+                                />
+
+                                {composerMediaUrls.length > 0 && (
+                                    <div className="flex gap-2 overflow-x-auto pb-2">
+                                        {composerMediaUrls.map((mediaUrl, index) => (
+                                            <div key={`${mediaUrl}-${index}`} className="relative w-[84px] h-[84px] rounded-[12px] overflow-hidden border border-(--border-subtle)">
+                                                <img src={mediaUrl} alt="Post media preview" className="w-full h-full object-cover" loading="lazy" />
+                                                <button onClick={() => setComposerMediaUrls((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="absolute top-1 right-1 w-[18px] h-[18px] rounded-full bg-black/60 text-white flex items-center justify-center">
+                                                    <X className="w-[10px] h-[10px]" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="flex items-center gap-2 pb-2">
+                                    <button onClick={() => composerFileInputRef.current?.click()} className="p-2 rounded-full text-emerald-500 hover:bg-emerald-500/10">
+                                        <ImageIcon className="w-[20px] h-[20px]" />
+                                    </button>
+                                    <button onClick={() => setShowPollComposer((current) => !current)} className={cn("p-2 rounded-full", showPollComposer ? 'bg-emerald-500/10 text-emerald-600' : 'text-emerald-500 hover:bg-emerald-500/10')}>
+                                        <BarChart2 className="w-[20px] h-[20px]" />
+                                    </button>
+                                    <input ref={composerFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleComposerFileSelect} />
+                                </div>
+
+                                {showPollComposer && (
+                                    <div className="rounded-[12px] border border-(--border-default) bg-[var(--bg-elevated)] p-3 space-y-2">
+                                        <input
+                                            value={pollQuestion}
+                                            onChange={(event) => setPollQuestion(event.target.value)}
+                                            placeholder="Poll question"
+                                            className="w-full h-[38px] rounded-[10px] border border-(--border-subtle) bg-(--bg-surface) px-3 text-[13px] text-(--text-primary) outline-none focus:border-emerald-500"
+                                        />
+                                        {pollOptions.map((option, index) => (
+                                            <input
+                                                key={index}
+                                                value={option}
+                                                onChange={(event) => setPollOptions((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
+                                                placeholder={`Option ${index + 1}`}
+                                                className="w-full h-[34px] rounded-[10px] border border-(--border-subtle) bg-(--bg-surface) px-3 text-[13px] text-(--text-primary) outline-none focus:border-emerald-500"
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </motion.div>
                 )}

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 import type { Database, Json } from '@/types/supabase'
 
@@ -41,6 +42,7 @@ const PostCreateSchema = z.object({
 export async function GET() {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -56,9 +58,9 @@ export async function GET() {
     })
   }
 
-  const { data: postsData, error: postsError } = await (supabase as any)
+  const { data: postsData, error: postsError } = await (db as any)
     .from('community_posts')
-    .select('id,user_id,content,post_type,media_urls,poll,workout_ref,meal_ref,pr_ref,created_at,parent_id,repost_of_id,profile:profiles(full_name,avatar_url,role,email)')
+    .select('id,user_id,content,post_type,media_urls,poll,workout_ref,meal_ref,pr_ref,created_at,parent_id,repost_of_id')
     .is('deleted_at', null)
     .is('parent_id', null)
     .is('repost_of_id', null)
@@ -77,6 +79,42 @@ export async function GET() {
 
   const posts = Array.isArray(postsData) ? postsData : []
   const postIds = posts.map((row) => String(row.id || '')).filter(Boolean)
+  const postUserIds = Array.from(new Set(posts.map((row) => String(row.user_id || '')).filter(Boolean)))
+
+  const profileById = new Map<string, {
+    full_name?: string | null
+    avatar_url?: string | null
+    role?: string | null
+    email?: string | null
+  }>()
+
+  if (postUserIds.length) {
+    const { data: profileRows, error: profileError } = await (db as any)
+      .from('profiles')
+      .select('id,full_name,avatar_url,role,email')
+      .in('id', postUserIds)
+
+    if (profileError) {
+      return problemResponse({
+        status: 500,
+        code: 'COMMUNITY_FETCH_FAILED',
+        title: 'Community Fetch Failed',
+        detail: profileError.message,
+        requestId,
+      })
+    }
+
+    for (const profile of profileRows || []) {
+      const id = String(profile.id || '')
+      if (!id) continue
+      profileById.set(id, {
+        full_name: profile.full_name || null,
+        avatar_url: profile.avatar_url || null,
+        role: profile.role || null,
+        email: profile.email || null,
+      })
+    }
+  }
 
   const likesByPost = new Map<string, number>()
   const likedByMe = new Set<string>()
@@ -84,7 +122,7 @@ export async function GET() {
   const repostsByPost = new Map<string, number>()
 
   if (postIds.length) {
-    const { data: likesData, error: likesError } = await (supabase as any)
+    const { data: likesData, error: likesError } = await (db as any)
       .from('community_post_likes')
       .select('post_id,user_id')
       .in('post_id', postIds)
@@ -106,7 +144,7 @@ export async function GET() {
       if (String(like.user_id || '') === user.id) likedByMe.add(postId)
     }
 
-    const { data: commentsData, error: commentsError } = await (supabase as any)
+    const { data: commentsData, error: commentsError } = await (db as any)
       .from('community_posts')
       .select('id,parent_id')
       .is('deleted_at', null)
@@ -128,7 +166,7 @@ export async function GET() {
       commentsByPost.set(parentId, (commentsByPost.get(parentId) || 0) + 1)
     }
 
-    const { data: repostData, error: repostError } = await (supabase as any)
+    const { data: repostData, error: repostError } = await (db as any)
       .from('community_posts')
       .select('id,repost_of_id')
       .is('deleted_at', null)
@@ -152,12 +190,7 @@ export async function GET() {
   }
 
   const mappedPosts: CommunityPostItem[] = posts.map((row) => {
-    const profile = (row.profile || {}) as {
-      full_name?: string | null
-      avatar_url?: string | null
-      role?: string | null
-      email?: string | null
-    }
+    const profile = profileById.get(String(row.user_id || '')) || {}
 
     const postId = String(row.id || '')
     const userId = String(row.user_id || '')
@@ -197,6 +230,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -252,7 +286,7 @@ export async function POST(request: Request) {
     repost_of_id: parsed.data.repostOfId || null,
   }
 
-  const { data, error } = await (supabase as any)
+  const { data, error } = await (db as any)
     .from('community_posts')
     .insert(payload)
     .select('id,user_id,content,post_type,media_urls,poll,workout_ref,meal_ref,pr_ref,created_at')
@@ -268,7 +302,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const { data: profile } = await (supabase as any)
+  const { data: profile } = await (db as any)
     .from('profiles')
     .select('full_name,avatar_url,role,email')
     .eq('id', user.id)

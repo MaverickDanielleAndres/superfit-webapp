@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
 interface MessageReaction {
@@ -40,6 +41,7 @@ interface ChatThread {
 export async function GET() {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -55,9 +57,9 @@ export async function GET() {
     })
   }
 
-  const { data: membershipRows, error: membershipError } = await (supabase as any)
+  const { data: membershipRows, error: membershipError } = await (db as any)
     .from('message_thread_participants')
-    .select('thread_id,last_read_at,thread:message_threads(id,is_group,group_name,group_avatar,updated_at,created_at)')
+    .select('thread_id,last_read_at')
     .eq('user_id', user.id)
     .order('joined_at', { ascending: false })
 
@@ -84,9 +86,24 @@ export async function GET() {
     })
   }
 
-  const { data: participantRows, error: participantError } = await (supabase as any)
+  const { data: threadRows, error: threadError } = await (db as any)
+    .from('message_threads')
+    .select('id,is_group,group_name,group_avatar,updated_at,created_at')
+    .in('id', threadIds)
+
+  if (threadError) {
+    return problemResponse({
+      status: 500,
+      code: 'MESSAGES_FETCH_FAILED',
+      title: 'Messages Fetch Failed',
+      detail: threadError.message,
+      requestId,
+    })
+  }
+
+  const { data: participantRows, error: participantError } = await (db as any)
     .from('message_thread_participants')
-    .select('thread_id,user_id,profile:profiles(full_name,avatar_url)')
+    .select('thread_id,user_id')
     .in('thread_id', threadIds)
 
   if (participantError) {
@@ -99,7 +116,38 @@ export async function GET() {
     })
   }
 
-  const { data: messageRows, error: messageError } = await (supabase as any)
+  const participantIds = Array.from(
+    new Set((participantRows || []).map((row: any) => String(row.user_id || '')).filter(Boolean)),
+  )
+
+  const profileById = new Map<string, { full_name?: string | null; avatar_url?: string | null }>()
+  if (participantIds.length) {
+    const { data: profileRows, error: profileError } = await (db as any)
+      .from('profiles')
+      .select('id,full_name,avatar_url')
+      .in('id', participantIds)
+
+    if (profileError) {
+      return problemResponse({
+        status: 500,
+        code: 'MESSAGES_FETCH_FAILED',
+        title: 'Messages Fetch Failed',
+        detail: profileError.message,
+        requestId,
+      })
+    }
+
+    for (const row of profileRows || []) {
+      const id = String(row.id || '')
+      if (!id) continue
+      profileById.set(id, {
+        full_name: row.full_name || null,
+        avatar_url: row.avatar_url || null,
+      })
+    }
+  }
+
+  const { data: messageRows, error: messageError } = await (db as any)
     .from('messages')
     .select('id,thread_id,sender_id,text,attachments,status,reply_to_id,created_at')
     .in('thread_id', threadIds)
@@ -120,7 +168,7 @@ export async function GET() {
 
   const reactionsByMessage = new Map<string, MessageReaction[]>()
   if (messageIds.length) {
-    const { data: reactionRows, error: reactionError } = await (supabase as any)
+    const { data: reactionRows, error: reactionError } = await (db as any)
       .from('message_reactions')
       .select('message_id,user_id,emoji')
       .in('message_id', messageIds)
@@ -151,7 +199,7 @@ export async function GET() {
     const threadId = String(row.thread_id || '')
     if (!threadId) continue
 
-    const profile = (row.profile || {}) as { full_name?: string | null; avatar_url?: string | null }
+    const profile = profileById.get(String(row.user_id || '')) || {}
     const participant = {
       id: String(row.user_id || ''),
       name: profile.full_name || (String(row.user_id || '') === user.id ? 'You' : 'User'),
@@ -203,16 +251,16 @@ export async function GET() {
 
   const threads: ChatThread[] = []
   for (const row of memberships) {
-    const thread = row.thread as {
+    const thread = (threadRows || []).find((item: any) => String(item.id || '') === String(row.thread_id || '')) as {
       id: string
       is_group: boolean
       group_name: string | null
       group_avatar: string | null
       updated_at: string | null
       created_at: string | null
-    }
+    } | undefined
 
-    if (!thread?.id) continue
+    if (!thread || !thread.id) continue
 
     const threadMessages = messagesByThread[thread.id] || []
     const lastMessage = threadMessages[threadMessages.length - 1]

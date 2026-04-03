@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 import type { Database } from '@/types/supabase'
 
@@ -10,6 +11,7 @@ export async function POST(_request: Request, context: RouteContext) {
   const requestId = crypto.randomUUID()
   const { id } = await context.params
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -25,7 +27,7 @@ export async function POST(_request: Request, context: RouteContext) {
     })
   }
 
-  const { data: source, error: sourceError } = await (supabase as any)
+  const { data: source, error: sourceError } = await (db as any)
     .from('community_posts')
     .select('id,content,post_type,media_urls,poll,workout_ref,meal_ref,pr_ref')
     .eq('id', id)
@@ -55,7 +57,7 @@ export async function POST(_request: Request, context: RouteContext) {
     repost_of_id: id,
   }
 
-  const { data, error } = await (supabase as any)
+  const { data, error } = await (db as any)
     .from('community_posts')
     .insert(payload)
     .select('id,created_at')

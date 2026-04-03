@@ -43,6 +43,7 @@ export default function MessagesPage() {
     const [starredMessageIds, setStarredMessageIds] = useState<string[]>([])
     const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
     const [editedMessageTexts, setEditedMessageTexts] = useState<Record<string, string>>({})
+    const [isComposerMenuOpen, setIsComposerMenuOpen] = useState(false)
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -96,6 +97,7 @@ export default function MessagesPage() {
         setInputText('')
         setAttachments([])
         setReplyingTo(null)
+        setIsComposerMenuOpen(false)
     }
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -111,19 +113,26 @@ export default function MessagesPage() {
         setReplyingTo(null)
         setEditingMessageId(null)
         setInputText('')
+        setIsComposerMenuOpen(false)
     }
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            // Mocking an image attachment
-            const newAtt: MessageAttachment = {
-                id: `att_${Date.now()}`,
-                type: 'image',
-                url: 'https://images.unsplash.com/photo-1599058917212-d750089bc07e?w=600&fit=crop', // Mock visual
-                name: e.target.files[0].name
-            }
-            setAttachments([...attachments, newAtt])
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        const objectUrl = URL.createObjectURL(file)
+        const attachmentType: MessageAttachment['type'] = file.type.startsWith('video/') ? 'video' : file.type.startsWith('image/') ? 'image' : 'file'
+        const newAttachment: MessageAttachment = {
+            id: `att_${Date.now()}`,
+            type: attachmentType,
+            url: objectUrl,
+            name: file.name,
         }
+
+        setAttachments((current) => [...current, newAttachment])
+        setIsComposerMenuOpen(false)
+        e.target.value = ''
+        toast.success(`${file.name} attached.`)
     }
 
     const toggleReaction = (msgId: string, emoji: string) => {
@@ -196,7 +205,14 @@ export default function MessagesPage() {
                 url: '',
             },
         ])
+        setIsComposerMenuOpen(false)
         toast.success('Voice note attached.')
+    }
+
+    const handleQuickThumbsUp = () => {
+        if (!selectedThreadId || !user) return
+        sendMessage(selectedThreadId, currentUserId, '👍')
+        setIsComposerMenuOpen(false)
     }
 
     if (isLoading) {
@@ -258,7 +274,7 @@ export default function MessagesPage() {
                                 className={cn("w-full p-3 flex items-center gap-3 text-left rounded-[16px] transition-colors mb-1", isActive ? 'bg-[var(--bg-elevated)] border border-(--border-default) shadow-sm' : 'border border-transparent hover:bg-[var(--bg-elevated)]')}
                             >
                                 <div className="relative shrink-0">
-                                    <img src={getSafeImageSrc(avatar, `thread-${thread.id}`)} alt={title} className="w-[52px] h-[52px] rounded-full object-cover border border-(--border-subtle)" />
+                                    <img src={getSafeImageSrc(avatar, `thread-${thread.id}`)} alt={title} className="w-[52px] h-[52px] rounded-full object-cover border border-(--border-subtle)" loading="lazy" />
                                     {/* Mock active status indicator */}
                                     <div className="absolute bottom-0 right-0 w-[14px] h-[14px] rounded-full bg-emerald-500 border-2 border-(--bg-surface)" />
                                 </div>
@@ -372,7 +388,7 @@ export default function MessagesPage() {
                                         {/* Avatar (Left side, only bottom message of cluster) */}
                                         {!isMe && (
                                             <div className="w-[28px] shrink-0 flex items-end pb-1">
-                                                {showAvatar && <img src={getSafeImageSrc(sender?.avatar, `sender-${sender?.id || msg.senderId}`)} className="w-[28px] h-[28px] rounded-full object-cover" alt={sender?.name || 'Participant'} />}
+                                                {showAvatar && <img src={getSafeImageSrc(sender?.avatar, `sender-${sender?.id || msg.senderId}`)} className="w-[28px] h-[28px] rounded-full object-cover" alt={sender?.name || 'Participant'} loading="lazy" />}
                                             </div>
                                         )}
 
@@ -400,7 +416,7 @@ export default function MessagesPage() {
                                                         att.type === 'video' && att.url ? (
                                                             <video src={att.url} poster={att.thumbnailUrl} controls className="w-full h-auto object-cover" />
                                                         ) : (
-                                                            <img src={att.url || att.thumbnailUrl} alt="Attachment" className="w-full h-auto object-cover" />
+                                                            <img src={att.url || att.thumbnailUrl} alt="Attachment" className="w-full h-auto object-cover" loading="lazy" />
                                                         )
                                                     ) : (
                                                         <div className="p-4 bg-[var(--bg-elevated)] flex items-center gap-3">
@@ -531,7 +547,7 @@ export default function MessagesPage() {
                                 {attachments.map((att, i) => (
                                     <div key={i} className="relative w-[80px] h-[80px] rounded-[12px] border border-(--border-subtle) overflow-hidden shrink-0 group">
                                         {(att.type === 'image' || att.type === 'video') && (att.url || att.thumbnailUrl) ? (
-                                            <img src={att.url || att.thumbnailUrl} className="w-full h-full object-cover" alt="Staged" />
+                                            <img src={att.url || att.thumbnailUrl} className="w-full h-full object-cover" alt="Staged" loading="lazy" />
                                         ) : (
                                             <div className="w-full h-full bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-secondary)">
                                                 <Paperclip className="w-[18px] h-[18px]" />
@@ -545,11 +561,19 @@ export default function MessagesPage() {
 
                         {/* Main Input Box */}
                         <div className="flex items-end gap-2">
-                            <div className="flex items-center gap-1 shrink-0 pb-1.5">
-                                <button className="w-[36px] h-[36px] rounded-full flex items-center justify-center text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"><MoreHorizontal className="w-[20px] h-[20px]" /></button>
+                            <div className="relative flex items-center gap-1 shrink-0 pb-1.5">
+                                <button onClick={() => setIsComposerMenuOpen((current) => !current)} className="w-[36px] h-[36px] rounded-full flex items-center justify-center text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"><MoreHorizontal className="w-[20px] h-[20px]" /></button>
                                 <button onClick={() => fileInputRef.current?.click()} className="w-[36px] h-[36px] rounded-full flex items-center justify-center text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"><ImageIcon className="w-[20px] h-[20px]" /></button>
                                 <button onClick={handleVoiceNote} className="w-[36px] h-[36px] rounded-full flex items-center justify-center text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"><Mic className="w-[20px] h-[20px]" /></button>
-                                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileSelect} />
+                                <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileSelect} />
+
+                                {isComposerMenuOpen && (
+                                    <div className="absolute bottom-[48px] left-0 w-[200px] rounded-[14px] border border-(--border-subtle) bg-(--bg-surface) shadow-lg p-2 z-40">
+                                        <button onClick={() => fileInputRef.current?.click()} className="w-full text-left px-3 py-2 rounded-[10px] hover:bg-[var(--bg-elevated)] text-[13px] font-body text-(--text-primary)">Upload image or video</button>
+                                        <button onClick={handleVoiceNote} className="w-full text-left px-3 py-2 rounded-[10px] hover:bg-[var(--bg-elevated)] text-[13px] font-body text-(--text-primary)">Attach voice note</button>
+                                        <button onClick={() => { setAttachments([]); setReplyingTo(null); setEditingMessageId(null); setIsComposerMenuOpen(false) }} className="w-full text-left px-3 py-2 rounded-[10px] hover:bg-[var(--bg-elevated)] text-[13px] font-body text-(--text-primary)">Clear draft</button>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex-1 bg-[var(--bg-elevated)] border border-(--border-default) rounded-[24px] rounded-br-[8px] flex items-end px-3 py-[6px] focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 transition-all shadow-sm">
@@ -561,7 +585,7 @@ export default function MessagesPage() {
                                     className="flex-1 bg-transparent border-none resize-none min-h-[36px] max-h-[160px] font-body text-[15px] focus:ring-0 py-[8px] px-2 text-(--text-primary) placeholder:text-(--text-tertiary) outline-none"
                                     rows={1}
                                 />
-                                <button className="w-[36px] h-[36px] shrink-0 rounded-full hover:bg-[var(--bg-surface)] flex items-center justify-center text-blue-500 transition-colors mb-px"><Smile className="w-[22px] h-[22px]" /></button>
+                                <button onClick={() => setInputText((current) => `${current}😊`)} className="w-[36px] h-[36px] shrink-0 rounded-full hover:bg-[var(--bg-surface)] flex items-center justify-center text-blue-500 transition-colors mb-px"><Smile className="w-[22px] h-[22px]" /></button>
                             </div>
 
                             {(inputText.trim().length > 0 || attachments.length > 0) ? (
@@ -573,7 +597,7 @@ export default function MessagesPage() {
                                     {editingMessageId ? <Check className="w-[20px] h-[20px]" /> : <Send className="w-[20px] h-[20px] ml-1" />}
                                 </button>
                             ) : (
-                                <button className="w-[48px] h-[48px] shrink-0 rounded-[24px] rounded-bl-[8px] bg-[var(--bg-elevated)] border border-(--border-subtle) text-blue-500 hover:bg-blue-500/10 flex items-center justify-center transition-colors mb-0.5 cursor-pointer">
+                                <button onClick={handleQuickThumbsUp} className="w-[48px] h-[48px] shrink-0 rounded-[24px] rounded-bl-[8px] bg-[var(--bg-elevated)] border border-(--border-subtle) text-blue-500 hover:bg-blue-500/10 flex items-center justify-center transition-colors mb-0.5 cursor-pointer">
                                     <ThumbsUp className="w-[24px] h-[24px]" />
                                 </button>
                             )}

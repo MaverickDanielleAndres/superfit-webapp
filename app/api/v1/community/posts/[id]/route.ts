@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
 interface RouteContext {
@@ -9,6 +10,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
   const requestId = crypto.randomUUID()
   const { id } = await context.params
   const supabase = await createServerSupabaseClient()
+  const db = supabaseAdmin
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -24,7 +26,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     })
   }
 
-  const { error } = await (supabase as any)
+  const { error } = await (db as any)
     .from('community_posts')
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', id)
