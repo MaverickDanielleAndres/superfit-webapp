@@ -83,7 +83,7 @@ The project is heavily state-driven with Zustand persistence and currently relie
 
 SuperFit uses domain-separated stores in `store/`.
 
-- `useAuthStore`: auth state, demo account login, signup, profile updates
+- `useAuthStore`: auth state, Supabase login/signup, profile updates
 - `useUserStore`: onboarding completion + target recalculation
 - `useWorkoutStore`: active sessions, exercise logging, custom exercises
 - `useNutritionStore`: day logs, manual food entries, macro totals
@@ -118,7 +118,7 @@ The product is functional as an interactive front-end MVP, but several areas are
 
 Examples of explicit partial/mocked behavior in code:
 
-- Mock login accounts and mock profile seeding
+- Some local fallback state remains in non-auth domains when Supabase is disabled
 - AI food scanner simulated output
 - Multiple coach portal actions with "coming soon" toasts
 - Mock calendar/event rendering in coach schedule

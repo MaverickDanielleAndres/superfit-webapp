@@ -69,6 +69,57 @@ export default function AnalyticsPage() {
     const [activeTab, setActiveTab] = useState<'workouts' | 'body'>('workouts')
     const [timeRange, setTimeRange] = useState('6m')
 
+    const handleExport = () => {
+        const rows = activeTab === 'workouts'
+            ? volumeDataMap[timeRange].map((point) => ({
+                period: point.month || point.date || '',
+                value: point.volume,
+            }))
+            : weightDataMap[timeRange].map((point) => ({
+                period: point.date,
+                value: point.weight,
+            }))
+
+        const header = `period,${activeTab === 'workouts' ? 'volume_kg' : 'weight_kg'}`
+        const csvRows = rows.map((row) => `${row.period},${row.value}`)
+        const csv = [header, ...csvRows].join('\n')
+
+        const fileName = `analytics-${activeTab}-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = fileName
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(url)
+
+        toast.success(`Exported ${fileName}`)
+    }
+
+    const handleShare = async () => {
+        const shareText = activeTab === 'workouts'
+            ? `Workout analytics (${timeRange.toUpperCase()}): total volume ${volumeDataMap[timeRange].reduce((sum, point) => sum + point.volume, 0).toLocaleString()} kg.`
+            : `Body analytics (${timeRange.toUpperCase()}): latest weight ${weightDataMap[timeRange][weightDataMap[timeRange].length - 1]?.weight ?? '-'} kg.`
+
+        try {
+            if (navigator.share) {
+                await navigator.share({
+                    title: 'SuperFit Analytics Report',
+                    text: shareText,
+                })
+                toast.success('Report shared successfully.')
+                return
+            }
+
+            await navigator.clipboard.writeText(shareText)
+            toast.success('Report summary copied to clipboard.')
+        } catch {
+            toast.error('Unable to share report right now.')
+        }
+    }
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -83,13 +134,13 @@ export default function AnalyticsPage() {
                 </div>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={() => toast.success('Report exported successfully!')}
+                        onClick={handleExport}
                         className="h-[40px] px-4 rounded-[12px] bg-(--bg-surface) border border-(--border-default) text-(--text-secondary) hover:text-(--text-primary) transition-all flex items-center gap-2 font-body font-semibold text-[13px] cursor-pointer"
                     >
                         <Download className="w-[16px] h-[16px]" /> Export
                     </button>
                     <button
-                        onClick={() => toast.info('Share dialog opened!')}
+                        onClick={() => { void handleShare() }}
                         className="h-[40px] px-4 rounded-[12px] bg-(--accent) text-white hover:bg-(--accent-hover) transition-all flex items-center gap-2 font-display font-bold text-[13px] cursor-pointer"
                     >
                         <Share className="w-[16px] h-[16px]" /> Share Report

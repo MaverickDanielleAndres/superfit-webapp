@@ -1,7 +1,7 @@
 /**
  * useAuthStore.ts
- * Manages authentication state with hardcoded accounts for MVP.
- * Provides login, signup (registration), and logout flows.
+ * Manages authentication state with Supabase auth.
+ * Provides login, signup, logout, and profile/onboarding flows.
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
@@ -17,19 +17,11 @@ import {
     signUpWithSupabase
 } from '@/lib/supabase/auth'
 
-// Hardcoded demo accounts (MVP - no real backend)
-const HARDCODED_ACCOUNTS: Array<{ email: string; password: string; name: string; role: 'user' | 'coach' | 'admin' }> = [
-    { email: 'demo@superfit.com', password: 'demo123', name: 'Demo User', role: 'user' },
-    { email: 'coach@superfit.com', password: 'coach123', name: 'Coach Marcus', role: 'coach' },
-    { email: 'admin@superfit.com', password: 'admin123', name: 'Admin User', role: 'admin' },
-]
-
 interface AuthState {
     isAuthenticated: boolean
     isLoading: boolean
     error: string | null
     user: UserProfile | null
-    registeredEmails: string[]  // Track newly registered emails
 
     initializeAuth: () => Promise<void>
     login: (email: string, password: string) => Promise<boolean>
@@ -64,7 +56,6 @@ export const useAuthStore = create<AuthState>()(
             isLoading: false,
             error: null,
             user: null,
-            registeredEmails: [],
 
             initializeAuth: async () => {
                 if (!isSupabaseAuthEnabled()) {
@@ -99,52 +90,29 @@ export const useAuthStore = create<AuthState>()(
             login: async (email, password) => {
                 set({ isLoading: true, error: null })
 
-                // Simulate network latency
-                await new Promise(resolve => setTimeout(resolve, 800))
-
-                if (isSupabaseAuthEnabled()) {
-                    const { data, error } = await signInWithSupabase(email, password)
-
-                    if (error || !data.user) {
-                        set({ isLoading: false, error: error?.message || 'Unable to authenticate user.' })
-                        return false
-                    }
-
-                    const supabase = createClient()
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('*')
-                        .eq('id', data.user.id)
-                        .maybeSingle()
-
-                    const userProfile = mapUserProfile(data.user.id, data.user.email || email, profile || null, data.user.user_metadata)
-
-                    set({ user: userProfile, isAuthenticated: true, isLoading: false, error: null })
-                    return true
-                }
-
-                // Check hardcoded accounts first
-                const account = HARDCODED_ACCOUNTS.find(a => a.email === email && a.password === password)
-
-                // Check dynamically registered accounts (same password accepted for demo)
-                const { registeredEmails } = get()
-                const isDynamicAccount = registeredEmails.includes(email)
-
-                if (!account && !isDynamicAccount) {
-                    set({ isLoading: false, error: 'Invalid email or password. Try demo@superfit.com / demo123' })
+                if (!isSupabaseAuthEnabled()) {
+                    set({
+                        isLoading: false,
+                        error: 'Authentication is not configured. Enable Supabase auth to sign in.',
+                    })
                     return false
                 }
 
-                // Build user profile from mock + account
-                const baseUser = getMockUser()
-                const userProfile: UserProfile = {
-                    ...baseUser,
-                    email,
-                    name: account?.name || email.split('@')[0],
-                    isCoach: account?.role === 'coach',
-                    isPro: account?.role !== 'user' ? true : baseUser.isPro,
-                    role: account?.role || 'user'
+                const { data, error } = await signInWithSupabase(email, password)
+
+                if (error || !data.user) {
+                    set({ isLoading: false, error: error?.message || 'Unable to authenticate user.' })
+                    return false
                 }
+
+                const supabase = createClient()
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', data.user.id)
+                    .maybeSingle()
+
+                const userProfile = mapUserProfile(data.user.id, data.user.email || email, profile || null, data.user.user_metadata)
 
                 set({ user: userProfile, isAuthenticated: true, isLoading: false, error: null })
                 return true
@@ -153,78 +121,50 @@ export const useAuthStore = create<AuthState>()(
             signup: async (name, email, password) => {
                 set({ isLoading: true, error: null })
 
-                await new Promise(resolve => setTimeout(resolve, 800))
-
-                if (isSupabaseAuthEnabled()) {
-                    const { data, error } = await signUpWithSupabase(email, password, name)
-
-                    if (error) {
-                        set({ isLoading: false, error: error.message })
-                        return false
-                    }
-
-                    const userId = data.user?.id || Math.random().toString(36).slice(2)
-                    const newUser = mapUserProfile(userId, email, {
-                        ...mockProfileShape(),
-                        id: userId,
-                        email,
-                        full_name: name,
-                        onboarding_complete: false,
-                        role: 'user',
-                    }, data.user?.user_metadata)
-
-                    if (data.user?.id) {
-                        const supabase = createClient()
-                        await supabase.from('profiles').upsert(
-                            {
-                                id: data.user.id,
-                                email,
-                                full_name: name,
-                                role: 'user',
-                                onboarding_complete: false,
-                            },
-                            { onConflict: 'id' }
-                        )
-                    }
-
+                if (!isSupabaseAuthEnabled()) {
                     set({
-                        user: newUser,
-                        isAuthenticated: true,
                         isLoading: false,
-                        error: null
+                        error: 'Authentication is not configured. Enable Supabase auth to create an account.',
                     })
-                    return true
-                }
-
-                const { registeredEmails } = get()
-
-                // Check if email already in use
-                if (registeredEmails.includes(email) || HARDCODED_ACCOUNTS.find(a => a.email === email)) {
-                    set({ isLoading: false, error: 'Email already in use. Please sign in instead.' })
                     return false
                 }
 
-                if (password.length < 6) {
-                    set({ isLoading: false, error: 'Password must be at least 6 characters.' })
+                const { data, error } = await signUpWithSupabase(email, password, name)
+
+                if (error) {
+                    set({ isLoading: false, error: error.message })
                     return false
                 }
 
-                // Register and log in
-                const baseUser = getMockUser()
-                const newUser: UserProfile = {
-                    ...baseUser,
-                    id: Math.random().toString(36).slice(2),
-                    name,
+                const userId = data.user?.id || Math.random().toString(36).slice(2)
+                const newUser = mapUserProfile(userId, email, {
+                    ...mockProfileShape(),
+                    id: userId,
                     email,
-                    onboardingComplete: false,  // New users go through onboarding
+                    full_name: name,
+                    onboarding_complete: false,
+                    role: 'user',
+                }, data.user?.user_metadata)
+
+                if (data.user?.id) {
+                    const supabase = createClient()
+                    await supabase.from('profiles').upsert(
+                        {
+                            id: data.user.id,
+                            email,
+                            full_name: name,
+                            role: 'user',
+                            onboarding_complete: false,
+                        },
+                        { onConflict: 'id' }
+                    )
                 }
 
                 set({
                     user: newUser,
                     isAuthenticated: true,
                     isLoading: false,
-                    error: null,
-                    registeredEmails: [...registeredEmails, email]
+                    error: null
                 })
                 return true
             },

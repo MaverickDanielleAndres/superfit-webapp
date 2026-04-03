@@ -8,7 +8,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
-    Search, Info, Phone, Video, Send, Paperclip, Image as ImageIcon,
+    Search, Info, Send, Paperclip, Image as ImageIcon,
     Smile, MoreHorizontal, Check, CheckCheck, X, Reply, ThumbsUp,
     Trash2, Pin, Forward, Mic, Copy, Edit2, Star
 } from 'lucide-react'
@@ -152,6 +152,12 @@ export default function MessagesPage() {
         return thread.participants.find((p) => p.id !== currentUserId)?.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${thread.id}`
     }
 
+    const getSafeImageSrc = (src: string | undefined | null, seed: string) => {
+        const normalized = (src || '').trim()
+        if (normalized.length > 0) return normalized
+        return `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}`
+    }
+
     const handleCopyMessage = async (text: string) => {
         if (!text) return
         try {
@@ -252,7 +258,7 @@ export default function MessagesPage() {
                                 className={cn("w-full p-3 flex items-center gap-3 text-left rounded-[16px] transition-colors mb-1", isActive ? 'bg-[var(--bg-elevated)] border border-(--border-default) shadow-sm' : 'border border-transparent hover:bg-[var(--bg-elevated)]')}
                             >
                                 <div className="relative shrink-0">
-                                    <img src={avatar} alt={title} className="w-[52px] h-[52px] rounded-full object-cover border border-(--border-subtle)" />
+                                    <img src={getSafeImageSrc(avatar, `thread-${thread.id}`)} alt={title} className="w-[52px] h-[52px] rounded-full object-cover border border-(--border-subtle)" />
                                     {/* Mock active status indicator */}
                                     <div className="absolute bottom-0 right-0 w-[14px] h-[14px] rounded-full bg-emerald-500 border-2 border-(--bg-surface)" />
                                 </div>
@@ -288,16 +294,13 @@ export default function MessagesPage() {
                     {/* Header */}
                     <div className="h-[72px] px-6 border-b border-(--border-subtle) bg-[var(--bg-elevated)] flex items-center justify-between shrink-0 z-20">
                         <div className="flex items-center gap-4 cursor-pointer hover:opacity-80 transition-opacity">
-                            <img src={getThreadAvatar(activeThread)} className="w-[44px] h-[44px] rounded-full object-cover border border-(--border-subtle)" />
+                            <img src={getSafeImageSrc(getThreadAvatar(activeThread), `header-${activeThread.id}`)} alt={getThreadTitle(activeThread)} className="w-[44px] h-[44px] rounded-full object-cover border border-(--border-subtle)" />
                             <div className="flex flex-col">
                                 <h2 className="font-display font-bold text-[17px] text-(--text-primary) leading-tight">{getThreadTitle(activeThread)}</h2>
                                 <span className="font-body text-[12px] text-(--text-secondary) font-medium">Active now</span>
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                            <button className="w-[40px] h-[40px] rounded-full hover:bg-[var(--bg-surface-alt)] flex items-center justify-center text-emerald-500 transition-colors bg-(--bg-surface) border border-(--border-subtle)"><Phone className="w-[18px] h-[18px]" /></button>
-                            <button className="w-[40px] h-[40px] rounded-full hover:bg-[var(--bg-surface-alt)] flex items-center justify-center text-emerald-500 transition-colors bg-(--bg-surface) border border-(--border-subtle)"><Video className="w-[18px] h-[18px]" /></button>
-                            <div className="w-[1px] h-[24px] bg-(--border-subtle) mx-1" />
                             <button className="w-[40px] h-[40px] rounded-full hover:bg-[var(--bg-surface-alt)] flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) transition-colors"><Info className="w-[20px] h-[20px]" /></button>
                         </div>
                     </div>
@@ -369,7 +372,7 @@ export default function MessagesPage() {
                                         {/* Avatar (Left side, only bottom message of cluster) */}
                                         {!isMe && (
                                             <div className="w-[28px] shrink-0 flex items-end pb-1">
-                                                {showAvatar && <img src={sender?.avatar} className="w-[28px] h-[28px] rounded-full object-cover" alt="" />}
+                                                {showAvatar && <img src={getSafeImageSrc(sender?.avatar, `sender-${sender?.id || msg.senderId}`)} className="w-[28px] h-[28px] rounded-full object-cover" alt={sender?.name || 'Participant'} />}
                                             </div>
                                         )}
 
@@ -393,8 +396,12 @@ export default function MessagesPage() {
                                             {/* Media Attachments */}
                                             {msg.attachments?.map(att => (
                                                 <div key={att.id} className="rounded-[16px] overflow-hidden border border-(--border-subtle) max-w-[260px]">
-                                                    {att.type === 'image' || att.type === 'video' ? (
-                                                        <img src={att.url || att.thumbnailUrl} alt="Attachment" className="w-full h-auto object-cover" />
+                                                    {(att.type === 'image' || att.type === 'video') && (att.url || att.thumbnailUrl) ? (
+                                                        att.type === 'video' && att.url ? (
+                                                            <video src={att.url} poster={att.thumbnailUrl} controls className="w-full h-auto object-cover" />
+                                                        ) : (
+                                                            <img src={att.url || att.thumbnailUrl} alt="Attachment" className="w-full h-auto object-cover" />
+                                                        )
                                                     ) : (
                                                         <div className="p-4 bg-[var(--bg-elevated)] flex items-center gap-3">
                                                             <div className="p-2 bg-(--bg-surface) rounded-lg"><Paperclip className="w-[16px] h-[16px]" /></div>
@@ -472,7 +479,7 @@ export default function MessagesPage() {
                                             {msg.status === 'read' ? (
                                                 <>
                                                     <span className="text-blue-500 tracking-wide uppercase text-[10px]">Seen</span>
-                                                    <img src={getThreadAvatar(activeThread)} className="w-[14px] h-[14px] rounded-full border border-(--border-subtle) ml-0.5 object-cover" alt="Seen by" />
+                                                    <img src={getSafeImageSrc(getThreadAvatar(activeThread), `seen-${activeThread.id}`)} className="w-[14px] h-[14px] rounded-full border border-(--border-subtle) ml-0.5 object-cover" alt="Seen by" />
                                                 </>
                                             ) : msg.status === 'delivered' ? (
                                                 <>
@@ -523,7 +530,7 @@ export default function MessagesPage() {
                             <div className="flex items-center gap-3 overflow-x-auto pb-2">
                                 {attachments.map((att, i) => (
                                     <div key={i} className="relative w-[80px] h-[80px] rounded-[12px] border border-(--border-subtle) overflow-hidden shrink-0 group">
-                                        {att.type === 'image' || att.type === 'video' ? (
+                                        {(att.type === 'image' || att.type === 'video') && (att.url || att.thumbnailUrl) ? (
                                             <img src={att.url || att.thumbnailUrl} className="w-full h-full object-cover" alt="Staged" />
                                         ) : (
                                             <div className="w-full h-full bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-secondary)">

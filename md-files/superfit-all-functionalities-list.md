@@ -13,7 +13,7 @@ Reference: Actual repository implementation (not aspirational roadmap)
 
 | Area | Status | Notes |
 |---|---|---|
-| Authentication (sign in/sign up) | Implemented | Uses hardcoded demo accounts plus local mock signup in `useAuthStore`. |
+| Authentication (sign in/sign up) | Implemented | Uses Supabase email/password auth with profile bootstrap in `useAuthStore`. |
 | Role-based access control | Implemented | Route-level redirect guards in dashboard/coach/admin layouts. |
 | Onboarding profile setup | Implemented | Collects profile data and computes targets using utility formulas. |
 | Theme switching | Implemented | `next-themes` with `dark` default, optional `light`. |

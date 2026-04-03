@@ -9,6 +9,7 @@ import { useNutritionStore } from '@/store/useNutritionStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { MealSlot, FoodItem } from '@/types'
+import { requestApi } from '@/lib/api/client'
 import { toast } from 'sonner'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
@@ -28,6 +29,9 @@ export default function DiaryPage() {
     const [isAddFoodOpen, setIsAddFoodOpen] = useState(false)
     const [activeTargetMeal, setActiveTargetMeal] = useState<MealSlot>('breakfast')
     const [foodSearchQuery, setFoodSearchQuery] = useState('')
+    const [foodSearchResults, setFoodSearchResults] = useState<FoodItem[]>([])
+    const [isFoodSearchLoading, setIsFoodSearchLoading] = useState(false)
+    const [foodSearchError, setFoodSearchError] = useState<string | null>(null)
     const [addFoodTab, setAddFoodTab] = useState<'search' | 'manual'>('search')
     const [manualFood, setManualFood] = useState({ name: '', brand: '', calories: '', protein: '', carbs: '', fat: '' })
 
@@ -86,6 +90,45 @@ export default function DiaryPage() {
         void fetchDayLog(dateStr)
     }, [dateStr, fetchDayLog])
 
+    useEffect(() => {
+        if (addFoodTab !== 'search') return
+
+        const query = foodSearchQuery.trim()
+        if (query.length < 2) {
+            setFoodSearchResults([])
+            setFoodSearchError(null)
+            setIsFoodSearchLoading(false)
+            return
+        }
+
+        let isCancelled = false
+        setIsFoodSearchLoading(true)
+
+        const timer = setTimeout(() => {
+            void (async () => {
+                try {
+                    const response = await requestApi<{ foods: FoodItem[] }>(`/api/v1/nutrition/foods/search?q=${encodeURIComponent(query)}&limit=12`)
+                    if (isCancelled) return
+                    setFoodSearchResults(response.data.foods)
+                    setFoodSearchError(null)
+                } catch (error) {
+                    if (isCancelled) return
+                    setFoodSearchResults([])
+                    setFoodSearchError(error instanceof Error ? error.message : 'Food search failed.')
+                } finally {
+                    if (!isCancelled) {
+                        setIsFoodSearchLoading(false)
+                    }
+                }
+            })()
+        }, 300)
+
+        return () => {
+            isCancelled = true
+            clearTimeout(timer)
+        }
+    }, [addFoodTab, foodSearchQuery])
+
     const handleCapture = () => {
         if (videoRef.current) {
             const canvas = document.createElement('canvas')
@@ -114,33 +157,32 @@ export default function DiaryPage() {
         }
     }
 
-    const processImage = (imageData: string) => {
+    const processImage = async (imageData: string) => {
         setScanImage(imageData)
         setScanState('analyzing')
 
-        // Mock AI Delay
-        setTimeout(() => {
-            setScanResults({
-                item: {
-                    id: 'ai_mock_1',
-                    name: 'Grilled Salmon Bowl',
-                    brand: 'AI Estimated',
-                    calories: 520,
-                    protein: 42,
-                    carbs: 35,
-                    fat: 22,
-                    servingSize: 1,
-                    servingUnit: 'bowl',
-                    isVerified: false,
-                    barcode: undefined,
-                    category: 'Protein'
-                },
-                quantity: 1,
-                mealSlot: 'lunch'
+        try {
+            const response = await requestApi<{ item: FoodItem; quantity: number; mealSlot: MealSlot }>('/api/v1/nutrition/ai-scan', {
+                method: 'POST',
+                body: JSON.stringify({ imageData }),
             })
+
+            setScanResults(response.data)
             setScanState('results')
-        }, 2500)
+        } catch (error) {
+            setScanState('idle')
+            toast.error(error instanceof Error ? error.message : 'Unable to analyze this image right now.')
+        }
     }
+
+    const defaultFoodSuggestions: FoodItem[] = [
+        { id: 'suggest-oatmeal', name: 'Oatmeal', brand: 'Quaker', calories: 150, protein: 5, carbs: 27, fat: 3, servingSize: 1, servingUnit: 'cup', isVerified: true, category: 'Grains' },
+        { id: 'suggest-chicken', name: 'Chicken Breast', brand: 'Generic', calories: 165, protein: 31, carbs: 0, fat: 3.6, servingSize: 100, servingUnit: 'g', isVerified: true, category: 'Protein' },
+        { id: 'suggest-yogurt', name: 'Greek Yogurt', brand: 'Chobani', calories: 100, protein: 15, carbs: 6, fat: 0, servingSize: 1, servingUnit: 'container', isVerified: true, category: 'Dairy' },
+        { id: 'suggest-shake', name: 'Protein Shake', brand: 'Optimum Nutrition', calories: 120, protein: 24, carbs: 3, fat: 1, servingSize: 1, servingUnit: 'scoop', isVerified: true, category: 'Supplements' },
+    ]
+
+    const displayedSearchFoods = foodSearchQuery.trim().length >= 2 ? foodSearchResults : defaultFoodSuggestions
 
     const addFoodEntry = async (foodItem: FoodItem, mealSlot: MealSlot, quantity = 1) => {
         await addEntry(dateStr, {
@@ -482,31 +524,22 @@ export default function DiaryPage() {
                                         </div>
                                     </div>
                                     <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[var(--bg-base)]">
-                                        {/* Dummy Search Results */}
-                                        {[
-                                            { name: 'Oatmeal', brand: 'Quaker', cals: 150, p: 5, c: 27, f: 3, unit: 'cup' },
-                                            { name: 'Chicken Breast', brand: '', cals: 165, p: 31, c: 0, f: 3.6, unit: 'oz' },
-                                            { name: 'Greek Yogurt', brand: 'Chobani', cals: 100, p: 15, c: 6, f: 0, unit: 'container' },
-                                            { name: 'Protein Shake', brand: 'Optimum Nutrition', cals: 120, p: 24, c: 3, f: 1, unit: 'scoop' },
-                                        ].filter(f => f.name.toLowerCase().includes(foodSearchQuery.toLowerCase())).map((food, i) => (
-                                            <div key={i} className="flex justify-between items-center p-3 rounded-[12px] border border-(--border-subtle) hover:border-emerald-500 bg-[var(--bg-elevated)] cursor-pointer group"
+                                        {isFoodSearchLoading && (
+                                            <div className="py-10 flex flex-col items-center text-(--text-secondary)">
+                                                <Loader2 className="w-[24px] h-[24px] animate-spin" />
+                                                <span className="mt-2 text-[13px]">Searching foods...</span>
+                                            </div>
+                                        )}
+
+                                        {!isFoodSearchLoading && foodSearchError && (
+                                            <div className="text-center py-8 text-[13px] text-red-600">{foodSearchError}</div>
+                                        )}
+
+                                        {!isFoodSearchLoading && !foodSearchError && displayedSearchFoods.map((food) => (
+                                            <div key={food.id} className="flex justify-between items-center p-3 rounded-[12px] border border-(--border-subtle) hover:border-emerald-500 bg-[var(--bg-elevated)] cursor-pointer group"
                                                 onClick={() => {
-                                                    const item: FoodItem = {
-                                                        id: `food_${Date.now()}_${i}`,
-                                                        name: food.name,
-                                                        brand: food.brand,
-                                                        calories: food.cals,
-                                                        protein: food.p,
-                                                        carbs: food.c,
-                                                        fat: food.f,
-                                                        servingSize: 1,
-                                                        servingUnit: food.unit,
-                                                        isVerified: true,
-                                                        barcode: undefined,
-                                                        category: 'Snacks'
-                                                    }
                                                     void (async () => {
-                                                        await addFoodEntry(item, activeTargetMeal, 1)
+                                                        await addFoodEntry(food, activeTargetMeal, 1)
                                                         toast.success(`${food.name} added!`)
                                                         setIsAddFoodOpen(false)
                                                     })()
@@ -514,14 +547,21 @@ export default function DiaryPage() {
                                             >
                                                 <div>
                                                     <span className="block font-bold text-[14px] text-(--text-primary)">{food.name} {food.brand && <span className="text-(--text-tertiary) font-normal">({food.brand})</span>}</span>
-                                                    <span className="text-[12px] text-(--text-secondary)">1 {food.unit} • {food.cals} kcal</span>
+                                                    <span className="text-[12px] text-(--text-secondary)">1 {food.servingUnit} • {food.calories} kcal</span>
                                                 </div>
                                                 <button className="w-[32px] h-[32px] rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <Plus className="w-[16px] h-[16px]" />
                                                 </button>
                                             </div>
                                         ))}
-                                        {foodSearchQuery && <div className="text-center py-6 text-(--text-tertiary) text-[13px]">Can&apos;t find it? <button onClick={() => setAddFoodTab('manual')} className="text-emerald-500 font-bold hover:underline">Add Custom Food</button></div>}
+
+                                        {!isFoodSearchLoading && !foodSearchError && foodSearchQuery.trim().length >= 2 && displayedSearchFoods.length === 0 && (
+                                            <div className="text-center py-6 text-(--text-tertiary) text-[13px]">No results found. <button onClick={() => setAddFoodTab('manual')} className="text-emerald-500 font-bold hover:underline">Add Custom Food</button></div>
+                                        )}
+
+                                        {foodSearchQuery && (
+                                            <div className="text-center py-3 text-(--text-tertiary) text-[13px]">Can&apos;t find it? <button onClick={() => setAddFoodTab('manual')} className="text-emerald-500 font-bold hover:underline">Add Custom Food</button></div>
+                                        )}
                                     </div>
                                 </>
                             ) : (

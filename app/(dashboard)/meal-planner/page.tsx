@@ -4,7 +4,19 @@ import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Calendar as CalendarIcon, ShoppingCart, GripVertical, ChevronRight, ChevronLeft, Plus, Search, X, Flame, CalendarDays, MoreHorizontal, Utensils } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { requestApi } from '@/lib/api/client'
 import { toast } from 'sonner'
+
+interface RecipeSearchItem {
+    id: string
+    name: string
+    cals: number
+    protein: number
+    carbs: number
+    fat: number
+    image: string
+    badges: string[]
+}
 
 export default function MealPlannerPage() {
     const [activeTab, setActiveTab] = useState<'plan' | 'list'>('plan')
@@ -16,6 +28,10 @@ export default function MealPlannerPage() {
 
     const [showMealSearch, setShowMealSearch] = useState(false)
     const [addingToMeal, setAddingToMeal] = useState<{ day: string, meal: string } | null>(null)
+    const [recipeSearchQuery, setRecipeSearchQuery] = useState('')
+    const [recipeSearchResults, setRecipeSearchResults] = useState<RecipeSearchItem[]>([])
+    const [isRecipeSearchLoading, setIsRecipeSearchLoading] = useState(false)
+    const [recipeSearchError, setRecipeSearchError] = useState<string | null>(null)
 
     const [viewRecipe, setViewRecipe] = useState<any>(null)
     const [showRecipeBuilder, setShowRecipeBuilder] = useState(false)
@@ -35,6 +51,15 @@ export default function MealPlannerPage() {
         { category: 'Proteins', image: 'https://images.unsplash.com/photo-1603048297172-c92544798d5e?w=400&fit=crop', items: [{ id: 4, name: 'Chicken Breast (2 lbs)', checked: false }, { id: 5, name: 'Wild Salmon', checked: false }] },
         { category: 'Dairy & Eggs', image: 'https://images.unsplash.com/photo-1628088062854-d1870b4553da?w=400&fit=crop', items: [{ id: 6, name: 'Greek Yogurt', checked: true }, { id: 7, name: 'Eggs (1 Dozen)', checked: false }] },
     ])
+
+    const fallbackRecipes: RecipeSearchItem[] = [
+        { id: 'fallback-1', name: 'Grilled Chicken & Rice', cals: 550, protein: 40, carbs: 52, fat: 16, image: 'https://images.unsplash.com/photo-1598514982205-f36b96d1e8d4?w=100&fit=crop', badges: ['High Protein'] },
+        { id: 'fallback-2', name: 'Avocado Toast', cals: 320, protein: 12, carbs: 30, fat: 18, image: 'https://images.unsplash.com/photo-1541519227354-08fa5d50c44d?w=100&fit=crop', badges: ['Vegan'] },
+        { id: 'fallback-3', name: 'Protein Smoothie', cals: 280, protein: 28, carbs: 24, fat: 6, image: 'https://images.unsplash.com/photo-1556881286-fc6915169721?w=100&fit=crop', badges: ['Quick'] },
+        { id: 'fallback-4', name: 'Beef Stir Fry', cals: 620, protein: 39, carbs: 50, fat: 24, image: 'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=100&fit=crop', badges: ['High Protein'] },
+    ]
+
+    const displayedRecipes = recipeSearchQuery.trim().length >= 2 ? recipeSearchResults : fallbackRecipes
 
     const toggleGroceryItem = (catIndex: number, itemId: number) => {
         const newList = [...groceryList]
@@ -56,7 +81,49 @@ export default function MealPlannerPage() {
 
     const openMealSearch = (day: string, mealKey: string) => {
         setAddingToMeal({ day, meal: mealKey })
+        setRecipeSearchQuery('')
+        setRecipeSearchError(null)
         setShowMealSearch(true)
+    }
+
+    const generateGroceryListFromPlan = () => {
+        const allMeals = Object.values(plan)
+            .flatMap((dayPlan) => Object.values(dayPlan).flatMap((entries) => entries.map((entry) => entry.name)))
+
+        const uniqueMeals = Array.from(new Set(allMeals))
+
+        if (!uniqueMeals.length) {
+            toast.error('Add meals to your plan before generating a grocery list.')
+            return
+        }
+
+        setGroceryList([
+            {
+                category: 'Planned Meals',
+                image: 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=400&fit=crop',
+                items: uniqueMeals.map((mealName, index) => ({
+                    id: Date.now() + index,
+                    name: mealName,
+                    checked: false,
+                })),
+            },
+        ])
+
+        setActiveTab('list')
+        toast.success('Grocery list generated from your current plan.')
+    }
+
+    const sendToInstacart = () => {
+        const uncheckedItems = groceryList.flatMap((category) => category.items.filter((item) => !item.checked).map((item) => item.name))
+
+        if (!uncheckedItems.length) {
+            toast.error('No unchecked items to send to Instacart.')
+            return
+        }
+
+        const query = encodeURIComponent(uncheckedItems.join(', '))
+        window.open(`https://www.instacart.com/store/search_v3/${query}`, '_blank', 'noopener,noreferrer')
+        toast.success('Opening Instacart search in a new tab.')
     }
 
     const confirmAddMeal = (recipeName: string, cals: number) => {
@@ -77,6 +144,45 @@ export default function MealPlannerPage() {
         if (!dayObj) return 0
         return Object.values(dayObj).reduce((sum: number, arr: any) => sum + (arr || []).reduce((s: number, i: any) => s + i.cals, 0), 0) as number
     }
+
+    React.useEffect(() => {
+        if (!showMealSearch) return
+
+        const query = recipeSearchQuery.trim()
+        if (query.length < 2) {
+            setRecipeSearchResults([])
+            setRecipeSearchError(null)
+            setIsRecipeSearchLoading(false)
+            return
+        }
+
+        let isCancelled = false
+        setIsRecipeSearchLoading(true)
+
+        const timer = setTimeout(() => {
+            void (async () => {
+                try {
+                    const response = await requestApi<{ recipes: RecipeSearchItem[] }>(`/api/v1/meal-planner/recipes/search?query=${encodeURIComponent(query)}&limit=10`)
+                    if (isCancelled) return
+                    setRecipeSearchResults(response.data.recipes)
+                    setRecipeSearchError(null)
+                } catch (error) {
+                    if (isCancelled) return
+                    setRecipeSearchResults([])
+                    setRecipeSearchError(error instanceof Error ? error.message : 'Unable to search recipes.')
+                } finally {
+                    if (!isCancelled) {
+                        setIsRecipeSearchLoading(false)
+                    }
+                }
+            })()
+        }, 300)
+
+        return () => {
+            isCancelled = true
+            clearTimeout(timer)
+        }
+    }, [recipeSearchQuery, showMealSearch])
 
     // Dynamic renderers based on view mode
     const renderWeeklyView = () => (
@@ -115,7 +221,7 @@ export default function MealPlannerPage() {
                     </div>
 
                     <div className="mt-8 pt-6 border-t border-(--border-subtle)">
-                        <button className="w-full h-[48px] rounded-[14px] bg-(--text-primary) text-(--bg-base) font-body text-[14px] font-bold hover:opacity-90 transition-opacity shadow-[0_4px_14px_rgba(0,0,0,0.1)] cursor-pointer">
+                        <button onClick={generateGroceryListFromPlan} className="w-full h-[48px] rounded-[14px] bg-(--text-primary) text-(--bg-base) font-body text-[14px] font-bold hover:opacity-90 transition-opacity shadow-[0_4px_14px_rgba(0,0,0,0.1)] cursor-pointer">
                             Generate Grocery List
                         </button>
                     </div>
@@ -282,7 +388,7 @@ export default function MealPlannerPage() {
                         <h2 className="font-display font-bold text-[24px] text-(--text-primary) leading-tight">Master Grocery List</h2>
                         <p className="font-body text-[14px] text-(--text-secondary) mt-1">Generated from your planned weekly meals.</p>
                     </div>
-                    <button className="h-[44px] px-6 rounded-[14px] bg-emerald-500 text-white font-body text-[14px] font-bold shadow-[0_4px_14px_rgba(16,185,129,0.3)] hover:-translate-y-[1px] transition-all flex items-center gap-2 cursor-pointer w-max">
+                    <button onClick={sendToInstacart} className="h-[44px] px-6 rounded-[14px] bg-emerald-500 text-white font-body text-[14px] font-bold shadow-[0_4px_14px_rgba(16,185,129,0.3)] hover:-translate-y-[1px] transition-all flex items-center gap-2 cursor-pointer w-max">
                         <ShoppingCart className="w-[18px] h-[18px]" /> Send to Instacart
                     </button>
                 </div>
@@ -313,7 +419,23 @@ export default function MealPlannerPage() {
                                         </span>
                                     </label>
                                 ))}
-                                <button className="flex items-center gap-2 text-(--text-secondary) hover:text-(--text-primary) p-3 mt-1 font-body text-[14px] font-bold transition-colors w-full rounded-[12px] hover:bg-[var(--bg-elevated)] cursor-pointer border border-dashed border-transparent hover:border-(--border-default)">
+                                <button onClick={() => {
+                                    const name = window.prompt('Enter grocery item name')
+                                    if (!name || !name.trim()) return
+
+                                    setGroceryList((current) => {
+                                        const updated = [...current]
+                                        updated[i] = {
+                                            ...updated[i],
+                                            items: [
+                                                ...updated[i].items,
+                                                { id: Date.now(), name: name.trim(), checked: false },
+                                            ],
+                                        }
+                                        return updated
+                                    })
+                                    toast.success('Item added to grocery list.')
+                                }} className="flex items-center gap-2 text-(--text-secondary) hover:text-(--text-primary) p-3 mt-1 font-body text-[14px] font-bold transition-colors w-full rounded-[12px] hover:bg-[var(--bg-elevated)] cursor-pointer border border-dashed border-transparent hover:border-(--border-default)">
                                     <Plus className="w-[16px] h-[16px]" /> Add Item
                                 </button>
                             </div>
@@ -393,6 +515,8 @@ export default function MealPlannerPage() {
                                         autoFocus
                                         type="text"
                                         placeholder="Search recipes, custom meals, or database..."
+                                        value={recipeSearchQuery}
+                                        onChange={(event) => setRecipeSearchQuery(event.target.value)}
                                         className="w-full h-[52px] pl-12 pr-4 rounded-[14px] bg-(--bg-surface) border border-(--border-default) focus:outline-none focus:border-(--accent) font-body text-[15px] text-(--text-primary) transition-colors"
                                     />
                                 </div>
@@ -401,27 +525,34 @@ export default function MealPlannerPage() {
                                 <button onClick={() => {setShowMealSearch(false); setShowRecipeBuilder(true)}} className="w-full h-[52px] rounded-[14px] border border-dashed border-(--accent) text-(--accent) flex items-center justify-center gap-2 font-bold mb-2 hover:bg-(--accent)/10 transition-colors">
                                     <Plus className="w-[18px] h-[18px]"/> Create Custom Recipe
                                 </button>
-                                <span className="font-body text-[12px] font-bold text-(--text-secondary) uppercase tracking-wider ml-2 mt-2">Saved Recipes</span>
-                                {[
-                                    { name: 'Grilled Chicken & Rice', cals: 550, img: 'https://images.unsplash.com/photo-1598514982205-f36b96d1e8d4?w=100&fit=crop', badges: ['High Protein'] },
-                                    { name: 'Avocado Toast', cals: 320, img: 'https://images.unsplash.com/photo-1541519227354-08fa5d50c44d?w=100&fit=crop', badges: ['Vegan'] },
-                                    { name: 'Protein Smoothie', cals: 280, img: 'https://images.unsplash.com/photo-1556881286-fc6915169721?w=100&fit=crop', badges: ['Quick'] },
-                                    { name: 'Beef Stir Fry', cals: 620, img: 'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=100&fit=crop', badges: ['High Protein'] }
-                                ].map((recipe, i) => (
+                                <span className="font-body text-[12px] font-bold text-(--text-secondary) uppercase tracking-wider ml-2 mt-2">{recipeSearchQuery.trim().length >= 2 ? 'Search Results' : 'Saved Recipes'}</span>
+
+                                {isRecipeSearchLoading && (
+                                    <div className="py-10 flex flex-col items-center text-(--text-secondary)">
+                                        <Search className="w-[22px] h-[22px] animate-pulse" />
+                                        <span className="mt-2 text-[13px]">Searching online recipes...</span>
+                                    </div>
+                                )}
+
+                                {!isRecipeSearchLoading && recipeSearchError && (
+                                    <div className="text-center py-8 text-[13px] text-red-600">{recipeSearchError}</div>
+                                )}
+
+                                {!isRecipeSearchLoading && !recipeSearchError && displayedRecipes.map((recipe) => (
                                     <button
-                                        key={i}
+                                        key={recipe.id}
                                         onClick={() => confirmAddMeal(recipe.name, recipe.cals)}
                                         className="flex items-center gap-4 p-3 rounded-[16px] bg-[var(--bg-elevated)] border border-transparent hover:border-(--accent) transition-all text-left group cursor-pointer shadow-sm"
                                     >
                                         <div className="w-[72px] h-[72px] shrink-0 overflow-hidden rounded-[12px] border border-(--border-subtle)">
-                                            <img src={recipe.img} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                                            <img src={recipe.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={recipe.name} />
                                         </div>
                                         <div className="flex-1">
                                             <span className="block font-display font-bold text-[17px] text-(--text-primary) leading-tight mb-1">{recipe.name}</span>
                                             <div className="flex items-center gap-2 mb-1.5">
                                                 <span className="font-body text-[13px] font-bold text-(--text-secondary)">{recipe.cals} kcal</span>
                                                 <span className="w-1 h-1 rounded-full bg-(--border-subtle)" />
-                                                <span className="font-body text-[13px] text-(--text-tertiary)">35g P</span>
+                                                <span className="font-body text-[13px] text-(--text-tertiary)">{recipe.protein}g P</span>
                                             </div>
                                             <div className="flex gap-1">
                                                 {recipe.badges.map(b => (
@@ -434,6 +565,10 @@ export default function MealPlannerPage() {
                                         </div>
                                     </button>
                                 ))}
+
+                                {!isRecipeSearchLoading && !recipeSearchError && recipeSearchQuery.trim().length >= 2 && displayedRecipes.length === 0 && (
+                                    <div className="text-center py-8 text-[13px] text-(--text-secondary)">No recipes found for this search.</div>
+                                )}
                             </div>
                         </motion.div>
                     </div>

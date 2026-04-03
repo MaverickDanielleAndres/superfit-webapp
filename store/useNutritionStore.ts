@@ -52,16 +52,29 @@ export const useNutritionStore = create<NutritionState>()(
             addEntry: async (date, entry) => {
                 if (isSupabaseAuthEnabled()) {
                     try {
+                        const payload: {
+                            foodItemId: string
+                            foodItem: FoodItem
+                            quantity: number
+                            mealSlot: MealEntry['mealSlot']
+                            loggedAt: string
+                            notes?: string
+                        } = {
+                            foodItemId: entry.foodItemId,
+                            foodItem: entry.foodItem,
+                            quantity: entry.quantity,
+                            mealSlot: entry.mealSlot,
+                            loggedAt: entry.loggedAt,
+                        }
+
+                        const normalizedNotes = entry.notes?.trim()
+                        if (normalizedNotes) {
+                            payload.notes = normalizedNotes
+                        }
+
                         await requestApi<{ entry: NutritionRow }>('/api/v1/nutrition', {
                             method: 'POST',
-                            body: JSON.stringify({
-                                foodItemId: entry.foodItemId,
-                                foodItem: entry.foodItem,
-                                quantity: entry.quantity,
-                                mealSlot: entry.mealSlot,
-                                loggedAt: entry.loggedAt,
-                                notes: entry.notes || null,
-                            }),
+                            body: JSON.stringify(payload),
                         })
 
                         await get().fetchDayLog(date)

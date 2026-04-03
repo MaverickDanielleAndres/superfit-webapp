@@ -101,7 +101,7 @@ export async function GET() {
 
   const { data: messageRows, error: messageError } = await (supabase as any)
     .from('messages')
-    .select('id,thread_id,sender_id,text,attachments,status,reply_to_id,created_at,reactions:message_reactions(user_id,emoji)')
+    .select('id,thread_id,sender_id,text,attachments,status,reply_to_id,created_at')
     .in('thread_id', threadIds)
     .order('created_at', { ascending: true })
 
@@ -113,6 +113,37 @@ export async function GET() {
       detail: messageError.message,
       requestId,
     })
+  }
+
+  const messages = Array.isArray(messageRows) ? messageRows : []
+  const messageIds = messages.map((row) => String(row.id || '')).filter(Boolean)
+
+  const reactionsByMessage = new Map<string, MessageReaction[]>()
+  if (messageIds.length) {
+    const { data: reactionRows, error: reactionError } = await (supabase as any)
+      .from('message_reactions')
+      .select('message_id,user_id,emoji')
+      .in('message_id', messageIds)
+
+    if (reactionError) {
+      return problemResponse({
+        status: 500,
+        code: 'MESSAGES_FETCH_FAILED',
+        title: 'Messages Fetch Failed',
+        detail: reactionError.message,
+        requestId,
+      })
+    }
+
+    for (const reactionRow of reactionRows || []) {
+      const messageId = String(reactionRow.message_id || '')
+      const userId = String(reactionRow.user_id || '')
+      const emoji = String(reactionRow.emoji || '')
+      if (!messageId || !userId || !emoji) continue
+
+      const existing = reactionsByMessage.get(messageId) || []
+      reactionsByMessage.set(messageId, [...existing, { userId, emoji }])
+    }
   }
 
   const participantsByThread = new Map<string, ChatThread['participants']>()
@@ -132,20 +163,13 @@ export async function GET() {
   }
 
   const messagesByThread: Record<string, ChatMessage[]> = {}
-  for (const row of messageRows || []) {
+  for (const row of messages) {
     const threadId = String(row.thread_id || '')
     if (!threadId) continue
 
     if (!messagesByThread[threadId]) messagesByThread[threadId] = []
 
-    const reactions: MessageReaction[] = Array.isArray(row.reactions)
-      ? row.reactions
-          .map((reaction: any) => ({
-            userId: String(reaction.user_id || ''),
-            emoji: String(reaction.emoji || ''),
-          }))
-          .filter((reaction: MessageReaction) => !!reaction.userId && !!reaction.emoji)
-      : []
+    const reactions = reactionsByMessage.get(String(row.id || '')) || []
 
     const attachments: MessageAttachment[] = Array.isArray(row.attachments)
       ? row.attachments

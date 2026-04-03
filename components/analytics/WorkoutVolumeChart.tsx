@@ -16,7 +16,7 @@ interface WorkoutVolumeChartProps {
 
 export function WorkoutVolumeChart({ data, xKey }: WorkoutVolumeChartProps) {
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={220}>
       <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-subtle)" />
         <XAxis dataKey={xKey} axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12, fontFamily: 'var(--font-outfit)' }} dy={10} />

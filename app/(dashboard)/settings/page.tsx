@@ -26,14 +26,79 @@ export default function SettingsPage() {
         newPassword: ''
     })
     const [saveSuccess, setSaveSuccess] = useState(false)
+    const [profileVisibility, setProfileVisibility] = useState<'Public' | 'Friends Only' | 'Private'>('Public')
+    const [shareWorkouts, setShareWorkouts] = useState(true)
+    const [shareWeightData, setShareWeightData] = useState(false)
+    const [unitSystem, setUnitSystem] = useState<'metric' | 'imperial'>(user?.measurementSystem || 'metric')
+    const [weekStart, setWeekStart] = useState<'Monday' | 'Sunday'>('Monday')
+    const [isTwoFactorEnabled, setIsTwoFactorEnabled] = useState(false)
+    const [twoFactorCode, setTwoFactorCode] = useState('')
+    const [deleteConfirmed, setDeleteConfirmed] = useState(false)
 
     // Modal states
     const [isDeactivateModalOpen, setIsDeactivateModalOpen] = useState(false)
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
     const [is2FAModalOpen, setIs2FAModalOpen] = useState(false)
 
+    React.useEffect(() => {
+        try {
+            const raw = localStorage.getItem('superfit-user-settings-ui')
+            if (!raw) return
+            const parsed = JSON.parse(raw) as {
+                integrations?: typeof integrations
+                profileVisibility?: 'Public' | 'Friends Only' | 'Private'
+                shareWorkouts?: boolean
+                shareWeightData?: boolean
+                unitSystem?: 'metric' | 'imperial'
+                weekStart?: 'Monday' | 'Sunday'
+                location?: string
+                username?: string
+                isTwoFactorEnabled?: boolean
+            }
+
+            if (parsed.integrations) setIntegrations(parsed.integrations)
+            if (parsed.profileVisibility) setProfileVisibility(parsed.profileVisibility)
+            if (typeof parsed.shareWorkouts === 'boolean') setShareWorkouts(parsed.shareWorkouts)
+            if (typeof parsed.shareWeightData === 'boolean') setShareWeightData(parsed.shareWeightData)
+            if (parsed.unitSystem) setUnitSystem(parsed.unitSystem)
+            if (parsed.weekStart) setWeekStart(parsed.weekStart)
+            const persistedLocation = parsed.location
+            if (typeof persistedLocation === 'string') {
+                setProfileForm((current) => ({ ...current, location: persistedLocation }))
+            }
+            const persistedUsername = parsed.username
+            if (typeof persistedUsername === 'string') {
+                setProfileForm((current) => ({ ...current, username: persistedUsername }))
+            }
+            if (typeof parsed.isTwoFactorEnabled === 'boolean') setIsTwoFactorEnabled(parsed.isTwoFactorEnabled)
+        } catch {
+            // Ignore invalid persisted settings.
+        }
+    }, [])
+
     const handleSaveProfile = () => {
-        updateProfile({ name: profileForm.name, email: profileForm.email })
+        updateProfile({ name: profileForm.name, email: profileForm.email, measurementSystem: unitSystem })
+
+        localStorage.setItem(
+            'superfit-user-settings-ui',
+            JSON.stringify({
+                integrations,
+                profileVisibility,
+                shareWorkouts,
+                shareWeightData,
+                unitSystem,
+                weekStart,
+                username: profileForm.username,
+                location: profileForm.location,
+                isTwoFactorEnabled,
+            }),
+        )
+
+        if (profileForm.currentPassword && profileForm.newPassword) {
+            toast.info('Password change request captured. Connect password reset endpoint to finalize this flow.')
+            setProfileForm((current) => ({ ...current, currentPassword: '', newPassword: '' }))
+        }
+
         setSaveSuccess(true)
         setTimeout(() => setSaveSuccess(false), 3000)
     }
@@ -60,9 +125,14 @@ export default function SettingsPage() {
     }
 
     const handleDeleteAccount = () => {
+        if (!deleteConfirmed) {
+            toast.error('Please confirm permanent deletion before continuing.')
+            return
+        }
         setIsDeleteModalOpen(false)
         logout()
         router.push('/auth')
+        setDeleteConfirmed(false)
     }
 
     const IntegrationsSettings = () => (
@@ -144,10 +214,10 @@ export default function SettingsPage() {
                                 <span className="block font-body font-semibold text-[15px] text-(--text-primary)">Profile Visibility</span>
                                 <span className="block font-body text-[13px] text-(--text-secondary)">Who can see your profile on leaderboards</span>
                             </div>
-                            <select className="bg-(--bg-surface) border border-(--border-default) rounded-[8px] px-3 py-2 font-body text-[13px] text-(--text-primary) outline-none focus:border-(--accent)">
-                                <option>Public</option>
-                                <option>Friends Only</option>
-                                <option>Private</option>
+                            <select value={profileVisibility} onChange={(event) => setProfileVisibility(event.target.value as 'Public' | 'Friends Only' | 'Private')} className="bg-(--bg-surface) border border-(--border-default) rounded-[8px] px-3 py-2 font-body text-[13px] text-(--text-primary) outline-none focus:border-(--accent)">
+                                <option value="Public">Public</option>
+                                <option value="Friends Only">Friends Only</option>
+                                <option value="Private">Private</option>
                             </select>
                         </div>
                         <div className="p-5 flex items-center justify-between">
@@ -156,7 +226,7 @@ export default function SettingsPage() {
                                 <span className="block font-body text-[13px] text-(--text-secondary)">Automatically post completed workouts to feed</span>
                             </div>
                             <label className="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" defaultChecked className="sr-only peer" />
+                                <input type="checkbox" checked={shareWorkouts} onChange={(event) => setShareWorkouts(event.target.checked)} className="sr-only peer" />
                                 <div className="w-11 h-6 bg-(--border-subtle) peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-(--accent)"></div>
                             </label>
                         </div>
@@ -166,17 +236,17 @@ export default function SettingsPage() {
                                 <span className="block font-body text-[13px] text-(--text-secondary)">Display your current weight on progress posts</span>
                             </div>
                             <label className="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" className="sr-only peer" />
+                                <input type="checkbox" checked={shareWeightData} onChange={(event) => setShareWeightData(event.target.checked)} className="sr-only peer" />
                                 <div className="w-11 h-6 bg-(--border-subtle) peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-(--accent)"></div>
                             </label>
                         </div>
                         <div className="p-5 flex items-center justify-between">
                             <div>
                                 <span className="block font-body font-semibold text-[15px] text-(--text-primary)">Two-Factor Authentication (2FA)</span>
-                                <span className="block font-body text-[13px] text-(--text-secondary)">Secure your account with an authenticator app</span>
+                                <span className="block font-body text-[13px] text-(--text-secondary)">Secure your account with an authenticator app {isTwoFactorEnabled ? '(Enabled)' : '(Not enabled)'}</span>
                             </div>
                             <button onClick={() => setIs2FAModalOpen(true)} className="px-4 py-2 rounded-[10px] bg-[var(--bg-elevated)] border border-(--border-default) font-body text-[13px] font-bold text-(--text-primary) hover:border-(--border-subtle) transition-colors cursor-pointer">
-                                Setup 2FA
+                                {isTwoFactorEnabled ? 'Reconfigure 2FA' : 'Setup 2FA'}
                             </button>
                         </div>
                     </div>
@@ -319,16 +389,16 @@ export default function SettingsPage() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                         <div className="flex flex-col gap-1.5">
                                             <label className="font-body text-[13px] text-(--text-secondary) font-semibold ml-1">Unit System</label>
-                                            <select className="h-[52px] rounded-[14px] bg-[var(--bg-elevated)] border border-(--border-default) px-4 font-body text-[15px] text-(--text-primary) outline-none focus:border-emerald-500">
-                                                <option>Metric (kg, cm)</option>
-                                                <option>Imperial (lbs, in)</option>
+                                            <select value={unitSystem} onChange={e => setUnitSystem(e.target.value === 'imperial' ? 'imperial' : 'metric')} className="h-[52px] rounded-[14px] bg-[var(--bg-elevated)] border border-(--border-default) px-4 font-body text-[15px] text-(--text-primary) outline-none focus:border-emerald-500">
+                                                <option value="metric">Metric (kg, cm)</option>
+                                                <option value="imperial">Imperial (lbs, in)</option>
                                             </select>
                                         </div>
                                         <div className="flex flex-col gap-1.5">
                                             <label className="font-body text-[13px] text-(--text-secondary) font-semibold ml-1">First Day of Week</label>
-                                            <select className="h-[52px] rounded-[14px] bg-[var(--bg-elevated)] border border-(--border-default) px-4 font-body text-[15px] text-(--text-primary) outline-none focus:border-emerald-500">
-                                                <option>Monday</option>
-                                                <option>Sunday</option>
+                                            <select value={weekStart} onChange={e => setWeekStart(e.target.value === 'Sunday' ? 'Sunday' : 'Monday')} className="h-[52px] rounded-[14px] bg-[var(--bg-elevated)] border border-(--border-default) px-4 font-body text-[15px] text-(--text-primary) outline-none focus:border-emerald-500">
+                                                <option value="Monday">Monday</option>
+                                                <option value="Sunday">Sunday</option>
                                             </select>
                                         </div>
                                     </div>
@@ -384,7 +454,7 @@ export default function SettingsPage() {
                                 This action is <strong className="text-(--text-primary)">irreversible</strong>. All your progress data, logs, and account history will be permanently erased. Please be certain.
                             </p>
                             <label className="flex items-start gap-3 mt-2 p-4 bg-red-500/5 rounded-[12px] border border-red-500/20 cursor-pointer group">
-                                <input type="checkbox" className="mt-1 w-[18px] h-[18px] accent-red-500 cursor-pointer" />
+                                <input type="checkbox" checked={deleteConfirmed} onChange={(event) => setDeleteConfirmed(event.target.checked)} className="mt-1 w-[18px] h-[18px] accent-red-500 cursor-pointer" />
                                 <span className="font-body text-[13px] text-(--text-secondary) group-hover:text-(--text-primary)">I understand that my data will be permanently deleted and cannot be recovered.</span>
                             </label>
                             <div className="flex items-center gap-3 mt-4">
@@ -417,10 +487,16 @@ export default function SettingsPage() {
                             
                             <div className="w-full">
                                 <label className="font-body text-[13px] font-bold text-(--text-secondary) block mb-1.5 ml-1">Enter 6-digit code</label>
-                                <input type="text" maxLength={6} placeholder="000000" className="w-full h-[52px] rounded-[14px] bg-[var(--bg-elevated)] border border-(--border-default) px-4 font-display font-black tracking-[0.5em] text-[20px] text-center text-(--text-primary) focus:border-(--accent) focus:ring-1 focus:ring-(--accent) outline-none transition-all" />
+                                <input type="text" value={twoFactorCode} onChange={(event) => setTwoFactorCode(event.target.value.replace(/\D/g, '').slice(0, 6))} maxLength={6} placeholder="000000" className="w-full h-[52px] rounded-[14px] bg-[var(--bg-elevated)] border border-(--border-default) px-4 font-display font-black tracking-[0.5em] text-[20px] text-center text-(--text-primary) focus:border-(--accent) focus:ring-1 focus:ring-(--accent) outline-none transition-all" />
                             </div>
 
                             <button onClick={() => {
+                                if (twoFactorCode.length !== 6) {
+                                    toast.error('Enter a valid 6-digit verification code.')
+                                    return
+                                }
+                                setIsTwoFactorEnabled(true)
+                                setTwoFactorCode('')
                                 toast.success('2FA successfully enabled!')
                                 setIs2FAModalOpen(false)
                             }} className="w-full h-[52px] mt-2 rounded-[14px] bg-(--accent) text-white font-body font-bold text-[15px] shadow-[0_4px_14px_rgba(16,185,129,0.3)] hover:bg-(--accent-hover) transition-colors">

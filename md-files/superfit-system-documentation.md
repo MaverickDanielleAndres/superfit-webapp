@@ -109,7 +109,7 @@ State is organized by business domain and persisted locally.
 
 - `useAuthStore` (`superfit-auth-storage`)
   - Handles login/signup/logout/error/user session
-  - Supports hardcoded demo credentials and local registrations
+  - Uses Supabase auth and profile synchronization
 
 - `useUserStore` (`superfit-user-storage`)
   - Onboarding completion and recalculation of nutrition/hydration targets

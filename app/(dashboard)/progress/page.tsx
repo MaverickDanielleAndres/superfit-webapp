@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
+import React, { useMemo, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Camera, Layers, Plus, ChevronRight, ChevronLeft, Download, Trash2, X, Weight, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -27,6 +27,52 @@ export default function ProgressPage() {
     // Upload Modal State
     const [stagedPhoto, setStagedPhoto] = useState<{ url: string; file: File } | null>(null)
     const [stagedWeight, setStagedWeight] = useState(user?.currentWeight?.toString() || '82.0')
+
+    const trendData = useMemo(() => {
+        const sorted = [...photos]
+            .filter((photo) => Number.isFinite(photo.weight))
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+        if (chartFilter === 'All' || sorted.length <= 1) {
+            return sorted
+        }
+
+        const latestDate = new Date(sorted[sorted.length - 1].date)
+        const daysByFilter: Record<'1M' | '3M' | '6M', number> = {
+            '1M': 30,
+            '3M': 90,
+            '6M': 180,
+        }
+        const cutoff = new Date(latestDate)
+        cutoff.setDate(cutoff.getDate() - daysByFilter[chartFilter])
+
+        return sorted.filter((photo) => new Date(photo.date) >= cutoff)
+    }, [chartFilter, photos])
+
+    const trendCoordinates = useMemo(() => {
+        if (!trendData.length) return []
+
+        const minWeight = Math.min(...trendData.map((point) => point.weight))
+        const maxWeight = Math.max(...trendData.map((point) => point.weight))
+        const range = Math.max(0.5, maxWeight - minWeight)
+
+        return trendData.map((point, index) => {
+            const x = trendData.length === 1 ? 50 : (index / (trendData.length - 1)) * 100
+            const normalizedY = (point.weight - minWeight) / range
+            const y = 90 - normalizedY * 70
+            return {
+                ...point,
+                x,
+                y,
+            }
+        })
+    }, [trendData])
+
+    const xTickIndices = useMemo(() => {
+        if (trendCoordinates.length <= 3) return trendCoordinates.map((_, index) => index)
+        const middle = Math.floor((trendCoordinates.length - 1) / 2)
+        return Array.from(new Set([0, middle, trendCoordinates.length - 1]))
+    }, [trendCoordinates])
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
@@ -293,32 +339,45 @@ export default function ProgressPage() {
                             </div>
 
                             <div className="w-full h-[320px] relative border-b border-(--border-subtle) pb-8 mb-2">
-                                {/* SVG mock chart line */}
-                                <svg className="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
-                                    <polyline 
-                                        points="0,85 20,70 40,75 60,55 80,45 100,20" 
-                                        fill="none" 
-                                        stroke="var(--chart-blue)" 
-                                        strokeWidth="4" 
-                                        strokeLinecap="round" 
-                                        strokeLinejoin="round" 
-                                        className="drop-shadow-[0_4px_12px_rgba(59,130,246,0.3)]"
-                                    />
-                                    {/* Data specific points overlay */}
-                                    <circle cx="0" cy="85" r="4" fill="var(--bg-surface)" stroke="var(--chart-blue)" strokeWidth="3" />
-                                    <circle cx="20" cy="70" r="4" fill="var(--bg-surface)" stroke="var(--chart-blue)" strokeWidth="3" />
-                                    <circle cx="40" cy="75" r="4" fill="var(--bg-surface)" stroke="var(--chart-blue)" strokeWidth="3" />
-                                    <circle cx="60" cy="55" r="4" fill="var(--bg-surface)" stroke="var(--chart-blue)" strokeWidth="3" />
-                                    <circle cx="80" cy="45" r="4" fill="var(--bg-surface)" stroke="var(--chart-blue)" strokeWidth="3" />
-                                    <circle cx="100" cy="20" r="4" fill="var(--bg-surface)" stroke="var(--chart-blue)" strokeWidth="3" className="shadow-[0_0_10px_rgba(59,130,246,1)]" />
-                                </svg>
-                                
-                                {/* X-axis labels */}
-                                {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'].map((label, i) => (
-                                    <div key={i} className="absolute bottom-[-24px] text-center font-body text-[12px] font-bold text-(--text-tertiary)" style={{ left: `${(i / 5) * 100}%`, transform: 'translateX(-50%)' }}>
-                                        {label}
+                                {trendCoordinates.length ? (
+                                    <>
+                                        <svg className="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
+                                            <polyline
+                                                points={trendCoordinates.map((point) => `${point.x},${point.y}`).join(' ')}
+                                                fill="none"
+                                                stroke="var(--chart-blue)"
+                                                strokeWidth="4"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                className="drop-shadow-[0_4px_12px_rgba(59,130,246,0.3)]"
+                                            />
+                                            {trendCoordinates.map((point, index) => (
+                                                <circle
+                                                    key={point.id}
+                                                    cx={point.x}
+                                                    cy={point.y}
+                                                    r={index === trendCoordinates.length - 1 ? 4.5 : 4}
+                                                    fill="var(--bg-surface)"
+                                                    stroke="var(--chart-blue)"
+                                                    strokeWidth="3"
+                                                />
+                                            ))}
+                                        </svg>
+
+                                        {xTickIndices.map((index) => {
+                                            const point = trendCoordinates[index]
+                                            return (
+                                                <div key={point.id} className="absolute bottom-[-24px] text-center font-body text-[12px] font-bold text-(--text-tertiary)" style={{ left: `${point.x}%`, transform: 'translateX(-50%)' }}>
+                                                    {new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                </div>
+                                            )
+                                        })}
+                                    </>
+                                ) : (
+                                    <div className="absolute inset-0 flex items-center justify-center font-body text-[14px] text-(--text-secondary)">
+                                        No trend data available for this filter.
                                     </div>
-                                ))}
+                                )}
                             </div>
                         </div>
                     </div>

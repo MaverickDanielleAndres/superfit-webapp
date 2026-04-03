@@ -2,11 +2,7 @@
 
 /**
  * Authentication Page — Sign In & Sign Up
- * Hardcoded mock accounts (MVP):
- *   demo@superfit.com / demo123
- *   coach@superfit.com / coach123
- *   admin@superfit.com / admin123
- * Any new signup auto-registers and redirects to onboarding.
+ * Uses Supabase auth for email/password sign in and sign up.
  */
 
 import React, { useState, useEffect } from 'react'
@@ -83,24 +79,6 @@ export default function AuthPage() {
                     }
                 }, 800)
             }
-        }
-    }
-
-    const handleInstantLogin = async (demoEmail: string, demoPass: string) => {
-        setEmail(demoEmail)
-        setPassword(demoPass)
-        clearError()
-        const ok = await login(demoEmail, demoPass)
-        if (ok) {
-            setSuccess(true)
-            const userFromStore = useAuthStore.getState().user
-            setTimeout(() => {
-                if (userFromStore && !userFromStore.onboardingComplete) {
-                    router.push('/onboarding')
-                } else {
-                    router.push('/')
-                }
-            }, 800)
         }
     }
 
@@ -309,34 +287,6 @@ export default function AuthPage() {
                         </button>
                     </form>
 
-                    {/* Demo Credentials Hint */}
-                    {mode === 'signin' && (
-                        <div className="mt-6 p-4 bg-emerald-50 dark:bg-emerald-500/10 rounded-[16px] border border-emerald-200/50 dark:border-emerald-500/20 shadow-sm">
-                            <p className="font-body text-[13px] text-emerald-800 dark:text-emerald-300 font-bold mb-3 flex items-center gap-2">
-                                <Activity className="w-[16px] h-[16px]" /> Instant Demo Access
-                            </p>
-                            <div className="flex flex-col gap-2">
-                                {[
-                                    { label: 'User', email: 'demo@superfit.com', pass: 'demo123' },
-                                    { label: 'Coach', email: 'coach@superfit.com', pass: 'coach123' },
-                                    { label: 'Admin', email: 'admin@superfit.com', pass: 'admin123' },
-                                ].map(acc => (
-                                    <button
-                                        key={acc.email}
-                                        type="button"
-                                        onClick={() => handleInstantLogin(acc.email, acc.pass)}
-                                        className="flex items-center justify-between w-full bg-white dark:bg-black/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 border border-emerald-100 dark:border-emerald-500/20 rounded-[10px] px-3 py-2 transition-colors group"
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-display font-bold text-[13px] text-emerald-700 dark:text-emerald-400">[{acc.label}]</span>
-                                            <span className="font-body text-[12px] text-emerald-600/80 dark:text-emerald-300/80">{acc.email}</span>
-                                        </div>
-                                        <ArrowRight className="w-[14px] h-[14px] text-emerald-500 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
                 </motion.div>
 
                 {/* Footer note */}

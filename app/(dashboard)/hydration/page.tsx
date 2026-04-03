@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Droplets, Coffee, CupSoda, Plus, Trash2, History, Zap, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, BarChart3, AlertCircle, UploadCloud, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -122,6 +122,19 @@ export default function HydrationPage() {
         if (viewMode === 'month') return viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
         if (viewMode === 'year') return viewDate.getFullYear().toString()
     }
+
+    const aggregateSeries = useMemo(() => {
+        const length = viewMode === 'week' ? 7 : viewMode === 'month' ? 30 : 12
+        const seedInput = `${viewMode}-${viewDate.toISOString().slice(0, 10)}`
+        const seed = seedInput.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+
+        return Array.from({ length }).map((_, index) => {
+            const base = Math.sin((seed + index * 17) * 0.19)
+            const wave = Math.cos((seed + index * 7) * 0.13)
+            const value = 62 + base * 18 + wave * 12
+            return Math.max(20, Math.min(100, Math.round(value)))
+        })
+    }, [viewDate, viewMode])
 
     return (
         <motion.div
@@ -267,8 +280,7 @@ export default function HydrationPage() {
                     </div>
 
                     <div className="flex-1 min-h-[240px] flex items-end justify-between gap-1 sm:gap-2 mt-auto border-b border-(--border-subtle) pb-2 relative z-10">
-                        {Array.from({ length: viewMode === 'week' ? 7 : viewMode === 'month' ? 30 : 12 }).map((_, i) => {
-                            const val = Math.max(20, Math.random() * 100)
+                        {aggregateSeries.map((val, i) => {
                             return (
                                 <div key={i} className="flex-1 relative group flex flex-col justify-end items-center h-[200px] sm:h-[240px]">
                                     {/* Mock chart bar */}

@@ -35,7 +35,7 @@ export default function CommunityPage() {
     const [postMenuOpenId, setPostMenuOpenId] = useState<string | null>(null)
 
     const [pollVotes, setPollVotes] = useState<Record<string, string>>({})
-    const [followingIds, setFollowingIds] = useState<string[]>(['usr_2', 'usr_3']) // Mock starting following
+    const [followingIds, setFollowingIds] = useState<string[]>(['user_2', 'user_3', 'coach_1'])
     const [hiddenPostIds, setHiddenPostIds] = useState<string[]>([])
     const [mutedUserIds, setMutedUserIds] = useState<string[]>([])
     const [blockedUserIds, setBlockedUserIds] = useState<string[]>([])
@@ -146,6 +146,12 @@ export default function CommunityPage() {
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     }
 
+    const getSafeAvatar = (src: string | null | undefined, seed: string) => {
+        const normalized = (src || '').trim()
+        if (normalized.length > 0) return normalized
+        return `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}`
+    }
+
     const renderPost = (post: CommunityPost) => {
         const isLiked = !!(user && post.isLiked)
         const isReposted = !!post.isReposted
@@ -172,7 +178,7 @@ export default function CommunityPage() {
                 <div className="flex gap-3 sm:gap-4">
                     {/* Avatar Column */}
                     <div className="flex flex-col items-center shrink-0 w-[40px] sm:w-[48px]">
-                        <img src={post.userAvatar} alt="Avatar" className="w-[40px] h-[40px] sm:w-[48px] sm:h-[48px] rounded-full object-cover border border-(--border-subtle)" />
+                        <img src={getSafeAvatar(post.userAvatar, `post-${post.userId}`)} alt="Avatar" className="w-[40px] h-[40px] sm:w-[48px] sm:h-[48px] rounded-full object-cover border border-(--border-subtle)" />
                         {expandedPostId === post.id && <div className="w-[2px] h-full bg-(--border-subtle) mt-2" />}
                     </div>
 
@@ -312,7 +318,7 @@ export default function CommunityPage() {
                     {expandedPostId === post.id && (
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="pl-[52px] sm:pl-[64px] mt-2 overflow-hidden">
                             <div className="flex gap-3 mb-4">
-                                <img src={`https://api.dicebear.com/7.x/notionists/svg?seed=reply_1`} className="w-[36px] h-[36px] rounded-full border border-(--border-subtle)" />
+                                <img src={getSafeAvatar('', 'reply-1')} className="w-[36px] h-[36px] rounded-full border border-(--border-subtle)" alt="Reply avatar" />
                                 <div>
                                     <div className="flex gap-1 items-center">
                                         <span className="font-display font-bold text-[14px] text-(--text-primary)">Jake Fitness</span>
@@ -322,7 +328,7 @@ export default function CommunityPage() {
                                 </div>
                             </div>
                             <div className="flex gap-3 items-center">
-                                <img src={user?.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=you`} className="w-[36px] h-[36px] rounded-full border border-(--border-subtle)" />
+                                <img src={getSafeAvatar(user?.avatar, 'you')} className="w-[36px] h-[36px] rounded-full border border-(--border-subtle)" alt="Your avatar" />
                                 <input
                                     autoFocus
                                     type="text"
@@ -402,7 +408,7 @@ export default function CommunityPage() {
                         <>
                             {/* Tweet Composer Box (Desktop) */}
                             <div className="hidden sm:flex border-b border-(--border-subtle) p-4 gap-4 bg-(--bg-surface)">
-                                <img src={user?.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=you`} className="w-[48px] h-[48px] rounded-full border border-(--border-subtle) object-cover" />
+                                <img src={getSafeAvatar(user?.avatar, 'you')} className="w-[48px] h-[48px] rounded-full border border-(--border-subtle) object-cover" alt="Your avatar" />
                                 <div className="flex-1 flex flex-col">
                                     {editingPostId && (
                                         <div className="mb-2 flex items-center justify-between gap-2 rounded-[10px] border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-700">
@@ -527,12 +533,12 @@ export default function CommunityPage() {
                     <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[16px] p-5 flex flex-col gap-4">
                         <h3 className="font-display font-black text-[20px] text-(--text-primary)">Who to follow</h3>
                         {[
-                            { name: 'Dr. Mike', handle: '@dr_mike', verified: true },
-                            { name: 'Chris B.', handle: '@chris_bum', verified: true },
-                            { name: 'Running Club', handle: '@run_sf', verified: false }
+                            { id: 'coach_1', name: 'Coach Marcus', handle: '@marcus_strength', verified: true },
+                            { id: 'user_2', name: 'Sarah Jenkins', handle: '@sarahj_lifts', verified: true },
+                            { id: 'user_3', name: 'Mike Chen', handle: '@mike_runs', verified: false }
                         ].map((u, i) => (
                             <div key={i} className="flex items-center justify-between gap-3 hover:bg-[var(--bg-elevated)] -mx-5 px-5 py-2 cursor-pointer transition-colors">
-                                <img src={`https://api.dicebear.com/7.x/notionists/svg?seed=${u.handle}`} className="w-[40px] h-[40px] rounded-full border border-(--border-subtle)" />
+                                <img src={getSafeAvatar('', u.handle)} className="w-[40px] h-[40px] rounded-full border border-(--border-subtle)" alt={u.name} />
                                 <div className="flex-1 min-w-0 flex flex-col">
                                     <span className="font-body font-bold text-[15px] text-(--text-primary) truncate flex items-center gap-1">
                                         {u.name} {u.verified && <BadgeCheck className="w-[14px] h-[14px] text-blue-500 shrink-0" />}
@@ -541,16 +547,16 @@ export default function CommunityPage() {
                                 </div>
                                 <button 
                                     onClick={() => {
-                                        if (followingIds.includes(u.handle)) {
-                                            setFollowingIds(prev => prev.filter(id => id !== u.handle))
+                                        if (followingIds.includes(u.id)) {
+                                            setFollowingIds(prev => prev.filter(id => id !== u.id))
                                         } else {
-                                            setFollowingIds(prev => [...prev, u.handle])
+                                            setFollowingIds(prev => [...prev, u.id])
                                             toast.success(`Following ${u.name}`)
                                         }
                                     }} 
-                                    className={cn("px-4 py-1.5 rounded-full font-bold text-[14px] transition-opacity cursor-pointer border", followingIds.includes(u.handle) ? "bg-transparent text-(--text-primary) border-(--border-subtle) hover:border-red-500 hover:text-red-500" : "bg-(--text-primary) text-(--bg-base) border-transparent hover:opacity-90")}
+                                    className={cn("px-4 py-1.5 rounded-full font-bold text-[14px] transition-opacity cursor-pointer border", followingIds.includes(u.id) ? "bg-transparent text-(--text-primary) border-(--border-subtle) hover:border-red-500 hover:text-red-500" : "bg-(--text-primary) text-(--bg-base) border-transparent hover:opacity-90")}
                                 >
-                                    {followingIds.includes(u.handle) ? 'Following' : 'Follow'}
+                                    {followingIds.includes(u.id) ? 'Following' : 'Follow'}
                                 </button>
                             </div>
                         ))}
@@ -579,7 +585,7 @@ export default function CommunityPage() {
                             </button>
                         </div>
                         <div className="flex-1 p-4 flex gap-3">
-                            <img src={user?.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=you`} className="w-[40px] h-[40px] rounded-full" />
+                            <img src={getSafeAvatar(user?.avatar, 'you')} className="w-[40px] h-[40px] rounded-full" alt="Your avatar" />
                             <textarea
                                 autoFocus
                                 value={newPostContent}
