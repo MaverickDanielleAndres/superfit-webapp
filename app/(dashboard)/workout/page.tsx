@@ -125,7 +125,7 @@ export default function WorkoutPage() {
 
                     <button
                         onClick={() => endSession()}
-                        className="h-[40px] px-6 rounded-[12px] bg-(--status-success) bg-opacity-10 text-(--status-success) font-display font-bold text-[14px] hover:bg-opacity-20 transition-all cursor-pointer flex items-center gap-2"
+                        className="h-[40px] px-6 rounded-[12px] bg-(--accent) text-white font-display font-bold text-[14px] hover:bg-(--accent-hover) transition-all cursor-pointer flex items-center gap-2"
                     >
                         <Square className="w-[14px] h-[14px] fill-current" /> Finish
                     </button>

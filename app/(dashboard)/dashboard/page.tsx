@@ -19,7 +19,7 @@ const HeartRateCard = dynamic(() => import('@/components/dashboard/HeartRateCard
 export default function DashboardPage() {
     const getHydrationDay = useHydrationStore(s => s.getHydrationDay)
     const addDrink = useHydrationStore(s => s.addDrink)
-    
+
     const todayDate = new Date().toISOString().split('T')[0]
     const hydrationDay = getHydrationDay(todayDate)
 
@@ -34,7 +34,7 @@ export default function DashboardPage() {
             caffeinesMg: 0,
             loggedAt: new Date().toISOString()
         })
-        toast.success("Added 250ml of water!")
+        toast.success('Added 250ml of water!')
     }
 
     return (
@@ -45,20 +45,19 @@ export default function DashboardPage() {
             className="flex flex-col gap-[16px] max-w-7xl"
         >
 
-            {/* Top Metrics Row */}
             <div className="flex flex-col md:flex-row gap-[16px]">
                 <MetricCard title="Weight balance" icon={Weight} value="73" unit="kg" trend="↑ 0.22%" trendUp={true} href="/progress" />
                 <MetricCard title="Heart rate" icon={HeartPulse} value="90" unit="bpm" href="/analytics" />
-                <MetricCard 
-                    title="Hydration level" 
-                    icon={Droplets} 
-                    value={waterPercentage} 
-                    unit="%" 
-                    trend={`${hydrationDay?.totalHydrationMl || 0}/${hydrationDay?.goalMl || 3000} ml`} 
-                    trendUp={true} 
-                    href="/hydration" 
+                <MetricCard
+                    title="Hydration level"
+                    icon={Droplets}
+                    value={waterPercentage}
+                    unit="%"
+                    trend={`${hydrationDay?.totalHydrationMl || 0}/${hydrationDay?.goalMl || 3000} ml`}
+                    trendUp={true}
+                    href="/hydration"
                     action={
-                        <button 
+                        <button
                             onClick={(e) => { e.preventDefault(); handleQuickAddWater(); }}
                             className="h-[28px] px-3 bg-(--accent) text-white font-body text-[12px] font-bold rounded-full hover:bg-(--accent-hover) transition-transform active:scale-95 flex items-center gap-1 shadow-md shadow-emerald-500/20"
                         >
@@ -69,13 +68,11 @@ export default function DashboardPage() {
                 <MetricCard title="Calories burn" icon={Activity} value="1,100" unit="kcal" trend="↑ 2.22%" trendUp={true} href="/exercises" />
             </div>
 
-            {/* Main Grid Row 1 */}
             <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-[16px]">
                 <MacroRingCard />
                 <HeartRateCard />
             </div>
 
-            {/* Main Grid Row 2 */}
             <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-[16px]">
                 <RecommendedActivity />
                 <FitnessGoalCard />

@@ -53,7 +53,7 @@ export default function OnboardingPage() {
         })
         setIsSubmitting(false)
         if (success) {
-            router.push('/')
+            router.push('/dashboard')
         }
     }
 

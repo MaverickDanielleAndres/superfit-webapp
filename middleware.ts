@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 function isProtectedPath(pathname: string) {
+  if (pathname === '/') return false
   if (pathname.startsWith('/auth')) return false
   if (pathname.startsWith('/_next')) return false
   if (pathname.startsWith('/api')) return false
@@ -40,10 +41,10 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
   if (isProtectedPath(pathname) && !session) {
-    return NextResponse.redirect(new URL('/auth', request.url))
+    return NextResponse.redirect(new URL('/', request.url))
   }
 
-  if (session && isProtectedPath(pathname)) {
+  if (session && (pathname === '/' || isProtectedPath(pathname))) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('role,account_status')
@@ -57,17 +58,29 @@ export async function middleware(request: NextRequest) {
       'active'
 
     if (accountStatus !== 'active') {
-      const redirectUrl = new URL('/auth', request.url)
+      const redirectUrl = new URL('/', request.url)
       redirectUrl.searchParams.set('reason', 'account-inactive')
       return NextResponse.redirect(redirectUrl)
     }
 
+    if (pathname === '/') {
+      if (role === 'coach') {
+        return NextResponse.redirect(new URL('/coach', request.url))
+      }
+
+      if (role === 'admin') {
+        return NextResponse.redirect(new URL('/admin', request.url))
+      }
+
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+
     if (pathname.startsWith('/admin') && role !== 'admin') {
-      return NextResponse.redirect(new URL('/', request.url))
+      return NextResponse.redirect(new URL('/dashboard', request.url))
     }
 
     if (isCoachPortalPath(pathname) && role !== 'coach' && role !== 'admin') {
-      return NextResponse.redirect(new URL('/', request.url))
+      return NextResponse.redirect(new URL('/dashboard', request.url))
     }
   }
 

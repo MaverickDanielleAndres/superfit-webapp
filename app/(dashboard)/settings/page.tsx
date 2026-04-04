@@ -210,7 +210,7 @@ export default function SettingsPage() {
     const handleDeactivateAccount = () => {
         setIsDeactivateModalOpen(false)
         logout()
-        router.push('/auth')
+        router.push('/')
     }
 
     const handleDeleteAccount = () => {
@@ -220,7 +220,7 @@ export default function SettingsPage() {
         }
         setIsDeleteModalOpen(false)
         logout()
-        router.push('/auth')
+        router.push('/')
         setDeleteConfirmed(false)
     }
 

@@ -25,7 +25,7 @@ interface AuthState {
 
     initializeAuth: () => Promise<void>
     login: (email: string, password: string) => Promise<boolean>
-    signup: (name: string, email: string, password: string) => Promise<boolean>
+    signup: (name: string, email: string, password: string, role?: 'user' | 'coach') => Promise<boolean>
     completeOnboarding: (data: OnboardingInput) => Promise<boolean>
     recalculateTargets: () => Promise<void>
     logout: () => void
@@ -118,7 +118,7 @@ export const useAuthStore = create<AuthState>()(
                 return true
             },
 
-            signup: async (name, email, password) => {
+            signup: async (name, email, password, role = 'user') => {
                 set({ isLoading: true, error: null })
 
                 if (!isSupabaseAuthEnabled()) {
@@ -143,7 +143,7 @@ export const useAuthStore = create<AuthState>()(
                     email,
                     full_name: name,
                     onboarding_complete: false,
-                    role: 'user',
+                    role,
                 }, data.user?.user_metadata)
 
                 if (data.user?.id) {
@@ -153,7 +153,7 @@ export const useAuthStore = create<AuthState>()(
                             id: data.user.id,
                             email,
                             full_name: name,
-                            role: 'user',
+                            role,
                             onboarding_complete: false,
                         },
                         { onConflict: 'id' }

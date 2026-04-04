@@ -21,7 +21,7 @@ export default function DashboardLayout({
     useEffect(() => {
         if (!isLoading) {
             if (!isAuthenticated || !user) {
-                router.replace('/auth')
+                router.replace('/')
             } else if (user.role === 'coach') {
                 router.replace('/coach')
             } else if (user.role === 'admin') {

@@ -24,10 +24,10 @@ export default function CoachLayout({
     useEffect(() => {
         if (!isLoading) {
             if (!isAuthenticated) {
-                router.replace('/auth')
+                router.replace('/')
             } else if (user?.role !== 'coach') {
                 // Not a coach, redirect to user dashboard
-                router.replace('/')
+                router.replace('/dashboard')
             }
         }
     }, [isAuthenticated, user, isLoading, router])

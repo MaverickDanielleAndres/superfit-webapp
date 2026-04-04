@@ -187,7 +187,7 @@ export default function CoachProfilePage() {
             if (!response.ok) {
                 toast.error(payload?.detail || 'Unable to process subscription right now.')
                 if (response.status === 401) {
-                    router.push('/auth')
+                    router.push('/')
                 }
                 return
             }

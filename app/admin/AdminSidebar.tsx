@@ -29,7 +29,7 @@ export function AdminSidebar({ isMobileOpen, onCloseMobile }: AdminSidebarProps)
     const handleLogout = () => {
         onCloseMobile()
         logout()
-        router.push('/auth')
+        router.push('/')
     }
 
     React.useEffect(() => {
@@ -120,7 +120,7 @@ export function AdminSidebar({ isMobileOpen, onCloseMobile }: AdminSidebarProps)
 
                 <div className="mt-auto pt-4 border-t border-(--border-subtle) mx-4 flex flex-col gap-2">
                     <Link
-                        href="/"
+                        href="/dashboard"
                         onClick={onCloseMobile}
                         className="flex items-center h-[44px] px-3 rounded-[10px] gap-2.5 text-(--text-secondary) hover:bg-(--bg-elevated) hover:text-(--text-primary) transition-all"
                     >

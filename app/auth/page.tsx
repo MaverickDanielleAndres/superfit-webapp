@@ -47,7 +47,7 @@ export default function AuthPage() {
             if (!user.onboardingComplete) {
                 router.push('/onboarding')
             } else {
-                router.push('/')
+                router.push('/dashboard')
             }
         }
     }, [accountInactive, isAuthenticated, logout, user, router])
@@ -75,7 +75,7 @@ export default function AuthPage() {
                     if (userFromStore && !userFromStore.onboardingComplete) {
                         router.push('/onboarding')
                     } else {
-                        router.push('/')
+                        router.push('/dashboard')
                     }
                 }, 800)
             }

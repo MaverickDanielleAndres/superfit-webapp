@@ -73,6 +73,36 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.6; }
   }
+
+  @keyframes animation-path {
+    0% { offset-distance: 0%; }
+    100% { offset-distance: 100%; }
+  }
+
+  @keyframes scaleUp {
+    0% {
+      transform: scale(0.8);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes accordion-down {
+    from { height: 0; }
+    to { height: var(--radix-accordion-content-height); }
+  }
+
+  @keyframes accordion-up {
+    from { height: var(--radix-accordion-content-height); }
+    to { height: 0; }
+  }
+}
+
+.animate-scaleUp {
+  animation: scaleUp 0.4s ease forwards;
 }
 
 /* Base styles for root - Defaulting to dark mode (Image 1) */

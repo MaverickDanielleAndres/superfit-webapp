@@ -77,7 +77,7 @@ export function CoachSidebar() {
         e.stopPropagation()
         closeMobileNav()
         logout()
-        router.push('/auth')
+        router.push('/')
     }
 
     const handleLinkClick = (e: React.MouseEvent) => {
@@ -267,7 +267,7 @@ export function CoachSidebar() {
                     <NavItem
                         icon={Activity}
                         label="User App"
-                        href="/"
+                        href="/dashboard"
                         isActive={false}
                         isCollapsed={isCollapsed}
                         onClick={handleLinkClick}

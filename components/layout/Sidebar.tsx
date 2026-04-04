@@ -127,7 +127,7 @@ export function Sidebar() {
     }, [isMobileNavOpen, closeMobileNav])
 
     const navItems = [
-        { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
+        { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
         { icon: Dumbbell, label: 'Workout', href: '/workout' },
         { icon: BookOpen, label: 'Exercises', href: '/exercises' },
         { icon: Timer, label: 'Timer', href: '/timer' },

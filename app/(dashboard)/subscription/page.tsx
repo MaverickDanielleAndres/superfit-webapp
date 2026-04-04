@@ -3,7 +3,6 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Check, Star, Zap, Crown, CheckCircle } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 export default function SubscriptionPage() {
     const [isSubscribed, setIsSubscribed] = useState(false)
@@ -23,7 +22,7 @@ export default function SubscriptionPage() {
                     Your 14-day free trial is now active. You have full access to advanced analytics, AI coaching, and all premium features.
                 </p>
                 <button
-                    onClick={() => window.location.href = '/'}
+                    onClick={() => window.location.href = '/dashboard'}
                     className="h-[52px] px-8 rounded-[16px] bg-(--accent) text-white font-display font-bold text-[16px] hover:bg-(--accent-hover) transition-colors shadow-[0_4px_16px_rgba(16,185,129,0.3)]"
                 >
                     Go to Dashboard
