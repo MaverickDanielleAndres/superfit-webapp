@@ -8,6 +8,7 @@ const ScanRequestSchema = z
     imageData: z.string().min(8).optional(),
     imageUrl: z.string().url().optional(),
     mealSlot: z.enum(['breakfast', 'morning_snack', 'lunch', 'afternoon_snack', 'dinner', 'evening_snack']).optional(),
+    sourceType: z.enum(['upload', 'camera']).optional(),
   })
   .refine((value) => Boolean(value.imageData || value.imageUrl), {
     message: 'Provide either imageData or imageUrl.',
@@ -129,12 +130,12 @@ function pickTemplateByHints(hints: string[], entropySeed: string): FoodTemplate
   return FOOD_TEMPLATES[index]
 }
 
-async function getVisionHints(imageData: string): Promise<string[]> {
+async function getVisionHints(imageData: string): Promise<{ hints: string[]; confidence: number | null }> {
   const googleVisionKey = process.env.GOOGLE_VISION_API_KEY || ''
-  if (!googleVisionKey) return []
+  if (!googleVisionKey) return { hints: [], confidence: null }
 
   const base64 = imageData.includes(',') ? imageData.split(',').pop() || '' : imageData
-  if (!base64) return []
+  if (!base64) return { hints: [], confidence: null }
 
   try {
     const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${googleVisionKey}`, {
@@ -155,11 +156,11 @@ async function getVisionHints(imageData: string): Promise<string[]> {
       }),
     })
 
-    if (!response.ok) return []
+    if (!response.ok) return { hints: [], confidence: null }
 
     const payload = (await response.json()) as {
       responses?: Array<{
-        labelAnnotations?: Array<{ description?: string }>
+        labelAnnotations?: Array<{ description?: string; score?: number }>
         localizedObjectAnnotations?: Array<{ name?: string }>
       }>
     }
@@ -167,16 +168,18 @@ async function getVisionHints(imageData: string): Promise<string[]> {
     const first = payload.responses?.[0]
     const labels = (first?.labelAnnotations || []).map((label) => String(label.description || '').trim()).filter(Boolean)
     const objects = (first?.localizedObjectAnnotations || []).map((object) => String(object.name || '').trim()).filter(Boolean)
+    const labelScores = (first?.labelAnnotations || []).map((label) => Number(label.score || 0)).filter((value) => Number.isFinite(value) && value > 0)
+    const averageScore = labelScores.length ? labelScores.reduce((sum, score) => sum + score, 0) / labelScores.length : null
 
-    return [...labels, ...objects]
+    return { hints: [...labels, ...objects], confidence: averageScore }
   } catch {
-    return []
+    return { hints: [], confidence: null }
   }
 }
 
-async function getSpoonacularHints(imageUrl: string): Promise<string[]> {
+async function getSpoonacularHints(imageUrl: string): Promise<{ hints: string[]; confidence: number | null }> {
   const spoonKey = process.env.SPOONACULAR_API_KEY || process.env.NEXT_PUBLIC_SPOONACULAR_API_KEY || ''
-  if (!spoonKey) return []
+  if (!spoonKey) return { hints: [], confidence: null }
 
   try {
     const url = new URL('https://api.spoonacular.com/food/images/classify')
@@ -184,17 +187,20 @@ async function getSpoonacularHints(imageUrl: string): Promise<string[]> {
     url.searchParams.set('imageUrl', imageUrl)
 
     const response = await fetch(url.toString(), { cache: 'no-store' })
-    if (!response.ok) return []
+    if (!response.ok) return { hints: [], confidence: null }
 
     const payload = (await response.json()) as {
       category?: string
       probability?: number
     }
 
-    if (!payload.category) return []
-    return [String(payload.category)]
+    if (!payload.category) return { hints: [], confidence: null }
+    return {
+      hints: [String(payload.category)],
+      confidence: Number.isFinite(Number(payload.probability)) ? Number(payload.probability) : null,
+    }
   } catch {
-    return []
+    return { hints: [], confidence: null }
   }
 }
 
@@ -245,14 +251,21 @@ export async function POST(request: Request) {
 
   const hints = new Set<string>()
 
+  let visionConfidence: number | null = null
+  let spoonConfidence: number | null = null
+
   if (parsed.data.imageData) {
-    for (const hint of await getVisionHints(parsed.data.imageData)) {
+    const vision = await getVisionHints(parsed.data.imageData)
+    visionConfidence = vision.confidence
+    for (const hint of vision.hints) {
       hints.add(hint)
     }
   }
 
   if (parsed.data.imageUrl) {
-    for (const hint of await getSpoonacularHints(parsed.data.imageUrl)) {
+    const spoon = await getSpoonacularHints(parsed.data.imageUrl)
+    spoonConfidence = spoon.confidence
+    for (const hint of spoon.hints) {
       hints.add(hint)
     }
   }
@@ -263,7 +276,45 @@ export async function POST(request: Request) {
   const normalizedItem: FoodItem = {
     ...selectedTemplate.item,
     category: normalizeCategory(selectedTemplate.item.category),
+    imageUrl: parsed.data.imageUrl,
   }
+
+  const confidenceScore = Number(
+    (
+      Math.max(
+        visionConfidence || 0,
+        spoonConfidence || 0,
+        hints.size >= 5 ? 0.9 : hints.size >= 3 ? 0.82 : hints.size >= 1 ? 0.72 : 0.64,
+      )
+    ).toFixed(2),
+  )
+
+  const dynamicSupabase = supabase as unknown as {
+    from: (table: string) => {
+      insert: (values: unknown) => {
+        select: (columns: string) => {
+          single: () => Promise<{ data: { id?: string } | null }>
+        }
+      }
+    }
+  }
+
+  const { data: scanLog } = await dynamicSupabase
+    .from('nutrition_scan_logs')
+    .insert({
+      user_id: user.id,
+      image_url: parsed.data.imageUrl || null,
+      source_type: parsed.data.sourceType || 'upload',
+      vision_hints: Array.from(hints).slice(0, 6),
+      confidence_score: confidenceScore,
+      provider: 'google_vision+spoonacular',
+      response_payload: {
+        item: normalizedItem,
+        quantity: selectedTemplate.quantity,
+      },
+    })
+    .select('id')
+    .single()
 
   return dataResponse({
     requestId,
@@ -272,6 +323,9 @@ export async function POST(request: Request) {
       quantity: selectedTemplate.quantity,
       mealSlot: parsed.data.mealSlot || pickDefaultMealSlot(),
       hints: Array.from(hints).slice(0, 6),
+      confidenceScore,
+      scanLogId: (scanLog as { id?: string } | null)?.id || null,
+      imageUrl: parsed.data.imageUrl || null,
     },
   })
 }

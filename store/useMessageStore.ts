@@ -16,7 +16,7 @@ interface MessageState {
     isLoading: boolean
     error: string | null
 
-    initialize: () => Promise<void>
+    initialize: (options?: { force?: boolean }) => Promise<void>
     startRealtime: (userId: string) => void
     stopRealtime: () => void
     sendMessage: (threadId: string, senderId: string, content: string, attachments?: MessageAttachment[], replyToId?: string) => void
@@ -77,6 +77,10 @@ let messagesChannel: RealtimeChannel | null = null
 let messagesChannelUserId: string | null = null
 let messagesSubscribers = 0
 let messagesRefreshTimer: ReturnType<typeof setTimeout> | null = null
+let messagesInitializeInFlight: Promise<void> | null = null
+let messagesLastInitializedAt = 0
+
+const MESSAGES_INIT_CACHE_MS = 30_000
 
 export const useMessageStore = create<MessageState>()(
     persist(
@@ -86,25 +90,51 @@ export const useMessageStore = create<MessageState>()(
             isLoading: false,
             error: null,
 
-            initialize: async () => {
+            initialize: async (options) => {
                 if (!isSupabaseAuthEnabled()) return
 
-                set({ isLoading: true, error: null })
+                const state = get()
+                const now = Date.now()
+
+                if (
+                    !options?.force &&
+                    state.threads.length > 0 &&
+                    now - messagesLastInitializedAt < MESSAGES_INIT_CACHE_MS
+                ) {
+                    return
+                }
+
+                if (messagesInitializeInFlight) {
+                    await messagesInitializeInFlight
+                    return
+                }
+
+                messagesInitializeInFlight = (async () => {
+                    set({ isLoading: true, error: null })
+                    try {
+                        const response = await requestApi<{ threads: ChatThread[]; messagesByThread: Record<string, ChatMessage[]> }>('/api/v1/messages')
+                        set({
+                            threads: response.data.threads,
+                            messages: response.data.messagesByThread,
+                            isLoading: false,
+                            error: null,
+                        })
+                        messagesLastInitializedAt = Date.now()
+                    } catch (error) {
+                        set((state) => ({
+                            isLoading: false,
+                            error: getErrorMessage(error),
+                            threads: state.threads.length ? state.threads : MOCK_THREADS,
+                            messages: Object.keys(state.messages).length ? state.messages : MOCK_MESSAGES,
+                        }))
+                        messagesLastInitializedAt = Date.now()
+                    }
+                })()
+
                 try {
-                    const response = await requestApi<{ threads: ChatThread[]; messagesByThread: Record<string, ChatMessage[]> }>('/api/v1/messages')
-                    set({
-                        threads: response.data.threads,
-                        messages: response.data.messagesByThread,
-                        isLoading: false,
-                        error: null,
-                    })
-                } catch (error) {
-                    set((state) => ({
-                        isLoading: false,
-                        error: getErrorMessage(error),
-                        threads: state.threads.length ? state.threads : MOCK_THREADS,
-                        messages: Object.keys(state.messages).length ? state.messages : MOCK_MESSAGES,
-                    }))
+                    await messagesInitializeInFlight
+                } finally {
+                    messagesInitializeInFlight = null
                 }
             },
 
@@ -131,7 +161,7 @@ export const useMessageStore = create<MessageState>()(
                     }
 
                     messagesRefreshTimer = setTimeout(() => {
-                        void get().initialize()
+                        void get().initialize({ force: true })
                     }, 150)
                 }
 

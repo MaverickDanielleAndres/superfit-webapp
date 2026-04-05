@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
+import { createNotification } from '@/lib/notifications'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+import { revokeAllUserSessions } from '@/lib/auth/adminSessions'
+import { createAuditLog } from '@/lib/audit'
+import { syncAuthUserMetadata } from '@/lib/auth/userMetadata'
 
 const StatusSchema = z.object({
   status: z.enum(['Approved', 'Rejected']),
@@ -117,10 +122,55 @@ export async function PATCH(request: Request, context: RouteContext) {
       .from('profiles')
       .update({ role: 'coach', account_status: 'active' })
       .eq('id', application.applicant_id)
+    await syncAuthUserMetadata(String(application.applicant_id), {
+      role: 'coach',
+      account_status: 'active',
+    })
+  } else if (application.applicant_id) {
+    await (supabase as any)
+      .from('profiles')
+      .update({ role: 'coach', account_status: 'pending_review' })
+      .eq('id', application.applicant_id)
+    await syncAuthUserMetadata(String(application.applicant_id), {
+      role: 'coach',
+      account_status: 'pending_review',
+    })
+    await revokeAllUserSessions(String(application.applicant_id))
+  }
+
+  if (application.applicant_id) {
+    await createNotification(supabaseAdmin as any, {
+      recipientId: String(application.applicant_id),
+      actorId: user.id,
+      type: 'admin_application_status',
+      title: normalizedStatus === 'approved' ? 'Coach application approved' : 'Coach application reviewed',
+      body:
+        normalizedStatus === 'approved'
+          ? 'Congratulations, your coach application has been approved.'
+          : 'Your coach application has been reviewed and was not approved this time.',
+      actionUrl: normalizedStatus === 'approved' ? '/coach' : '/coaching',
+      payload: {
+        applicationId: id,
+        status: normalizedStatus,
+      },
+    })
   }
 
   const { error: invokeError } = await supabase.functions.invoke('on-application-status-updated', {
     body: { applicationId: id },
+  })
+
+  await createAuditLog(supabaseAdmin as any, {
+    userId: user.id,
+    action: 'admin.application.status.updated',
+    resource: 'admin_coach_applications',
+    resourceId: id,
+    metadata: {
+      status: normalizedStatus,
+      applicantId: application.applicant_id,
+      notificationInvokeError: invokeError?.message || null,
+    },
+    userAgent: request.headers.get('user-agent'),
   })
 
   return dataResponse({

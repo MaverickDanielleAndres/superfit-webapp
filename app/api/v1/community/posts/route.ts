@@ -39,7 +39,7 @@ const PostCreateSchema = z.object({
   repostOfId: z.string().uuid().optional().nullable(),
 })
 
-export async function GET() {
+export async function GET(request: Request) {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
   const db = supabaseAdmin
@@ -58,7 +58,34 @@ export async function GET() {
     })
   }
 
-  const { data: postsData, error: postsError } = await (db as any)
+  const params = new URL(request.url).searchParams
+  const feedMode = params.get('feed') === 'following' ? 'following' : 'foryou'
+
+  let followingIds: string[] = []
+  if (feedMode === 'following') {
+    const { data: followRows, error: followsError } = await (db as any)
+      .from('user_follows')
+      .select('followee_id')
+      .eq('follower_id', user.id)
+
+    if (followsError) {
+      return problemResponse({
+        status: 500,
+        code: 'COMMUNITY_FETCH_FAILED',
+        title: 'Community Fetch Failed',
+        detail: followsError.message,
+        requestId,
+      })
+    }
+
+    followingIds = (Array.isArray(followRows) ? followRows : [])
+      .map((row) => String(row.followee_id || ''))
+      .filter(Boolean)
+  }
+
+  const requestedAuthorIds = feedMode === 'following' ? Array.from(new Set([user.id, ...followingIds])) : null
+
+  let postsQuery = (db as any)
     .from('community_posts')
     .select('id,user_id,content,post_type,media_urls,poll,workout_ref,meal_ref,pr_ref,created_at,parent_id,repost_of_id')
     .is('deleted_at', null)
@@ -66,6 +93,12 @@ export async function GET() {
     .is('repost_of_id', null)
     .order('created_at', { ascending: false })
     .limit(100)
+
+  if (requestedAuthorIds) {
+    postsQuery = postsQuery.in('user_id', requestedAuthorIds)
+  }
+
+  const { data: postsData, error: postsError } = await postsQuery
 
   if (postsError) {
     return problemResponse({
@@ -223,6 +256,7 @@ export async function GET() {
     requestId,
     data: {
       posts: mappedPosts,
+      feedMode,
     },
   })
 }
@@ -309,6 +343,51 @@ export async function POST(request: Request) {
     .maybeSingle()
 
   const emailHandle = profile?.email ? String(profile.email).split('@')[0] : user.id.slice(0, 8)
+  let followerNotificationError: string | null = null
+
+  try {
+    const { data: followRows, error: followsError } = await (db as any)
+      .from('user_follows')
+      .select('follower_id')
+      .eq('followee_id', user.id)
+
+    if (followsError) {
+      followerNotificationError = followsError.message
+    } else {
+      const followerIds = (Array.isArray(followRows) ? followRows : [])
+        .map((row) => String(row.follower_id || ''))
+        .filter((id) => Boolean(id) && id !== user.id)
+
+      if (followerIds.length) {
+        const nowIso = new Date().toISOString()
+        const posterName = String(profile?.full_name || 'A user')
+        const preview = String(parsed.data.content || '').slice(0, 140)
+        const notificationRows = followerIds.map((recipientId) => ({
+          recipient_id: recipientId,
+          actor_id: user.id,
+          type: 'community_following_post',
+          title: `${posterName} shared a new post`,
+          body: preview.length ? preview : 'Tap to view the latest update in your feed.',
+          action_url: '/community',
+          payload: {
+            postId: String(data.id),
+            authorId: user.id,
+          },
+          delivered_at: nowIso,
+        }))
+
+        const { error: notificationError } = await (db as any)
+          .from('notifications')
+          .insert(notificationRows)
+
+        if (notificationError) {
+          followerNotificationError = notificationError.message
+        }
+      }
+    }
+  } catch (error) {
+    followerNotificationError = error instanceof Error ? error.message : 'Follower notifications failed.'
+  }
 
   return dataResponse({
     requestId,
@@ -335,6 +414,8 @@ export async function POST(request: Request) {
         isLiked: false,
         postedAt: String(data.created_at || new Date().toISOString()),
       } satisfies CommunityPostItem,
+      notificationFailed: Boolean(followerNotificationError),
+      notificationError: followerNotificationError,
     },
   })
 }

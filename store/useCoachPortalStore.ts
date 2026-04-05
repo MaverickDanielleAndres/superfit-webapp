@@ -104,6 +104,7 @@ interface CoachPortalState {
     status?: 'scheduled' | 'completed' | 'cancelled'
     clientId?: string
   }) => Promise<void>
+  rescheduleEvent: (eventId: string, payload: { startAt: string; endAt: string }) => Promise<void>
 
   logBroadcast: (payload: { target: string; message: string; delivered: number; read: number }) => Promise<void>
   createOrGetDirectThread: (clientId: string) => Promise<string | null>
@@ -513,6 +514,25 @@ export const useCoachPortalStore = create<CoachPortalState>((set, get) => ({
       })
     } catch (error) {
       set({ error: toErrorMessage(error, 'Unable to add schedule event.') })
+      return
+    }
+
+    await get().fetchEvents()
+  },
+
+  rescheduleEvent: async (eventId, payload) => {
+    try {
+      await requestApi<{ id: string; updated: boolean }>('/api/v1/coach/schedule-events', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          eventId,
+          startAt: payload.startAt,
+          endAt: payload.endAt,
+          status: 'scheduled',
+        }),
+      })
+    } catch (error) {
+      set({ error: toErrorMessage(error, 'Unable to reschedule event.') })
       return
     }
 

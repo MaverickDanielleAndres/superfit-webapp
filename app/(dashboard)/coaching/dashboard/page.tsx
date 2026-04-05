@@ -1,36 +1,163 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Users, Calendar as CalendarIcon, FilePlus, MessageSquare, Plus, ChevronRight, Video, DollarSign, Loader2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { CalendarClock, FileText, Loader2, MessageCircle, Target } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { requestApi } from '@/lib/api/client'
+import { toast } from 'sonner'
+import { StructuredFormSubmissionModal, type StructuredFormQuestion } from '@/components/coaching/StructuredFormSubmissionModal'
+
+interface CoachingHubDashboardResponse {
+    coach: {
+        id: string
+        name: string
+        avatar: string
+        bio: string
+    } | null
+    programAssignments: Array<{
+        id: string
+        status: string
+        progressPct: number
+        program: {
+            id: string
+            name: string
+            difficulty: string
+            lengthLabel: string
+        }
+    }>
+    formAssignments: Array<{
+        id: string
+        assignedAt: string
+        deadline: string | null
+        completedAt: string | null
+        form: {
+            id: string
+            name: string
+            status: string
+            questions: StructuredFormQuestion[]
+        }
+    }>
+    scheduleEvents: Array<{
+        id: string
+        title: string
+        eventType: string
+        status: string
+        startAt: string
+        endAt: string
+        isUpcoming: boolean
+    }>
+    announcements: Array<{
+        id: string
+        message: string
+        createdAt: string
+    }>
+    stats: {
+        activePrograms: number
+        pendingForms: number
+        upcomingSessions: number
+    }
+}
 
 export default function CoachDashboardPage() {
-    const [activeTab, setActiveTab] = useState<'roster' | 'content'>('roster')
+    const router = useRouter()
+    const [hubData, setHubData] = useState<CoachingHubDashboardResponse | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [loadError, setLoadError] = useState<string | null>(null)
+    const [submittingAssignmentId, setSubmittingAssignmentId] = useState<string | null>(null)
+    const [activeAssignmentId, setActiveAssignmentId] = useState<string | null>(null)
+    const [isStructuredModalOpen, setStructuredModalOpen] = useState(false)
 
-    const clients = [
-        { id: '1', name: 'Alex Thompson', plan: 'Hybrid Athlete', status: 'Active', nextCheckIn: 'Today', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&fit=crop' },
-        { id: '2', name: 'Sarah Jenkins', plan: 'Powerlifting Prep', status: 'Pending Review', nextCheckIn: 'Tomorrow', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&fit=crop' },
-        { id: '3', name: 'David Kim', plan: 'Fat Loss Phase I', status: 'Active', nextCheckIn: 'In 3 days', avatar: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&fit=crop' }
-    ]
-
-    const metrics = [
-        { icon: Users, label: 'Active Clients', value: '18', trend: '+2 this month' },
-        { icon: DollarSign, label: 'Monthly Revenue', value: '$4,250', trend: '+15% vs last month' },
-        { icon: MessageSquare, label: 'Unread Messages', value: '5', trend: 'Requires attention' },
-    ]
-
-    useEffect(() => {
-        const timeout = setTimeout(() => setIsLoading(false), 250)
-        return () => clearTimeout(timeout)
-    }, [])
-
-    const retryLoad = () => {
+    const loadDashboard = async () => {
         setLoadError(null)
         setIsLoading(true)
-        setTimeout(() => setIsLoading(false), 250)
+
+        try {
+            const response = await requestApi<CoachingHubDashboardResponse>('/api/v1/coaching/hub')
+            setHubData(response.data)
+        } catch (error) {
+            setLoadError(error instanceof Error ? error.message : 'Unable to load coaching dashboard.')
+            setHubData(null)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        void loadDashboard()
+    }, [])
+
+    const pendingForms = useMemo(() => hubData?.formAssignments.filter((item) => !item.completedAt) || [], [hubData])
+    const upcomingSessions = useMemo(() => hubData?.scheduleEvents.filter((event) => event.isUpcoming).slice(0, 6) || [], [hubData])
+    const activeAssignment = pendingForms.find((item) => item.id === activeAssignmentId) || null
+
+    const handleSubmitQuick = async (response: Record<string, unknown>) => {
+        if (!activeAssignment) return
+
+        setSubmittingAssignmentId(activeAssignment.id)
+        const toastId = toast.loading('Submitting form...')
+
+        try {
+            await requestApi('/api/v1/coaching/forms/submissions', {
+                method: 'POST',
+                body: JSON.stringify({
+                    assignmentId: activeAssignment.id,
+                    response,
+                }),
+            })
+            toast.success('Submitted for coach review.', { id: toastId })
+            setStructuredModalOpen(false)
+            setActiveAssignmentId(null)
+            await loadDashboard()
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Unable to submit right now.', { id: toastId })
+        } finally {
+            setSubmittingAssignmentId(null)
+        }
+    }
+
+    const openStructuredForm = (assignmentId: string) => {
+        setActiveAssignmentId(assignmentId)
+        setStructuredModalOpen(true)
+    }
+
+    const closeStructuredForm = () => {
+        if (submittingAssignmentId) return
+        setStructuredModalOpen(false)
+        setActiveAssignmentId(null)
+    }
+
+    if (isLoading) {
+        return (
+            <div className="w-full max-w-5xl mx-auto py-20 flex items-center justify-center gap-3 text-(--text-secondary)">
+                <Loader2 className="w-[18px] h-[18px] animate-spin" />
+                <span className="font-body text-[14px]">Loading coaching dashboard...</span>
+            </div>
+        )
+    }
+
+    if (loadError) {
+        return (
+            <div className="w-full max-w-5xl mx-auto py-20 text-center">
+                <p className="font-display font-bold text-[20px] text-red-600">Unable to load coaching dashboard</p>
+                <p className="mt-2 text-[14px] text-(--text-secondary)">{loadError}</p>
+                <button onClick={() => { void loadDashboard() }} className="mt-4 px-4 py-2 rounded-[10px] border border-(--border-default) font-semibold text-[13px] hover:bg-[var(--bg-elevated)]">
+                    Retry
+                </button>
+            </div>
+        )
+    }
+
+    if (!hubData?.coach) {
+        return (
+            <div className="w-full max-w-5xl mx-auto py-20 text-center">
+                <p className="font-display font-bold text-[22px] text-(--text-primary)">No Active Coaching Subscription</p>
+                <p className="mt-2 text-[14px] text-(--text-secondary)">Subscribe to a coach to unlock programs, assignments, and announcements.</p>
+                <button onClick={() => router.push('/coaching')} className="mt-6 px-5 py-2.5 rounded-[12px] bg-(--text-primary) text-(--bg-base) font-bold text-[13px]">
+                    Browse Coaches
+                </button>
+            </div>
+        )
     }
 
     return (
@@ -41,23 +168,26 @@ export default function CoachDashboardPage() {
         >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
                 <div>
-                    <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary) leading-tight">Coach Portal</h1>
-                    <p className="font-body text-[14px] text-(--text-secondary)">Manage your clients, content, and business metrics.</p>
+                    <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary) leading-tight">Coaching Dashboard</h1>
+                    <p className="font-body text-[14px] text-(--text-secondary)">You are currently coached by {hubData.coach.name}.</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button className="h-[40px] px-4 rounded-[12px] bg-(--bg-surface) border border-(--border-default) text-(--text-secondary) hover:text-(--text-primary) transition-all flex items-center gap-2 font-body font-semibold text-[13px]">
-                        <CalendarIcon className="w-[16px] h-[16px]" /> Schedule
+                    <button onClick={() => router.push('/coaching')} className="h-[40px] px-4 rounded-[12px] bg-(--bg-surface) border border-(--border-default) text-(--text-secondary) hover:text-(--text-primary) transition-all flex items-center gap-2 font-body font-semibold text-[13px]">
+                        <MessageCircle className="w-[16px] h-[16px]" /> Open Hub
                     </button>
-                    <button className="h-[40px] px-4 rounded-[12px] bg-(--text-primary) text-(--bg-base) transition-all flex items-center gap-2 font-display font-bold text-[13px]">
-                        <Plus className="w-[16px] h-[16px]" /> Invite Client
+                    <button onClick={() => router.push('/workout')} className="h-[40px] px-4 rounded-[12px] bg-(--text-primary) text-(--bg-base) transition-all flex items-center gap-2 font-display font-bold text-[13px]">
+                        <Target className="w-[16px] h-[16px]" /> Start Workout
                     </button>
                 </div>
             </div>
 
-            {/* KPI Row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                {metrics.map((metric, i) => (
-                    <div key={i} className="bg-(--bg-surface) border border-(--border-subtle) rounded-[20px] p-5 flex items-center gap-4 hover:border-(--border-default) transition-colors shadow-sm">
+                {[
+                    { icon: Target, label: 'Active Programs', value: String(hubData.stats.activePrograms), detail: 'From coach assignments' },
+                    { icon: FileText, label: 'Pending Forms', value: String(hubData.stats.pendingForms), detail: 'Need your response' },
+                    { icon: CalendarClock, label: 'Upcoming Sessions', value: String(hubData.stats.upcomingSessions), detail: 'Scheduled with coach' },
+                ].map((metric) => (
+                    <div key={metric.label} className="bg-(--bg-surface) border border-(--border-subtle) rounded-[20px] p-5 flex items-center gap-4 hover:border-(--border-default) transition-colors shadow-sm">
                         <div className="w-[48px] h-[48px] rounded-[14px] bg-[var(--bg-elevated)] flex items-center justify-center">
                             <metric.icon className="w-[24px] h-[24px] text-(--accent)" />
                         </div>
@@ -65,110 +195,110 @@ export default function CoachDashboardPage() {
                             <span className="block font-body text-[13px] text-(--text-secondary) font-medium uppercase tracking-wider">{metric.label}</span>
                             <div className="flex items-baseline gap-2">
                                 <span className="block font-display font-bold text-[24px] text-(--text-primary)">{metric.value}</span>
-                                <span className={cn("font-body text-[11px] font-semibold", i === 2 ? "text-(--status-warning)" : "text-(--status-success)")}>{metric.trend}</span>
+                                <span className="font-body text-[11px] font-semibold text-(--text-secondary)">{metric.detail}</span>
                             </div>
                         </div>
                     </div>
                 ))}
             </div>
 
-            {/* Main Content Area */}
-            <div className="flex flex-col md:flex-row gap-6">
-                {/* Sidebar / Tools */}
-                <div className="w-full md:w-[260px] shrink-0 flex flex-col gap-4">
-                    <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[20px] p-4 flex flex-col gap-2">
-                        <button
-                            onClick={() => setActiveTab('roster')}
-                            className={cn("w-full h-[48px] rounded-[12px] flex items-center gap-3 px-4 transition-all font-body font-semibold text-[14px]", activeTab === 'roster' ? 'bg-[var(--bg-elevated)] text-(--text-primary) shadow-sm' : 'text-(--text-secondary) hover:text-(--text-primary)')}
-                        >
-                            <Users className="w-[18px] h-[18px]" /> Client Roster
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('content')}
-                            className={cn("w-full h-[48px] rounded-[12px] flex items-center gap-3 px-4 transition-all font-body font-semibold text-[14px]", activeTab === 'content' ? 'bg-[var(--bg-elevated)] text-(--text-primary) shadow-sm' : 'text-(--text-secondary) hover:text-(--text-primary)')}
-                        >
-                            <FilePlus className="w-[18px] h-[18px]" /> Content Publisher
-                        </button>
-                    </div>
-
-                    <div className="bg-(--accent-bg-strong) bg-opacity-30 border border-(--accent) border-opacity-30 rounded-[20px] p-5 text-center mt-auto">
-                        <Video className="w-[24px] h-[24px] text-(--accent) mx-auto mb-3" />
-                        <h3 className="font-display font-bold text-[16px] text-(--text-primary) mb-1">Form Checks</h3>
-                        <p className="font-body text-[13px] text-(--text-secondary) mb-4">You have 3 new client videos to review.</p>
-                        <button className="w-full py-2 bg-(--accent) text-white rounded-[10px] font-display font-bold text-[13px]">Review Now</button>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <div className="xl:col-span-2 bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">
+                    <h2 className="font-display font-bold text-[18px] text-(--text-primary) mb-4">Pending Forms</h2>
+                    <div className="flex flex-col gap-3">
+                        {pendingForms.map((assignment) => (
+                            <div key={assignment.id} className="flex items-center justify-between gap-3 border border-(--border-subtle) rounded-[14px] px-4 py-3 bg-[var(--bg-elevated)]">
+                                <div>
+                                    <p className="font-bold text-[14px] text-(--text-primary)">{assignment.form.name}</p>
+                                    <p className="text-[12px] text-(--text-secondary)">
+                                        {assignment.deadline ? `Due ${new Date(assignment.deadline).toLocaleDateString()}` : 'No deadline'}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => openStructuredForm(assignment.id)}
+                                    disabled={submittingAssignmentId === assignment.id}
+                                    className="h-[34px] px-4 rounded-[10px] bg-emerald-500 text-white text-[12px] font-bold disabled:opacity-60"
+                                >
+                                    {submittingAssignmentId === assignment.id ? 'Submitting...' : 'Fill Form'}
+                                </button>
+                            </div>
+                        ))}
+                        {pendingForms.length === 0 && (
+                            <p className="text-[13px] text-(--text-secondary)">No pending forms. You are all caught up.</p>
+                        )}
                     </div>
                 </div>
 
-                {/* Right Panel */}
-                <div className="flex-1">
-                    {activeTab === 'roster' ? (
-                        <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] overflow-hidden shadow-sm">
-                            <div className="p-5 border-b border-(--border-subtle) flex items-center justify-between">
-                                <h2 className="font-display font-bold text-[18px] text-(--text-primary)">Active Clients</h2>
-                                <button className="text-(--accent) font-body text-[13px] font-semibold">View All</button>
+                <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">
+                    <h2 className="font-display font-bold text-[18px] text-(--text-primary) mb-4">Upcoming Sessions</h2>
+                    <div className="flex flex-col gap-3">
+                        {upcomingSessions.map((event) => (
+                            <div key={event.id} className="border border-(--border-subtle) rounded-[12px] p-3 bg-[var(--bg-elevated)]">
+                                <p className="font-bold text-[13px] text-(--text-primary)">{event.title}</p>
+                                <p className="text-[12px] text-(--text-secondary)">{new Date(event.startAt).toLocaleString()}</p>
                             </div>
-
-                            {loadError ? (
-                                <div className="p-8 text-center">
-                                    <p className="font-display font-bold text-[18px] text-red-600">Unable to load roster</p>
-                                    <p className="mt-2 font-body text-[14px] text-(--text-secondary)">{loadError}</p>
-                                    <button onClick={retryLoad} className="mt-4 px-4 py-2 rounded-[10px] border border-(--border-default) font-body font-semibold text-[13px] hover:bg-[var(--bg-elevated)]">Retry</button>
-                                </div>
-                            ) : isLoading ? (
-                                <div className="p-8 flex items-center justify-center gap-3 text-(--text-secondary)">
-                                    <Loader2 className="w-[18px] h-[18px] animate-spin" />
-                                    <span className="font-body text-[14px]">Loading clients...</span>
-                                </div>
-                            ) : clients.length === 0 ? (
-                                <div className="p-8 text-center">
-                                    <p className="font-display font-bold text-[18px] text-(--text-primary)">No active clients yet</p>
-                                    <p className="mt-2 font-body text-[14px] text-(--text-secondary)">Invite your first client to start tracking check-ins and progress.</p>
-                                </div>
-                            ) : (
-                                <div className="flex flex-col divide-y divide-(--border-subtle)">
-                                    {clients.map(client => (
-                                        <div key={client.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer group">
-                                            <div className="flex items-center gap-4">
-                                                <img src={client.avatar} alt={client.name} className="w-[48px] h-[48px] rounded-full object-cover border border-(--border-subtle)" />
-                                                <div>
-                                                    <h3 className="font-display font-bold text-[16px] text-(--text-primary) leading-none mb-1">{client.name}</h3>
-                                                    <span className="font-body text-[13px] text-(--text-secondary)">{client.plan}</span>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-center gap-8">
-                                                <div className="text-right hidden sm:block">
-                                                    <span className="block font-body text-[12px] text-(--text-secondary) uppercase tracking-wider font-semibold">Next Check-in</span>
-                                                    <span className="font-body text-[14px] text-(--text-primary) font-medium">{client.nextCheckIn}</span>
-                                                </div>
-                                                <span className={cn("px-3 py-1 rounded-full font-body text-[12px] font-bold", client.status === 'Active' ? 'bg-(--status-success) bg-opacity-20 text-(--status-success)' : 'bg-(--status-warning) bg-opacity-20 text-(--status-warning)')}>
-                                                    {client.status}
-                                                </span>
-                                                <ChevronRight className="w-[20px] h-[20px] text-(--text-tertiary) group-hover:text-(--text-primary) transition-colors" />
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">
-                            <div className="text-center py-10">
-                                <div className="w-[64px] h-[64px] rounded-full bg-[var(--bg-elevated)] flex items-center justify-center mx-auto mb-4 text-(--text-secondary)">
-                                    <FilePlus className="w-[32px] h-[32px]" />
-                                </div>
-                                <h2 className="font-display font-bold text-[20px] text-(--text-primary) mb-2">Publish Content</h2>
-                                <p className="font-body text-[14px] text-(--text-secondary) max-w-[300px] mx-auto mb-6">Create workout programs, nutrition guides, or community posts for your roster.</p>
-
-                                <div className="flex justify-center gap-4">
-                                    <button className="px-6 py-2.5 rounded-[12px] bg-(--text-primary) text-(--bg-base) font-body font-bold text-[14px]">New Workout Plan</button>
-                                    <button className="px-6 py-2.5 rounded-[12px] bg-[var(--bg-elevated)] text-(--text-primary) font-body font-bold text-[14px] hover:bg-(--border-subtle) transition-colors border border-(--border-default)">Post to Feed</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                        ))}
+                        {upcomingSessions.length === 0 && (
+                            <p className="text-[13px] text-(--text-secondary)">No sessions scheduled.</p>
+                        )}
+                    </div>
                 </div>
             </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">
+                    <h2 className="font-display font-bold text-[18px] text-(--text-primary) mb-4">Assigned Programs</h2>
+                    <div className="flex flex-col gap-3">
+                        {hubData.programAssignments.map((assignment) => (
+                            <div key={assignment.id} className="border border-(--border-subtle) rounded-[14px] p-4 bg-[var(--bg-elevated)]">
+                                <p className="font-bold text-[14px] text-(--text-primary)">{assignment.program.name}</p>
+                                <p className="text-[12px] text-(--text-secondary)">{assignment.program.lengthLabel} • {assignment.program.difficulty}</p>
+                                <div className="mt-3 h-[6px] w-full bg-(--bg-base) rounded-full overflow-hidden">
+                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.max(0, Math.min(100, assignment.progressPct))}%` }} />
+                                </div>
+                            </div>
+                        ))}
+                        {hubData.programAssignments.length === 0 && (
+                            <p className="text-[13px] text-(--text-secondary)">No programs assigned yet.</p>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">
+                    <h2 className="font-display font-bold text-[18px] text-(--text-primary) mb-4">Latest Announcements</h2>
+                    <div className="flex flex-col gap-3">
+                        {hubData.announcements.slice(0, 6).map((announcement) => (
+                            <div key={announcement.id} className="border border-(--border-subtle) rounded-[14px] p-4 bg-[var(--bg-elevated)]">
+                                <p className="text-[14px] text-(--text-primary) whitespace-pre-wrap">{announcement.message}</p>
+                                <p className="mt-2 text-[11px] text-(--text-tertiary)">{new Date(announcement.createdAt).toLocaleString()}</p>
+                            </div>
+                        ))}
+                        {hubData.announcements.length === 0 && (
+                            <p className="text-[13px] text-(--text-secondary)">No announcements yet.</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            <StructuredFormSubmissionModal
+                open={isStructuredModalOpen}
+                assignment={
+                    activeAssignment
+                        ? {
+                            id: activeAssignment.id,
+                            deadline: activeAssignment.deadline,
+                            form: {
+                                id: activeAssignment.form.id,
+                                name: activeAssignment.form.name,
+                                questions: activeAssignment.form.questions,
+                            },
+                        }
+                        : null
+                }
+                isSubmitting={Boolean(submittingAssignmentId)}
+                onClose={closeStructuredForm}
+                onSubmit={handleSubmitQuick}
+            />
         </motion.div>
     )
 }

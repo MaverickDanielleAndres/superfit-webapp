@@ -19,6 +19,10 @@ interface SearchResult {
     href: string
 }
 
+interface TopBarProps {
+    scope?: 'user' | 'coach' | 'admin'
+}
+
 function formatRelativeTime(iso: string): string {
     const diffMs = Date.now() - new Date(iso).getTime()
     const minute = 60_000
@@ -39,7 +43,7 @@ function formatRelativeTime(iso: string): string {
     return `${days}d ago`
 }
 
-export function TopBar() {
+export function TopBar({ scope = 'user' }: TopBarProps) {
     const { theme, setTheme } = useTheme()
     const [greeting] = useState(() => {
         const hour = new Date().getHours()
@@ -56,7 +60,7 @@ export function TopBar() {
     const { getTotalUnread, initialize: initializeMessages, startRealtime: startMessagesRealtime, stopRealtime: stopMessagesRealtime } = useMessageStore()
     const {
         notifications,
-        unreadCount: unreadNotifs,
+        unreadCount,
         initialize,
         markAllRead,
         markAllSeen,
@@ -64,19 +68,48 @@ export function TopBar() {
         startRealtime,
         stopRealtime,
     } = useNotificationStore()
+    const notificationUnreadCount = Number.isFinite(unreadCount) ? unreadCount : 0
     const totalUnread = getTotalUnread()
     const router = useRouter()
     const { toggleMobileNav } = useUIStore()
+    const isCoachScope = scope === 'coach'
+    const isAdminScope = scope === 'admin'
+
+    const messageRoute = isCoachScope ? '/coach/messages' : isAdminScope ? '/admin/messages' : '/messages'
+    const notificationsRoute = isCoachScope ? '/coach/notifications' : isAdminScope ? '/admin/notifications' : '/notifications'
+    const settingsRoute = isCoachScope ? '/coach/settings' : isAdminScope ? '/admin/settings' : '/settings'
+    const fallbackSearchRoute = isCoachScope ? '/coach/clients' : isAdminScope ? '/admin/users' : '/exercises'
 
     useEffect(() => {
         if (!user?.id) return
 
         void initialize()
-        void initializeMessages()
         startRealtime(user.id)
-        startMessagesRealtime(user.id)
+
+        let idleId: number | ReturnType<typeof globalThis.setTimeout> | null = null
+        const idleApi = globalThis as typeof globalThis & {
+            requestIdleCallback?: (callback: IdleRequestCallback) => number
+            cancelIdleCallback?: (id: number) => void
+        }
+        const onIdle = () => {
+            void initializeMessages()
+            startMessagesRealtime(user.id)
+        }
+
+        if (typeof idleApi.requestIdleCallback === 'function') {
+            idleId = idleApi.requestIdleCallback(onIdle)
+        } else {
+            idleId = globalThis.setTimeout(onIdle, 300)
+        }
 
         return () => {
+            if (idleId !== null) {
+                if (typeof idleApi.cancelIdleCallback === 'function' && typeof idleId === 'number') {
+                    idleApi.cancelIdleCallback(idleId)
+                } else {
+                    globalThis.clearTimeout(idleId)
+                }
+            }
             stopRealtime()
             stopMessagesRealtime()
         }
@@ -127,7 +160,7 @@ export function TopBar() {
         }
 
         if (searchQuery.trim()) {
-            router.push(`/exercises?search=${encodeURIComponent(searchQuery.trim())}`)
+            router.push(`${fallbackSearchRoute}?search=${encodeURIComponent(searchQuery.trim())}`)
             setIsSearchOpen(false)
             setSearchQuery('')
             setSearchResults([])
@@ -139,7 +172,15 @@ export function TopBar() {
         setIsNotifOpen(false)
 
         if (actionUrl) {
-            router.push(actionUrl)
+            const normalizedActionUrl =
+                isCoachScope && actionUrl.startsWith('/messages')
+                    ? actionUrl.replace('/messages', '/coach/messages')
+                    : isCoachScope && actionUrl.startsWith('/notifications')
+                        ? actionUrl.replace('/notifications', '/coach/notifications')
+                        : isCoachScope && actionUrl.startsWith('/settings')
+                            ? actionUrl.replace('/settings', '/coach/settings')
+                            : actionUrl
+            router.push(normalizedActionUrl)
         }
     }
 
@@ -175,7 +216,7 @@ export function TopBar() {
                     <Search className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />
                 </button>
                 <button
-                    onClick={() => { router.push('/messages'); setIsNotifOpen(false); }}
+                    onClick={() => { router.push(messageRoute); setIsNotifOpen(false); }}
                     className="relative w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
                 >
                     <MessageCircle className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />
@@ -193,9 +234,9 @@ export function TopBar() {
                         className="relative w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
                     >
                         <Bell className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />
-                        {unreadNotifs > 0 && (
+                        {notificationUnreadCount > 0 && (
                             <span className="absolute top-[-4px] right-[-4px] w-[18px] h-[18px] rounded-full bg-(--accent) text-white font-body font-bold text-[10px] flex items-center justify-center border-2 border-(--bg-base)">
-                                {unreadNotifs}
+                                {notificationUnreadCount}
                             </span>
                         )}
                     </button>
@@ -247,7 +288,7 @@ export function TopBar() {
                                         <button
                                             onClick={() => {
                                                 setIsNotifOpen(false)
-                                                router.push('/notifications')
+                                                router.push(notificationsRoute)
                                             }}
                                             className="font-body text-[13px] text-(--text-secondary) hover:text-(--text-primary) font-semibold"
                                         >
@@ -261,7 +302,7 @@ export function TopBar() {
                 </div>
 
                 <button
-                    onClick={() => router.push('/settings')}
+                    onClick={() => router.push(settingsRoute)}
                     className="w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
                 >
                     <Settings2 className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />
@@ -298,7 +339,7 @@ export function TopBar() {
                                 <input
                                     type="text"
                                     autoFocus
-                                    placeholder="Search workflows, exercises, users..."
+                                    placeholder={isCoachScope ? 'Search clients, schedule, content...' : 'Search workflows, exercises, users...'}
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     className="w-full h-[64px] bg-transparent border-none focus:outline-none px-4 font-body text-[16px] text-(--text-primary)"
@@ -309,7 +350,7 @@ export function TopBar() {
                             </form>
                             <div className="border-t border-(--border-subtle) bg-[var(--bg-elevated)] p-4 flex gap-2">
                                 <span className="text-[12px] font-body text-(--text-tertiary) uppercase tracking-wider font-semibold mr-2 flex items-center">Quick links</span>
-                                {['Workouts', 'Community', 'Coaching'].map(term => (
+                                {(isCoachScope ? ['Clients', 'Programs', 'Schedule'] : ['Workouts', 'Community', 'Coaching']).map(term => (
                                     <button
                                         key={term}
                                         type="button"

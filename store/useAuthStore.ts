@@ -14,8 +14,9 @@ import {
     isSupabaseAuthEnabled,
     signInWithSupabase,
     signOutWithSupabase,
-    signUpWithSupabase
+    signUpWithSupabaseMetadata
 } from '@/lib/supabase/auth'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 
 interface AuthState {
     isAuthenticated: boolean
@@ -49,6 +50,88 @@ interface OnboardingInput {
     exercisePreferences: ExercisePreference[]
 }
 
+let profileBroadcastChannel: BroadcastChannel | null = null
+let profileBroadcastBound = false
+let profileRealtimeChannel: RealtimeChannel | null = null
+let profileRealtimeUserId: string | null = null
+let authInitializeInFlight: Promise<void> | null = null
+let authLastInitializedAt = 0
+
+const AUTH_INIT_CACHE_MS = 60_000
+
+function bindProfileBroadcast(set: (partial: Partial<AuthState>) => void, get: () => AuthState) {
+    if (typeof window === 'undefined') return
+    if (profileBroadcastBound) return
+
+    if (typeof window.BroadcastChannel === 'undefined') return
+
+    profileBroadcastChannel = new window.BroadcastChannel('superfit-profile-sync')
+    profileBroadcastChannel.onmessage = (event: MessageEvent) => {
+        const incoming = event.data as Partial<UserProfile> | null
+        if (!incoming) return
+
+        const current = get().user
+        if (!current) return
+
+        set({ user: { ...current, ...incoming } })
+    }
+    profileBroadcastBound = true
+}
+
+async function syncProfileFromServer(userId: string, set: (partial: Partial<AuthState>) => void) {
+    if (!isSupabaseAuthEnabled()) return
+    if (!userId) return
+
+    const supabase = createClient()
+    const {
+        data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user?.id || user.id !== userId) return
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle()
+
+    const mapped = mapUserProfile(user.id, user.email || '', profile || null, user.user_metadata)
+    set({ user: mapped })
+}
+
+function bindProfileRealtime(userId: string, set: (partial: Partial<AuthState>) => void) {
+    if (!isSupabaseAuthEnabled()) return
+    if (!userId) return
+    if (profileRealtimeChannel && profileRealtimeUserId === userId) return
+
+    if (profileRealtimeChannel) {
+        profileRealtimeChannel.unsubscribe()
+        profileRealtimeChannel = null
+        profileRealtimeUserId = null
+    }
+
+    const supabase = createClient()
+    const refresh = () => {
+        void syncProfileFromServer(userId, set)
+    }
+
+    profileRealtimeChannel = supabase
+        .channel(`profile-live-${userId}`)
+        .on(
+            'postgres_changes',
+            {
+                event: '*',
+                schema: 'public',
+                table: 'profiles',
+                filter: `id=eq.${userId}`,
+            },
+            refresh,
+        )
+        .subscribe()
+
+    profileRealtimeUserId = userId
+}
+
 export const useAuthStore = create<AuthState>()(
     persist(
         (set, get) => ({
@@ -63,28 +146,61 @@ export const useAuthStore = create<AuthState>()(
                     return
                 }
 
-                set({ isLoading: true, error: null })
+                const currentState = get()
+                const now = Date.now()
 
-                const supabase = createClient()
-                const {
-                    data: { session },
-                    error,
-                } = await supabase.auth.getSession()
-
-                if (error || !session?.user) {
-                    set({ isAuthenticated: false, user: null, isLoading: false, error: error?.message || null })
+                if (
+                    currentState.isAuthenticated &&
+                    currentState.user?.id &&
+                    now - authLastInitializedAt < AUTH_INIT_CACHE_MS
+                ) {
+                    if (profileRealtimeUserId !== currentState.user.id) {
+                        bindProfileRealtime(currentState.user.id, set)
+                    }
+                    set({ isLoading: false, error: null })
                     return
                 }
 
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', session.user.id)
-                    .maybeSingle()
+                if (authInitializeInFlight) {
+                    await authInitializeInFlight
+                    return
+                }
 
-                const mapped = mapUserProfile(session.user.id, session.user.email || '', profile || null, session.user.user_metadata)
+                bindProfileBroadcast(set, get)
 
-                set({ isAuthenticated: true, user: mapped, isLoading: false, error: null })
+                authInitializeInFlight = (async () => {
+                    set({ isLoading: true, error: null })
+
+                    const supabase = createClient()
+                    const {
+                        data: { user },
+                        error,
+                    } = await supabase.auth.getUser()
+
+                    if (error || !user) {
+                        set({ isAuthenticated: false, user: null, isLoading: false, error: error?.message || null })
+                        authLastInitializedAt = Date.now()
+                        return
+                    }
+
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', user.id)
+                        .maybeSingle()
+
+                    const mapped = mapUserProfile(user.id, user.email || '', profile || null, user.user_metadata)
+
+                    set({ isAuthenticated: true, user: mapped, isLoading: false, error: null })
+                    authLastInitializedAt = Date.now()
+                    bindProfileRealtime(user.id, set)
+                })()
+
+                try {
+                    await authInitializeInFlight
+                } finally {
+                    authInitializeInFlight = null
+                }
             },
 
             login: async (email, password) => {
@@ -115,6 +231,7 @@ export const useAuthStore = create<AuthState>()(
                 const userProfile = mapUserProfile(data.user.id, data.user.email || email, profile || null, data.user.user_metadata)
 
                 set({ user: userProfile, isAuthenticated: true, isLoading: false, error: null })
+                authLastInitializedAt = Date.now()
                 return true
             },
 
@@ -129,7 +246,11 @@ export const useAuthStore = create<AuthState>()(
                     return false
                 }
 
-                const { data, error } = await signUpWithSupabase(email, password, name)
+                const initialAccountStatus = role === 'coach' ? 'pending_review' : 'active'
+                const { data, error } = await signUpWithSupabaseMetadata(email, password, name, {
+                    role,
+                    account_status: initialAccountStatus,
+                })
 
                 if (error) {
                     set({ isLoading: false, error: error.message })
@@ -154,6 +275,7 @@ export const useAuthStore = create<AuthState>()(
                             email,
                             full_name: name,
                             role,
+                            account_status: initialAccountStatus,
                             onboarding_complete: false,
                         },
                         { onConflict: 'id' }
@@ -166,6 +288,7 @@ export const useAuthStore = create<AuthState>()(
                     isLoading: false,
                     error: null
                 })
+                authLastInitializedAt = Date.now()
                 return true
             },
 
@@ -256,6 +379,7 @@ export const useAuthStore = create<AuthState>()(
                     void signOutWithSupabase()
                 }
                 set({ user: null, isAuthenticated: false, error: null })
+                authLastInitializedAt = 0
             },
 
             clearError: () => set({ error: null }),
@@ -266,6 +390,10 @@ export const useAuthStore = create<AuthState>()(
 
                 const next = { ...currentUser, ...partial }
                 set({ user: next })
+
+                if (profileBroadcastChannel) {
+                    profileBroadcastChannel.postMessage(partial)
+                }
 
                 if (!isSupabaseAuthEnabled()) return
 
@@ -358,8 +486,9 @@ function mapUserProfile(
         name: profile?.full_name || (userMetadata?.full_name as string | undefined) || email.split('@')[0],
         avatar: profile?.avatar_url || base.avatar,
         role,
+        accountStatus: (profile?.account_status as UserProfile['accountStatus']) || 'active',
         isCoach: role === 'coach',
-        isPro: true,
+        isPro: Boolean(profile?.is_premium ?? base.isPro),
         onboardingComplete: profile?.onboarding_complete ?? base.onboardingComplete,
         age: profile?.age ?? base.age,
         sex: (profile?.sex as Sex | null) ?? base.sex,

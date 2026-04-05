@@ -20,17 +20,27 @@ export async function GET() {
     })
   }
 
+  const roleClaim = (user.user_metadata?.role as string | undefined) || (user.app_metadata?.role as string | undefined) || null
+  const accountStatusClaim =
+    (user.user_metadata?.account_status as string | undefined) ||
+    (user.app_metadata?.account_status as string | undefined) ||
+    null
+
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role,account_status')
     .eq('id', user.id)
     .maybeSingle()
+
+  const role = profile?.role ? String(profile.role) : roleClaim
+  const accountStatus = profile?.account_status ? String(profile.account_status) : accountStatusClaim
 
   return dataResponse({
     requestId,
     data: {
       id: user.id,
-      role: profile?.role ? String(profile.role) : null,
+      role,
+      accountStatus,
       email: user.email || null,
     },
   })

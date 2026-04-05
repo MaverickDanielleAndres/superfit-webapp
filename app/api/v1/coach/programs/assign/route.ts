@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>
+
 const AssignProgramSchema = z.object({
   programId: z.string().uuid(),
   clientIds: z.array(z.string().uuid()).min(1),
@@ -60,7 +62,9 @@ export async function POST(request: Request) {
     progress_pct: 0,
   }))
 
-  const { error } = await (supabase as any)
+  const db = supabase as SupabaseServerClient
+
+  const { error } = await db
     .from('coach_program_assignments')
     .upsert(rows, { onConflict: 'program_id,client_id' })
 

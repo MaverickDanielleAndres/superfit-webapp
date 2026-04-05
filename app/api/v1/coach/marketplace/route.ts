@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>
+
 const UpdateMarketplaceSchema = z.object({
   displayName: z.string().min(1).max(160),
   headline: z.string().min(1).max(240),
@@ -10,6 +12,21 @@ const UpdateMarketplaceSchema = z.object({
   clientCap: z.number().int().min(1).max(500),
   isActive: z.boolean(),
 })
+
+interface MarketplaceProfileRow {
+  full_name: string | null
+  goal: string | null
+  avatar_url: string | null
+  account_status: string | null
+  exercise_preferences: unknown
+  session_duration: number | null
+}
+
+interface TransactionRow {
+  amount_cents: number | null
+  created_at: string | null
+  status: string | null
+}
 
 export async function GET() {
   const requestId = crypto.randomUUID()
@@ -30,13 +47,15 @@ export async function GET() {
     })
   }
 
+  const db = supabase as SupabaseServerClient
+
   const [{ data: profile, error: profileError }, { data: transactions, error: txError }] = await Promise.all([
-    (supabase as any)
+    db
       .from('profiles')
       .select('full_name,goal,avatar_url,account_status,exercise_preferences,session_duration')
       .eq('id', user.id)
       .single(),
-    (supabase as any)
+    db
       .from('payment_transactions')
       .select('amount_cents,created_at,status')
       .eq('coach_id', user.id),
@@ -62,26 +81,29 @@ export async function GET() {
     })
   }
 
+  const profileRow = (profile || null) as MarketplaceProfileRow | null
+  const transactionRows = Array.isArray(transactions) ? (transactions as TransactionRow[]) : []
+
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const monthlyTransactions = (transactions || []).filter((entry: any) => {
+  const monthlyTransactions = transactionRows.filter((entry) => {
     if (String(entry.status || '') !== 'succeeded') return false
     return new Date(String(entry.created_at || now.toISOString())).getTime() >= monthStart.getTime()
   })
 
-  const monthlyRevenueCents = monthlyTransactions.reduce((sum: number, entry: any) => sum + Number(entry.amount_cents || 0), 0)
+  const monthlyRevenueCents = monthlyTransactions.reduce((sum, entry) => sum + Number(entry.amount_cents || 0), 0)
 
   return dataResponse({
     requestId,
     data: {
-      displayName: String(profile?.full_name || 'Coach Profile'),
-      headline: String(profile?.goal || 'Strength and body composition coaching'),
-      specialties: Array.isArray(profile?.exercise_preferences)
-        ? profile.exercise_preferences.map((entry: unknown) => String(entry))
+      displayName: String(profileRow?.full_name || 'Coach Profile'),
+      headline: String(profileRow?.goal || 'Strength and body composition coaching'),
+      specialties: Array.isArray(profileRow?.exercise_preferences)
+        ? profileRow.exercise_preferences.map((entry: unknown) => String(entry))
         : [],
-      coverUrl: String(profile?.avatar_url || ''),
-      clientCap: Number(profile?.session_duration || 30),
-      isActive: String(profile?.account_status || 'active') === 'active',
+      coverUrl: String(profileRow?.avatar_url || ''),
+      clientCap: Number(profileRow?.session_duration || 30),
+      isActive: String(profileRow?.account_status || 'active') === 'active',
       monthlyRevenueCents,
       transactionCount: monthlyTransactions.length,
     },
@@ -134,7 +156,9 @@ export async function PATCH(request: Request) {
     })
   }
 
-  const { error } = await (supabase as any)
+  const db = supabase as SupabaseServerClient
+
+  const { error } = await db
     .from('profiles')
     .update({
       full_name: parsed.data.displayName.trim(),

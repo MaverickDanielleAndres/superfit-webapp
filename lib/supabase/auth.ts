@@ -24,6 +24,25 @@ export async function signUpWithSupabase(email: string, password: string, fullNa
   })
 }
 
+export async function signUpWithSupabaseMetadata(
+  email: string,
+  password: string,
+  fullName: string,
+  metadata: Record<string, unknown>,
+) {
+  const supabase = createClient()
+  return supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        full_name: fullName,
+        ...metadata,
+      },
+    },
+  })
+}
+
 export async function signOutWithSupabase() {
   const supabase = createClient()
   return supabase.auth.signOut()

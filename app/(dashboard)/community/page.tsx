@@ -21,6 +21,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { CommunityPost } from '@/types'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 import { useRouter } from 'next/navigation'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 export default function CommunityPage() {
     const router = useRouter()
@@ -44,6 +45,7 @@ export default function CommunityPage() {
 
     const [pollVotes, setPollVotes] = useState<Record<string, string>>({})
     const [followingIds, setFollowingIds] = useState<string[]>([])
+    const [isFollowMutatingByUserId, setIsFollowMutatingByUserId] = useState<Record<string, boolean>>({})
     const [hiddenPostIds, setHiddenPostIds] = useState<string[]>([])
     const [mutedUserIds, setMutedUserIds] = useState<string[]>([])
     const [blockedUserIds, setBlockedUserIds] = useState<string[]>([])
@@ -51,6 +53,14 @@ export default function CommunityPage() {
     const [reportedPostIds, setReportedPostIds] = useState<string[]>([])
     const [editedPostContent, setEditedPostContent] = useState<Record<string, string>>({})
     const [editingPostId, setEditingPostId] = useState<string | null>(null)
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [isConfirming, setIsConfirming] = useState(false)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = useState<null | (() => Promise<void>)>(null)
 
     const { posts, addPost, likePost, repostPost, addComment, deletePost, fetchPosts, isLoading, error } = useCommunityStore()
     const { user } = useAuthStore()
@@ -59,13 +69,28 @@ export default function CommunityPage() {
 
     useEffect(() => {
         if (!user?.id) return
-        void fetchPosts()
-    }, [fetchPosts, user?.id])
+        void fetchPosts(feedTab)
+    }, [feedTab, fetchPosts, user?.id])
+
+    useEffect(() => {
+        if (!user?.id) return
+
+        if (!isSupabaseAuthEnabled()) return
+
+        void (async () => {
+            try {
+                const response = await requestApi<{ followingIds: string[] }>('/api/v1/follows')
+                setFollowingIds(Array.isArray(response.data.followingIds) ? response.data.followingIds : [])
+            } catch {
+                setFollowingIds([])
+            }
+        })()
+    }, [user?.id])
 
     const visiblePosts = posts.filter((post) => !hiddenPostIds.includes(post.id) && !mutedUserIds.includes(post.userId) && !blockedUserIds.includes(post.userId))
-    const displayPosts = feedTab === 'foryou'
+    const displayPosts = isSupabaseAuthEnabled()
         ? visiblePosts
-        : visiblePosts.filter((post) => post.userId === user?.id || followingIds.includes(post.userId))
+        : (feedTab === 'foryou' ? visiblePosts : visiblePosts.filter((post) => post.userId === user?.id || followingIds.includes(post.userId)))
 
     const suggestions = useMemo(() => {
         const byUser = new Map<string, { id: string; name: string; handle: string; avatar: string; verified: boolean }>()
@@ -82,13 +107,89 @@ export default function CommunityPage() {
         }
 
         return Array.from(byUser.values()).slice(0, 6)
-    }, [posts, user?.id])
+    }, [posts, user?.id, user?.name, user?.email, user?.avatar])
 
-    useEffect(() => {
-        if (followingIds.length > 0) return
-        if (!suggestions.length) return
-        setFollowingIds(suggestions.slice(0, 3).map((item) => item.id))
-    }, [followingIds.length, suggestions])
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
+    }
+
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
+
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
+    }
+
+    const handleToggleFollow = async (targetUserId: string, targetName: string, skipConfirmation = false) => {
+        if (!user?.id) return
+        if (!targetUserId || targetUserId === user.id) return
+
+        if (followingIds.includes(targetUserId) && !skipConfirmation) {
+            openConfirmation(
+                {
+                    title: `Unfollow ${targetName}?`,
+                    message: `You will stop seeing prioritized posts from ${targetName}.`,
+                    confirmText: 'Unfollow',
+                    tone: 'danger',
+                },
+                async () => {
+                    await handleToggleFollow(targetUserId, targetName, true)
+                },
+            )
+            return
+        }
+
+        if (!isSupabaseAuthEnabled()) {
+            setFollowingIds((current) =>
+                current.includes(targetUserId)
+                    ? current.filter((id) => id !== targetUserId)
+                    : [...current, targetUserId],
+            )
+            return
+        }
+
+        setIsFollowMutatingByUserId((current) => ({ ...current, [targetUserId]: true }))
+
+        try {
+            if (followingIds.includes(targetUserId)) {
+                await requestApi(`/api/v1/follows?followeeId=${encodeURIComponent(targetUserId)}`, { method: 'DELETE' })
+                setFollowingIds((current) => current.filter((id) => id !== targetUserId))
+                toast.success(`Unfollowed ${targetName}`)
+            } else {
+                await requestApi('/api/v1/follows', {
+                    method: 'POST',
+                    body: JSON.stringify({ followeeId: targetUserId }),
+                })
+                setFollowingIds((current) => [...current, targetUserId])
+                toast.success(`Following ${targetName}`)
+            }
+            await fetchPosts(feedTab)
+        } catch {
+            toast.error('Unable to update follow status right now.')
+        }
+
+        setIsFollowMutatingByUserId((current) => ({ ...current, [targetUserId]: false }))
+    }
 
     const leaderboard = useMemo(() => {
         const byUser = new Map<string, { userId: string; name: string; handle: string; avatar: string; score: number; posts: number; likes: number; comments: number; reposts: number }>()
@@ -134,7 +235,7 @@ export default function CommunityPage() {
             { rank: 2, name: 'SuperFit User', handle: '@superfit_member', score: 80, isYou: false, trend: 'same', avatar: '' },
             { rank: 3, name: 'Coach Marcus', handle: '@coach_marcus', score: 65, isYou: false, trend: 'up', avatar: '' },
         ]
-    }, [posts, user?.id])
+    }, [posts, user?.id, user?.name, user?.email, user?.avatar])
 
     const handlePost = async () => {
         if (!newPostContent.trim() || !user) return
@@ -318,6 +419,8 @@ export default function CommunityPage() {
         const isLiked = !!(user && post.isLiked)
         const isReposted = !!post.isReposted
         const isOwn = user && post.userId === user.id
+        const isFollowingAuthor = followingIds.includes(post.userId)
+        const isFollowMutating = Boolean(isFollowMutatingByUserId[post.userId])
         const isBookmarked = bookmarkedPostIds.includes(post.id)
         const postContent = editedPostContent[post.id] || post.content
         const isReported = reportedPostIds.includes(post.id)
@@ -361,6 +464,23 @@ export default function CommunityPage() {
                                 <span className="font-body text-[14px] text-(--text-tertiary)">{formatTimestamp(post.postedAt)}</span>
                             </div>
                             <div className="relative">
+                                {!isOwn && (
+                                    <button
+                                        onClick={() => {
+                                            void handleToggleFollow(post.userId, post.userName)
+                                        }}
+                                        disabled={isFollowMutating}
+                                        className={cn(
+                                            'mr-2 px-3 py-1.5 rounded-full text-[12px] font-bold border transition-colors',
+                                            isFollowingAuthor
+                                                ? 'border-(--border-subtle) text-(--text-secondary) hover:text-red-500 hover:border-red-500'
+                                                : 'bg-(--text-primary) text-(--bg-base) border-transparent hover:opacity-90',
+                                            isFollowMutating ? 'opacity-60 cursor-not-allowed' : '',
+                                        )}
+                                    >
+                                        {isFollowMutating ? '...' : isFollowingAuthor ? 'Following' : 'Follow'}
+                                    </button>
+                                )}
                                 <button onClick={() => setPostMenuOpenId(postMenuOpenId === post.id ? null : post.id)} className="text-(--text-tertiary) hover:text-(--accent) transition-colors p-1 rounded-full hover:bg-[var(--bg-elevated)] shrink-0">
                                     <MoreHorizontal className="w-[16px] h-[16px]" />
                                 </button>
@@ -368,13 +488,81 @@ export default function CommunityPage() {
                                     {postMenuOpenId === post.id && (
                                         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="absolute right-0 top-full mt-1 bg-[var(--bg-elevated)] border border-(--border-subtle) rounded-[12px] shadow-lg w-[160px] py-1 z-50">
                                             {isOwn && <button onClick={() => handleEditStart(post)} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Edit</button>}
-                                            {isOwn && <button onClick={() => {deletePost(post.id); toast.success('Post deleted'); setPostMenuOpenId(null) }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-red-500">Delete</button>}
+                                            {isOwn && <button onClick={() => {
+                                                openConfirmation(
+                                                    {
+                                                        title: 'Delete Post?',
+                                                        message: 'This post will be removed from your community feed.',
+                                                        confirmText: 'Delete Post',
+                                                        tone: 'danger',
+                                                    },
+                                                    async () => {
+                                                        deletePost(post.id)
+                                                        toast.success('Post deleted')
+                                                        setPostMenuOpenId(null)
+                                                    },
+                                                )
+                                            }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-red-500">Delete</button>}
                                             {!isOwn && (
                                                 <>
-                                                    <button onClick={() => { setHiddenPostIds((current) => current.includes(post.id) ? current : [...current, post.id]); setPostMenuOpenId(null); toast.success('Post hidden from your feed.') }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Hide</button>
-                                                    <button onClick={() => { setMutedUserIds((current) => current.includes(post.userId) ? current : [...current, post.userId]); setPostMenuOpenId(null); toast.success(`Muted ${post.userName}.`) }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Mute</button>
-                                                    <button onClick={() => { setBlockedUserIds((current) => current.includes(post.userId) ? current : [...current, post.userId]); setPostMenuOpenId(null); toast.success(`Blocked ${post.userName}.`) }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Block</button>
-                                                    <button onClick={() => { setReportedPostIds((current) => current.includes(post.id) ? current : [...current, post.id]); setPostMenuOpenId(null); toast.success('Post reported.') }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-red-500">{isReported ? 'Reported' : 'Report'}</button>
+                                                    <button onClick={() => {
+                                                        openConfirmation(
+                                                            {
+                                                                title: 'Hide This Post?',
+                                                                message: 'This post will be hidden from your feed.',
+                                                                confirmText: 'Hide Post',
+                                                            },
+                                                            async () => {
+                                                                setHiddenPostIds((current) => current.includes(post.id) ? current : [...current, post.id])
+                                                                setPostMenuOpenId(null)
+                                                                toast.success('Post hidden from your feed.')
+                                                            },
+                                                        )
+                                                    }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Hide</button>
+                                                    <button onClick={() => {
+                                                        openConfirmation(
+                                                            {
+                                                                title: `Mute ${post.userName}?`,
+                                                                message: `Posts from ${post.userName} will no longer appear in your feed.`,
+                                                                confirmText: 'Mute User',
+                                                            },
+                                                            async () => {
+                                                                setMutedUserIds((current) => current.includes(post.userId) ? current : [...current, post.userId])
+                                                                setPostMenuOpenId(null)
+                                                                toast.success(`Muted ${post.userName}.`)
+                                                            },
+                                                        )
+                                                    }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Mute</button>
+                                                    <button onClick={() => {
+                                                        openConfirmation(
+                                                            {
+                                                                title: `Block ${post.userName}?`,
+                                                                message: `You won't see posts from ${post.userName} anymore.`,
+                                                                confirmText: 'Block User',
+                                                                tone: 'danger',
+                                                            },
+                                                            async () => {
+                                                                setBlockedUserIds((current) => current.includes(post.userId) ? current : [...current, post.userId])
+                                                                setPostMenuOpenId(null)
+                                                                toast.success(`Blocked ${post.userName}.`)
+                                                            },
+                                                        )
+                                                    }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-(--text-primary)">Block</button>
+                                                    <button onClick={() => {
+                                                        openConfirmation(
+                                                            {
+                                                                title: isReported ? 'Undo Report?' : 'Report This Post?',
+                                                                message: isReported ? 'This report flag will be removed.' : 'This post will be flagged for moderation review.',
+                                                                confirmText: isReported ? 'Undo Report' : 'Report Post',
+                                                                tone: 'danger',
+                                                            },
+                                                            async () => {
+                                                                setReportedPostIds((current) => current.includes(post.id) ? current.filter((id) => id !== post.id) : [...current, post.id])
+                                                                setPostMenuOpenId(null)
+                                                                toast.success(isReported ? 'Report removed.' : 'Post reported.')
+                                                            },
+                                                        )
+                                                    }} className="w-full text-left px-4 py-2 hover:bg-(--bg-surface) text-[14px] text-red-500">{isReported ? 'Reported' : 'Report'}</button>
                                                 </>
                                             )}
                                         </motion.div>
@@ -750,16 +938,12 @@ export default function CommunityPage() {
                                 </div>
                                 <button 
                                     onClick={() => {
-                                        if (followingIds.includes(u.id)) {
-                                            setFollowingIds(prev => prev.filter(id => id !== u.id))
-                                        } else {
-                                            setFollowingIds(prev => [...prev, u.id])
-                                            toast.success(`Following ${u.name}`)
-                                        }
+                                        void handleToggleFollow(u.id, u.name)
                                     }} 
+                                    disabled={Boolean(isFollowMutatingByUserId[u.id])}
                                     className={cn("px-4 py-1.5 rounded-full font-bold text-[14px] transition-opacity cursor-pointer border", followingIds.includes(u.id) ? "bg-transparent text-(--text-primary) border-(--border-subtle) hover:border-red-500 hover:text-red-500" : "bg-(--text-primary) text-(--bg-base) border-transparent hover:opacity-90")}
                                 >
-                                    {followingIds.includes(u.id) ? 'Following' : 'Follow'}
+                                    {isFollowMutatingByUserId[u.id] ? '...' : followingIds.includes(u.id) ? 'Following' : 'Follow'}
                                 </button>
                                 <button
                                     onClick={() => {
@@ -853,6 +1037,19 @@ export default function CommunityPage() {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
         </React.Fragment>
     )
 }

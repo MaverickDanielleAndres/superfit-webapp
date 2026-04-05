@@ -94,6 +94,8 @@ interface CoachingState {
     savedPosts: string[]
     
     // Actions
+    setCoaches: (coaches: CoachProfile[]) => void
+    setActiveCoach: (coachId: string | null) => void
     subscribeToCoach: (coachId: string) => void
     unsubscribeFromCoach: () => void
     likePost: (postId: string) => void
@@ -199,8 +201,8 @@ const mockFeedPosts: CoachFeedPost[] = [
 export const useCoachingStore = create<CoachingState>()(
     persist(
         (set, get) => ({
-            activeCoachId: 'c1', // Pre-assign for demo
-            coaches: mockCoaches,
+            activeCoachId: null,
+            coaches: [],
             feedPosts: mockFeedPosts,
             formCheckSubmissions: [
                 {
@@ -239,6 +241,9 @@ export const useCoachingStore = create<CoachingState>()(
                 progressPhotos: false
             },
             savedPosts: ['p3'],
+
+            setCoaches: (coaches) => set({ coaches }),
+            setActiveCoach: (coachId) => set({ activeCoachId: coachId }),
 
             subscribeToCoach: (coachId) => set({ activeCoachId: coachId }),
             unsubscribeFromCoach: () => set({ activeCoachId: null }),

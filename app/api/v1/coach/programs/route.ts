@@ -1,11 +1,22 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
+import type { Json } from '@/types/supabase'
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>
+
+const ProgramExerciseSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  sets: z.number().int().min(1).max(99).default(3),
+  reps: z.number().int().min(1).max(99).default(10),
+  imageUrl: z.string().min(1).max(2048).optional().nullable(),
+})
 
 const ProgramDaySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  exercises: z.array(z.string()),
+  exercises: z.array(z.union([z.string(), ProgramExerciseSchema])),
 })
 
 const CreateProgramSchema = z.object({
@@ -15,6 +26,19 @@ const CreateProgramSchema = z.object({
   cover: z.string().url().optional(),
   builderDays: z.array(ProgramDaySchema).optional(),
 })
+
+interface ProgramRow {
+  id: string | null
+  name: string | null
+  difficulty: string | null
+  length_label: string | null
+  cover_url: string | null
+  builder_days: Json | null
+}
+
+interface ProgramAssignmentCountRow {
+  program_id: string | null
+}
 
 export async function GET() {
   const requestId = crypto.randomUUID()
@@ -34,7 +58,9 @@ export async function GET() {
     })
   }
 
-  const { data: programsData, error: programsError } = await (supabase as any)
+  const db = supabase as SupabaseServerClient
+
+  const { data: rawProgramsData, error: programsError } = await db
     .from('coach_programs')
     .select('id,name,difficulty,length_label,cover_url,builder_days')
     .eq('coach_id', user.id)
@@ -51,11 +77,12 @@ export async function GET() {
     })
   }
 
-  const programIds = (programsData || []).map((row: any) => row.id)
-  let assignments: any[] = []
+  const programsData = Array.isArray(rawProgramsData) ? (rawProgramsData as ProgramRow[]) : []
+  const programIds = programsData.map((row) => row.id).filter((id): id is string => Boolean(id))
+  let assignments: ProgramAssignmentCountRow[] = []
 
   if (programIds.length) {
-    const { data: assignmentData, error: assignmentError } = await (supabase as any)
+    const { data: assignmentData, error: assignmentError } = await db
       .from('coach_program_assignments')
       .select('program_id')
       .eq('coach_id', user.id)
@@ -71,7 +98,7 @@ export async function GET() {
       })
     }
 
-    assignments = assignmentData || []
+    assignments = Array.isArray(assignmentData) ? (assignmentData as ProgramAssignmentCountRow[]) : []
   }
 
   const enrollmentMap = new Map<string, number>()
@@ -80,14 +107,14 @@ export async function GET() {
     enrollmentMap.set(programId, (enrollmentMap.get(programId) || 0) + 1)
   }
 
-  const programs = (programsData || []).map((row: any) => ({
+  const programs = programsData.map((row) => ({
     id: String(row.id),
     name: String(row.name || 'Untitled Program'),
     enrolled: enrollmentMap.get(String(row.id)) || 0,
     difficulty: String(row.difficulty || 'Beginner'),
     length: String(row.length_label || '4 Weeks'),
     cover: String(row.cover_url || '/program-covers/default.jpg'),
-    builderDays: Array.isArray(row.builder_days) ? row.builder_days : [],
+    builderDays: normalizeProgramDays(row.builder_days),
   }))
 
   return dataResponse({
@@ -143,7 +170,9 @@ export async function POST(request: Request) {
     })
   }
 
-  const { data, error } = await (supabase as any)
+  const db = supabase as SupabaseServerClient
+
+  const { data, error } = await db
     .from('coach_programs')
     .insert({
       coach_id: user.id,
@@ -151,7 +180,7 @@ export async function POST(request: Request) {
       difficulty: parsed.data.difficulty,
       length_label: parsed.data.length,
       cover_url: parsed.data.cover || '/program-covers/default.jpg',
-      builder_days: parsed.data.builderDays || [],
+      builder_days: normalizeProgramDays(parsed.data.builderDays || []),
     })
     .select('id,name,difficulty,length_label,cover_url,builder_days')
     .single()
@@ -177,8 +206,85 @@ export async function POST(request: Request) {
         difficulty: String(data.difficulty || 'Beginner'),
         length: String(data.length_label || '4 Weeks'),
         cover: String(data.cover_url || '/program-covers/default.jpg'),
-        builderDays: Array.isArray(data.builder_days) ? data.builder_days : [],
+        builderDays: normalizeProgramDays(data.builder_days),
       },
     },
   })
+}
+
+function normalizeProgramDays(value: unknown): Array<{
+  id: string
+  name: string
+  exercises: Array<{
+    id: string
+    name: string
+    sets: number
+    reps: number
+    imageUrl: string | null
+  }>
+}> {
+  if (!Array.isArray(value)) return []
+
+  return value.map((entry, dayIndex) => {
+    const day = toObject(entry)
+    const rawExercises = Array.isArray(day.exercises) ? day.exercises : []
+
+    return {
+      id: String(day.id || `d_${dayIndex + 1}`),
+      name: String(day.name || `Day ${dayIndex + 1}`),
+      exercises: rawExercises
+        .map((exercise, exerciseIndex) => normalizeProgramExercise(exercise, dayIndex, exerciseIndex))
+        .filter((exercise) => exercise.name.length > 0),
+    }
+  })
+}
+
+function normalizeProgramExercise(
+  value: unknown,
+  dayIndex: number,
+  exerciseIndex: number,
+): {
+  id: string
+  name: string
+  sets: number
+  reps: number
+  imageUrl: string | null
+} {
+  if (typeof value === 'string') {
+    return {
+      id: `ex_${dayIndex + 1}_${exerciseIndex + 1}`,
+      name: value.trim(),
+      sets: 3,
+      reps: 10,
+      imageUrl: null,
+    }
+  }
+
+  const objectValue = toObject(value)
+  return {
+    id: String(objectValue.id || `ex_${dayIndex + 1}_${exerciseIndex + 1}`),
+    name: String(objectValue.name || '').trim(),
+    sets: normalizeSetsOrReps(objectValue.sets, 3),
+    reps: normalizeSetsOrReps(objectValue.reps, 10),
+    imageUrl: normalizeOptionalUrl(objectValue.imageUrl),
+  }
+}
+
+function normalizeSetsOrReps(value: unknown, fallback: number): number {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.max(1, Math.min(99, Math.round(numeric)))
+}
+
+function normalizeOptionalUrl(value: unknown): string | null {
+  const text = String(value || '').trim()
+  return text.length ? text : null
+}
+
+function toObject(value: unknown): Record<string, unknown> {
+  if (typeof value === 'object' && value !== null) {
+    return value as Record<string, unknown>
+  }
+
+  return {}
 }

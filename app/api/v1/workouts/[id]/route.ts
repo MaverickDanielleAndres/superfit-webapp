@@ -131,12 +131,100 @@ export async function PATCH(request: Request, context: RouteContext) {
     })
   }
 
+  if (parsed.data.exercises !== undefined || parsed.data.startTime !== undefined || parsed.data.endTime !== undefined) {
+    await syncExerciseLogsForSession({
+      supabase,
+      userId: user.id,
+      sessionId: id,
+      exercises: parsed.data.exercises !== undefined ? parsed.data.exercises : ((data.exercises as unknown[]) || []),
+      loggedAt: parsed.data.endTime || parsed.data.startTime || data.end_time || data.start_time || new Date().toISOString(),
+    })
+  }
+
   return dataResponse({
     requestId,
     data: {
       workout: data,
     },
   })
+}
+
+async function syncExerciseLogsForSession(params: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>
+  userId: string
+  sessionId: string
+  exercises: unknown[]
+  loggedAt: string
+}) {
+  const { supabase, userId, sessionId, exercises, loggedAt } = params
+
+  const { error: deleteError } = await (supabase as any)
+    .from('exercise_logs')
+    .delete()
+    .eq('user_id', userId)
+    .eq('workout_session_id', sessionId)
+
+  if (deleteError && !String(deleteError.message || '').toLowerCase().includes('exercise_logs')) {
+    return
+  }
+
+  const rows: Array<{
+    user_id: string
+    workout_session_id: string
+    exercise_id: string | null
+    exercise_name: string
+    set_number: number
+    weight: number | null
+    reps: number | null
+    rpe: number | null
+    completed: boolean
+    logged_at: string
+  }> = []
+
+  for (const exercise of exercises || []) {
+    const exerciseObj = exercise && typeof exercise === 'object' ? (exercise as Record<string, unknown>) : null
+    if (!exerciseObj) continue
+
+    const exerciseId = typeof exerciseObj.exerciseId === 'string' ? exerciseObj.exerciseId : null
+    const nestedExercise = exerciseObj.exercise && typeof exerciseObj.exercise === 'object'
+      ? (exerciseObj.exercise as Record<string, unknown>)
+      : null
+    const exerciseName = (typeof nestedExercise?.name === 'string' && nestedExercise.name.trim().length > 0
+      ? nestedExercise.name
+      : exerciseId || 'Exercise').trim()
+
+    const sets = Array.isArray(exerciseObj.sets) ? (exerciseObj.sets as Array<Record<string, unknown>>) : []
+    for (let index = 0; index < sets.length; index += 1) {
+      const set = sets[index]
+      const setNumber = Number(set.setNumber || index + 1)
+      const weightValue = Number(set.weight)
+      const repsValue = Number(set.reps)
+      const rpeValue = Number(set.rpe)
+
+      rows.push({
+        user_id: userId,
+        workout_session_id: sessionId,
+        exercise_id: exerciseId,
+        exercise_name: exerciseName,
+        set_number: Number.isFinite(setNumber) && setNumber > 0 ? setNumber : index + 1,
+        weight: Number.isFinite(weightValue) ? weightValue : null,
+        reps: Number.isFinite(repsValue) ? repsValue : null,
+        rpe: Number.isFinite(rpeValue) ? rpeValue : null,
+        completed: Boolean(set.completed),
+        logged_at: loggedAt,
+      })
+    }
+  }
+
+  if (!rows.length) return
+
+  const { error: insertError } = await (supabase as any)
+    .from('exercise_logs')
+    .insert(rows)
+
+  if (insertError && !String(insertError.message || '').toLowerCase().includes('exercise_logs')) {
+    return
+  }
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {

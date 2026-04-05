@@ -4,6 +4,13 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { canUsersDirectMessage } from '@/lib/social'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>
+
+interface ProfileRoleRow {
+  id: string | null
+  role: string | null
+}
+
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -17,7 +24,7 @@ const ThreadCreateSchema = z.object({
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
-  const db = supabaseAdmin
+  const db = supabaseAdmin as unknown as SupabaseServerClient
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -93,20 +100,35 @@ export async function POST(request: Request) {
       })
     }
 
-    const isAllowed = await canUsersDirectMessage(db as any, user.id, otherParticipantIds[0])
+    const targetParticipantId = otherParticipantIds[0]
+    const rolesByUserId = await getProfileRolesByUserId(db, [user.id, targetParticipantId])
+
+    if (!rolesByUserId.has(targetParticipantId)) {
+      return problemResponse({
+        status: 404,
+        code: 'PARTICIPANT_NOT_FOUND',
+        title: 'Participant Not Found',
+        detail: 'The selected participant does not exist.',
+        requestId,
+        retriable: false,
+      })
+    }
+
+    const isAllowed = await canUsersDirectMessage(db, user.id, targetParticipantId)
+
     if (!isAllowed) {
       return problemResponse({
         status: 403,
         code: 'FORBIDDEN',
         title: 'Forbidden',
-        detail: 'Direct messaging requires an accepted friendship unless a coach-client relationship exists.',
+        detail: 'Direct messaging requires an accepted friendship, follow relationship, or active coaching link.',
         requestId,
         retriable: false,
       })
     }
   }
 
-  const { data: createdThread, error: threadError } = await (db as any)
+  const { data: createdThread, error: threadError } = await db
     .from('message_threads')
     .insert({
       created_by: user.id,
@@ -132,7 +154,7 @@ export async function POST(request: Request) {
     user_id: participantId,
   }))
 
-  const { error: participantsError } = await (db as any)
+  const { error: participantsError } = await db
     .from('message_thread_participants')
     .insert(participants)
 
@@ -153,4 +175,26 @@ export async function POST(request: Request) {
       threadId: createdThread.id as string,
     },
   })
+}
+
+async function getProfileRolesByUserId(supabase: SupabaseServerClient, userIds: string[]): Promise<Map<string, string>> {
+  const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)))
+  if (!uniqueUserIds.length) return new Map<string, string>()
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id,role')
+    .in('id', uniqueUserIds)
+
+  if (error) return new Map<string, string>()
+
+  const rows = Array.isArray(data) ? (data as ProfileRoleRow[]) : []
+  const roleMap = new Map<string, string>()
+  for (const row of rows) {
+    const id = String(row.id || '')
+    if (!id) continue
+    roleMap.set(id, String(row.role || '').trim().toLowerCase())
+  }
+
+  return roleMap
 }

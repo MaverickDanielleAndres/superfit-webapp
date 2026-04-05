@@ -11,6 +11,9 @@ import { Eye, EyeOff, Activity, ArrowRight, Loader2, CheckCircle, AlertCircle } 
 import { useAuthStore } from '@/store/useAuthStore'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
 type AuthMode = 'signin' | 'signup'
 
@@ -24,7 +27,9 @@ export default function AuthPage() {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
+    const [signupRole, setSignupRole] = useState<'user' | 'coach'>('user')
     const [showPassword, setShowPassword] = useState(false)
+    const [isSendingReset, setIsSendingReset] = useState(false)
     const [localError, setLocalError] = useState('')
     const [success, setSuccess] = useState(false)
     const accountInactive = searchParams.get('reason') === 'account-inactive'
@@ -44,7 +49,11 @@ export default function AuthPage() {
 
         // If already authenticated, redirect
         if (isAuthenticated && user) {
-            if (!user.onboardingComplete) {
+            if (user.accountStatus === 'suspended' || user.accountStatus === 'inactive') {
+                router.push('/suspended')
+            } else if (user.role === 'coach' && user.accountStatus === 'pending_review') {
+                router.push('/under-review')
+            } else if (!user.onboardingComplete) {
                 router.push('/onboarding')
             } else {
                 router.push('/dashboard')
@@ -61,24 +70,77 @@ export default function AuthPage() {
             if (!name.trim()) { setLocalError('Please enter your full name.'); return }
             if (password !== confirmPassword) { setLocalError('Passwords do not match.'); return }
             if (password.length < 6) { setLocalError('Password must be at least 6 characters.'); return }
-            const ok = await signup(name, email, password)
+            const ok = await signup(name, email, password, signupRole)
             if (ok) {
                 setSuccess(true)
-                setTimeout(() => router.push('/onboarding'), 800)
+                if (signupRole === 'coach') {
+                    toast.success('Coach account created. Pending admin review.')
+                } else {
+                    toast.success('Account created successfully.')
+                }
+                setTimeout(() => {
+                    if (signupRole === 'coach') {
+                        router.push('/under-review')
+                        return
+                    }
+
+                    router.push('/onboarding')
+                }, 800)
+            } else {
+                toast.error(useAuthStore.getState().error || 'Unable to create account.')
             }
         } else {
             const ok = await login(email, password)
             if (ok) {
                 setSuccess(true)
+                toast.success('Signed in successfully.')
                 const userFromStore = useAuthStore.getState().user
                 setTimeout(() => {
-                    if (userFromStore && !userFromStore.onboardingComplete) {
+                    if (userFromStore?.accountStatus === 'suspended' || userFromStore?.accountStatus === 'inactive') {
+                        router.push('/suspended')
+                    } else if (userFromStore?.role === 'coach' && userFromStore?.accountStatus === 'pending_review') {
+                        router.push('/under-review')
+                    } else if (userFromStore && !userFromStore.onboardingComplete) {
                         router.push('/onboarding')
                     } else {
                         router.push('/dashboard')
                     }
                 }, 800)
+            } else {
+                toast.error(useAuthStore.getState().error || 'Unable to sign in.')
             }
+        }
+    }
+
+    const handleForgotPassword = async () => {
+        const normalizedEmail = email.trim().toLowerCase()
+        if (!normalizedEmail.length) {
+            toast.error('Enter your email first, then tap Forgot.')
+            return
+        }
+
+        if (!isSupabaseAuthEnabled()) {
+            toast.error('Password reset is unavailable because auth is not configured.')
+            return
+        }
+
+        setIsSendingReset(true)
+
+        try {
+            const supabase = createClient()
+            const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+                redirectTo: `${window.location.origin}/auth`,
+            })
+
+            if (resetError) {
+                throw resetError
+            }
+
+            toast.success('Password reset email sent. Check your inbox.')
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Unable to send password reset email.')
+        } finally {
+            setIsSendingReset(false)
         }
     }
 
@@ -90,6 +152,7 @@ export default function AuthPage() {
         setEmail('')
         setPassword('')
         setConfirmPassword('')
+        setSignupRole('user')
     }
 
     const displayError = localError || error || ''
@@ -171,6 +234,39 @@ export default function AuthPage() {
                                             className="h-[52px] rounded-[14px] bg-(--bg-elevated,_#f9fafb) dark:bg-[#1c1c1c] border border-gray-200 dark:border-(--border-default) px-4 font-body text-[15px] text-(--text-primary) focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
                                         />
                                     </div>
+
+                                    <div className="mt-4 flex flex-col gap-1.5">
+                                        <label className="font-body text-[13px] font-semibold text-(--text-secondary) uppercase tracking-wider">Account Type</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setSignupRole('user')}
+                                                className={cn(
+                                                    'h-[44px] rounded-[12px] border font-body text-[13px] font-bold transition-all',
+                                                    signupRole === 'user'
+                                                        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-600'
+                                                        : 'border-gray-200 dark:border-(--border-default) text-(--text-secondary) hover:text-(--text-primary)'
+                                                )}
+                                            >
+                                                Client
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSignupRole('coach')}
+                                                className={cn(
+                                                    'h-[44px] rounded-[12px] border font-body text-[13px] font-bold transition-all',
+                                                    signupRole === 'coach'
+                                                        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-600'
+                                                        : 'border-gray-200 dark:border-(--border-default) text-(--text-secondary) hover:text-(--text-primary)'
+                                                )}
+                                            >
+                                                Coach
+                                            </button>
+                                        </div>
+                                        {signupRole === 'coach' && (
+                                            <p className="text-[12px] text-(--text-secondary)">Coach accounts require admin approval before access is enabled.</p>
+                                        )}
+                                    </div>
                                 </motion.div>
                             )}
                         </AnimatePresence>
@@ -191,7 +287,14 @@ export default function AuthPage() {
                             <div className="flex items-center justify-between">
                                 <label className="font-body text-[13px] font-semibold text-(--text-secondary) uppercase tracking-wider">Password</label>
                                 {mode === 'signin' && (
-                                    <button type="button" className="font-body text-[13px] text-emerald-600 hover:text-emerald-700 font-medium">Forgot?</button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { void handleForgotPassword() }}
+                                        disabled={isSendingReset}
+                                        className="font-body text-[13px] text-emerald-600 hover:text-emerald-700 font-medium disabled:opacity-60"
+                                    >
+                                        {isSendingReset ? 'Sending...' : 'Forgot?'}
+                                    </button>
                                 )}
                             </div>
                             <div className="relative">

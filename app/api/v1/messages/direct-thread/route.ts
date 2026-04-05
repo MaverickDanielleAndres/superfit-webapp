@@ -4,6 +4,23 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { canUsersDirectMessage } from '@/lib/social'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>
+
+interface ProfileRoleRow {
+  id: string | null
+  role: string | null
+}
+
+interface ThreadMembershipRow {
+  thread_id: string | null
+  user_id?: string | null
+}
+
+interface ThreadSummaryRow {
+  id: string | null
+  is_group: boolean | null
+}
+
 const DirectThreadSchema = z.object({
   participantId: z.string().uuid(),
 })
@@ -11,7 +28,7 @@ const DirectThreadSchema = z.object({
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
-  const db = supabaseAdmin
+  const db = supabaseAdmin as unknown as SupabaseServerClient
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -54,7 +71,48 @@ export async function POST(request: Request) {
     })
   }
 
-  const existingThreadId = await findDirectThreadId(db as any, user.id, parsed.data.participantId)
+  if (parsed.data.participantId === user.id) {
+    return problemResponse({
+      status: 422,
+      code: 'VALIDATION_ERROR',
+      title: 'Validation Error',
+      detail: 'You cannot create a direct thread with yourself.',
+      requestId,
+      retriable: false,
+    })
+  }
+
+  const rolesByUserId = await getProfileRolesByUserId(db, [user.id, parsed.data.participantId])
+  if (!rolesByUserId.has(parsed.data.participantId)) {
+    return problemResponse({
+      status: 404,
+      code: 'PARTICIPANT_NOT_FOUND',
+      title: 'Participant Not Found',
+      detail: 'The selected participant does not exist.',
+      requestId,
+      retriable: false,
+    })
+  }
+
+  const requesterIsCoach = rolesByUserId.get(user.id) === 'coach'
+  const participantIsCoach = rolesByUserId.get(parsed.data.participantId) === 'coach'
+  const isAllowed = await canUsersDirectMessage(db, user.id, parsed.data.participantId)
+
+  if (!isAllowed) {
+    return problemResponse({
+      status: 403,
+      code: 'FORBIDDEN',
+      title: 'Forbidden',
+      detail:
+        requesterIsCoach || participantIsCoach
+          ? 'Direct messaging requires an active coach-client link, accepted friendship, or follow relationship.'
+          : 'Direct messaging requires an accepted friendship, follow relationship, or active coaching link.',
+      requestId,
+      retriable: false,
+    })
+  }
+
+  const existingThreadId = await findDirectThreadId(db, user.id, parsed.data.participantId)
   if (existingThreadId) {
     return dataResponse({
       requestId,
@@ -64,19 +122,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const isAllowed = await canUsersDirectMessage(db as any, user.id, parsed.data.participantId)
-  if (!isAllowed) {
-    return problemResponse({
-      status: 403,
-      code: 'FORBIDDEN',
-      title: 'Forbidden',
-      detail: 'Direct messaging requires an accepted friendship unless a coach-client relationship exists.',
-      requestId,
-      retriable: false,
-    })
-  }
-
-  const { data: threadData, error: threadError } = await (db as any)
+  const { data: threadData, error: threadError } = await db
     .from('message_threads')
     .insert({
       created_by: user.id,
@@ -95,7 +141,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const { error: participantsError } = await (db as any)
+  const { error: participantsError } = await db
     .from('message_thread_participants')
     .insert([
       { thread_id: threadData.id, user_id: user.id },
@@ -121,7 +167,33 @@ export async function POST(request: Request) {
   })
 }
 
-async function findDirectThreadId(supabase: any, currentUserId: string, participantId: string): Promise<string | null> {
+async function getProfileRolesByUserId(supabase: SupabaseServerClient, userIds: string[]): Promise<Map<string, string>> {
+  const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)))
+  if (!uniqueUserIds.length) return new Map<string, string>()
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id,role')
+    .in('id', uniqueUserIds)
+
+  if (error) return new Map<string, string>()
+
+  const rows = Array.isArray(data) ? (data as ProfileRoleRow[]) : []
+  const roleMap = new Map<string, string>()
+  for (const row of rows) {
+    const id = String(row.id || '')
+    if (!id) continue
+    roleMap.set(id, String(row.role || '').trim().toLowerCase())
+  }
+
+  return roleMap
+}
+
+async function findDirectThreadId(
+  supabase: SupabaseServerClient,
+  currentUserId: string,
+  participantId: string,
+): Promise<string | null> {
   const { data: memberships, error: membershipError } = await supabase
     .from('message_thread_participants')
     .select('thread_id')
@@ -129,8 +201,9 @@ async function findDirectThreadId(supabase: any, currentUserId: string, particip
 
   if (membershipError) return null
 
-  const candidateThreadIds = (memberships || [])
-    .map((row: any) => String(row.thread_id || ''))
+  const membershipRows = Array.isArray(memberships) ? (memberships as ThreadMembershipRow[]) : []
+  const candidateThreadIds = membershipRows
+    .map((row) => String(row.thread_id || ''))
     .filter(Boolean)
 
   if (!candidateThreadIds.length) return null
@@ -142,9 +215,10 @@ async function findDirectThreadId(supabase: any, currentUserId: string, particip
 
   if (threadError) return null
 
-  const directThreadIds = (threadRows || [])
-    .filter((row: any) => row?.is_group === false)
-    .map((row: any) => String(row.id || ''))
+  const allThreadRows = Array.isArray(threadRows) ? (threadRows as ThreadSummaryRow[]) : []
+  const directThreadIds = allThreadRows
+    .filter((row) => row?.is_group === false)
+    .map((row) => String(row.id || ''))
     .filter(Boolean)
 
   if (!directThreadIds.length) return null
@@ -157,7 +231,8 @@ async function findDirectThreadId(supabase: any, currentUserId: string, particip
   if (participantsError) return null
 
   const participantsByThread = new Map<string, string[]>()
-  for (const row of participants || []) {
+  const participantRows = Array.isArray(participants) ? (participants as ThreadMembershipRow[]) : []
+  for (const row of participantRows) {
     const threadId = String(row.thread_id || '')
     const userId = String(row.user_id || '')
     const existing = participantsByThread.get(threadId) || []

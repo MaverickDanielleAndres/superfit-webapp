@@ -6,25 +6,85 @@ import { User, Bell, Shield, CreditCard, Save } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { requestApi } from '@/lib/api/client'
-import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { useAuthStore } from '@/store/useAuthStore'
+
+function toVisibilityApi(value: 'Public' | 'Friends Only' | 'Private'): 'public' | 'friends_only' | 'private' {
+    if (value === 'Friends Only') return 'friends_only'
+    if (value === 'Private') return 'private'
+    return 'public'
+}
+
+function toVisibilityLabel(value: string): 'Public' | 'Friends Only' | 'Private' {
+    if (value === 'friends_only') return 'Friends Only'
+    if (value === 'private') return 'Private'
+    return 'Public'
+}
 
 export default function SettingsPage() {
+    const { updateProfile } = useAuthStore()
     const [activeTab, setActiveTab] = useState('Account')
     const [firstName, setFirstName] = useState('')
     const [lastName, setLastName] = useState('')
     const [email, setEmail] = useState('')
     const [avatarUrl, setAvatarUrl] = useState('')
+    const [measurementSystem, setMeasurementSystem] = useState<'metric' | 'imperial'>('metric')
+    const [timezone, setTimezone] = useState('UTC')
+    const [profileVisibility, setProfileVisibility] = useState<'Public' | 'Friends Only' | 'Private'>('Public')
+    const [shareWorkouts, setShareWorkouts] = useState(true)
+    const [shareWeightData, setShareWeightData] = useState(false)
+    const [weekStart, setWeekStart] = useState<'Monday' | 'Sunday'>('Monday')
+    const [integrations, setIntegrations] = useState<Record<string, unknown>>({})
+    const [emailReminders, setEmailReminders] = useState(true)
+    const [newSubmissionAlerts, setNewSubmissionAlerts] = useState(true)
+    const [messageNotifications, setMessageNotifications] = useState(true)
+    const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
+    const [currentPassword, setCurrentPassword] = useState('')
+    const [newPassword, setNewPassword] = useState('')
     const [isSaving, setIsSaving] = useState(false)
+    const [isAvatarUploading, setIsAvatarUploading] = useState(false)
+    const avatarInputRef = React.useRef<HTMLInputElement>(null)
+
+    const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0]
+        if (!file) return
+
+        setIsAvatarUploading(true)
+        try {
+            const formData = new FormData()
+            formData.append('file', file)
+
+            const response = await requestApi<{ avatarUrl: string }>('/api/v1/settings/avatar', {
+                method: 'POST',
+                body: formData,
+            })
+
+            const nextAvatar = String(response.data.avatarUrl || '')
+            setAvatarUrl(nextAvatar)
+            updateProfile({ avatar: nextAvatar })
+            toast.success('Avatar updated.')
+        } catch (error) {
+            toast.error(getErrorMessage(error))
+        } finally {
+            setIsAvatarUploading(false)
+            event.target.value = ''
+        }
+    }
 
     useEffect(() => {
         void (async () => {
-            if (!isSupabaseAuthEnabled()) return
-
             try {
                 const response = await requestApi<{
                     fullName: string
                     email: string
                     avatarUrl: string
+                    measurementSystem: 'metric' | 'imperial'
+                    timezone: string
+                    profileVisibility: 'public' | 'friends_only' | 'private'
+                    shareWorkouts: boolean
+                    shareWeightData: boolean
+                    weekStart: 'monday' | 'sunday'
+                    integrations: Record<string, unknown>
+                    twoFactorEnabled: boolean
                 }>('/api/v1/coach/settings')
 
                 const fullName = String(response.data.fullName || '')
@@ -33,11 +93,74 @@ export default function SettingsPage() {
                 setLastName(rest.join(' '))
                 setEmail(String(response.data.email || ''))
                 setAvatarUrl(String(response.data.avatarUrl || ''))
+                setMeasurementSystem(response.data.measurementSystem || 'metric')
+                setTimezone(String(response.data.timezone || 'UTC'))
+                setProfileVisibility(toVisibilityLabel(response.data.profileVisibility))
+                setShareWorkouts(response.data.shareWorkouts)
+                setShareWeightData(response.data.shareWeightData)
+                setWeekStart(response.data.weekStart === 'sunday' ? 'Sunday' : 'Monday')
+                const nextIntegrations = response.data.integrations && typeof response.data.integrations === 'object' ? response.data.integrations : {}
+                setIntegrations(nextIntegrations)
+                setEmailReminders(nextIntegrations.notification_email_reminders !== false)
+                setNewSubmissionAlerts(nextIntegrations.notification_new_submissions !== false)
+                setMessageNotifications(nextIntegrations.notification_messages !== false)
+                setTwoFactorEnabled(Boolean(response.data.twoFactorEnabled))
             } catch (error) {
                 toast.error(getErrorMessage(error))
             }
         })()
     }, [])
+
+    const saveSettings = async (successMessage: string) => {
+        setIsSaving(true)
+        const id = toast.loading('Saving preferences...')
+        const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
+        const nextIntegrations = {
+            ...integrations,
+            notification_email_reminders: emailReminders,
+            notification_new_submissions: newSubmissionAlerts,
+            notification_messages: messageNotifications,
+        }
+
+        try {
+            await requestApi<{ saved: boolean }>('/api/v1/coach/settings', {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    fullName,
+                    email,
+                    avatarUrl: avatarUrl.trim() || null,
+                    measurementSystem,
+                    timezone,
+                    profileVisibility: toVisibilityApi(profileVisibility),
+                    shareWorkouts,
+                    shareWeightData,
+                    weekStart: weekStart === 'Sunday' ? 'sunday' : 'monday',
+                    integrations: nextIntegrations,
+                    twoFactorEnabled,
+                    currentPassword,
+                    newPassword,
+                }),
+            })
+
+            updateProfile({
+                name: fullName,
+                email,
+                avatar: avatarUrl.trim() || null,
+                measurementSystem,
+                timezone,
+            })
+
+            setIntegrations(nextIntegrations)
+            setCurrentPassword('')
+            setNewPassword('')
+
+            toast.success(successMessage, { id })
+        } catch (error) {
+            toast.error(getErrorMessage(error), { id })
+        }
+
+        setIsSaving(false)
+    }
 
     return (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-4xl mx-auto h-full">
@@ -70,6 +193,13 @@ export default function SettingsPage() {
                     {activeTab === 'Account' && (
                         <div className="flex flex-col gap-8">
                             <div className="flex items-center gap-6 pb-6 border-b border-(--border-subtle)">
+                                <input
+                                    ref={avatarInputRef}
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/jpg,image/webp"
+                                    className="hidden"
+                                    onChange={handleAvatarUpload}
+                                />
                                 <div className="relative">
                                     <div className="w-[80px] h-[80px] rounded-full bg-[var(--bg-elevated)] border-2 border-(--border-subtle) flex items-center justify-center overflow-hidden">
                                         {avatarUrl ? (
@@ -82,12 +212,8 @@ export default function SettingsPage() {
                                         )}
                                     </div>
                                     <button
-                                        onClick={() => {
-                                            const nextUrl = window.prompt('Paste image URL', avatarUrl)
-                                            if (nextUrl !== null) {
-                                                setAvatarUrl(nextUrl.trim())
-                                            }
-                                        }}
+                                        onClick={() => avatarInputRef.current?.click()}
+                                        disabled={isAvatarUploading}
                                         className="absolute bottom-0 right-0 w-[28px] h-[28px] rounded-full bg-emerald-500 text-white border-2 border-(--bg-surface) flex items-center justify-center hover:bg-emerald-600 transition-colors"
                                     >
                                         +
@@ -95,7 +221,7 @@ export default function SettingsPage() {
                                 </div>
                                 <div className="flex flex-col gap-1">
                                     <h3 className="font-display font-black text-[18px] text-(--text-primary)">Profile Picture</h3>
-                                    <p className="font-body text-[13px] text-(--text-secondary)">JPG, GIF or PNG. 1MB max.</p>
+                                    <p className="font-body text-[13px] text-(--text-secondary)">{isAvatarUploading ? 'Uploading...' : 'JPG, PNG or WEBP. 3MB max.'}</p>
                                 </div>
                             </div>
 
@@ -114,45 +240,55 @@ export default function SettingsPage() {
                                 </div>
                                 <div className="flex flex-col gap-2 md:col-span-2">
                                     <label className="font-body text-[13px] font-bold text-(--text-secondary)">Timezone</label>
-                                    <select className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)">
-                                        <option>GMT (London)</option>
-                                        <option>EST (New York)</option>
-                                        <option>PST (Los Angeles)</option>
+                                    <select value={timezone} onChange={(event) => setTimezone(event.target.value)} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)">
+                                        <option value="UTC">UTC</option>
+                                        <option value="Europe/London">Europe/London</option>
+                                        <option value="America/New_York">America/New_York</option>
+                                        <option value="America/Los_Angeles">America/Los_Angeles</option>
+                                        <option value="Asia/Manila">Asia/Manila</option>
+                                    </select>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">Measurement System</label>
+                                    <select value={measurementSystem} onChange={(event) => setMeasurementSystem(event.target.value as 'metric' | 'imperial')} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)">
+                                        <option value="metric">Metric</option>
+                                        <option value="imperial">Imperial</option>
+                                    </select>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">Week Starts On</label>
+                                    <select value={weekStart} onChange={(event) => setWeekStart(event.target.value as 'Monday' | 'Sunday')} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)">
+                                        <option value="Monday">Monday</option>
+                                        <option value="Sunday">Sunday</option>
+                                    </select>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">Profile Visibility</label>
+                                    <select value={profileVisibility} onChange={(event) => setProfileVisibility(event.target.value as 'Public' | 'Friends Only' | 'Private')} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)">
+                                        <option value="Public">Public</option>
+                                        <option value="Friends Only">Friends Only</option>
+                                        <option value="Private">Private</option>
+                                    </select>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">Share Workouts</label>
+                                    <select value={shareWorkouts ? 'yes' : 'no'} onChange={(event) => setShareWorkouts(event.target.value === 'yes')} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)">
+                                        <option value="yes">Yes</option>
+                                        <option value="no">No</option>
+                                    </select>
+                                </div>
+                                <div className="flex flex-col gap-2 md:col-span-2">
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">Share Weight Data</label>
+                                    <select value={shareWeightData ? 'yes' : 'no'} onChange={(event) => setShareWeightData(event.target.value === 'yes')} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)">
+                                        <option value="yes">Yes</option>
+                                        <option value="no">No</option>
                                     </select>
                                 </div>
                             </div>
                             
                             <div className="flex justify-end pt-4 border-t border-(--border-subtle)">
                                 <button 
-                                    onClick={() => {
-                                        void (async () => {
-                                            if (!isSupabaseAuthEnabled()) {
-                                                toast.success('Simulation mode: settings saved locally.')
-                                                return
-                                            }
-
-                                            setIsSaving(true)
-                                            const id = toast.loading('Saving preferences...')
-                                            const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
-
-                                            try {
-                                                await requestApi<{ saved: boolean }>('/api/v1/coach/settings', {
-                                                    method: 'PATCH',
-                                                    body: JSON.stringify({
-                                                        fullName,
-                                                        email,
-                                                        avatarUrl: avatarUrl.trim() || null,
-                                                    }),
-                                                })
-
-                                                toast.success('Account settings saved!', { id })
-                                            } catch (error) {
-                                                toast.error(getErrorMessage(error), { id })
-                                            }
-
-                                            setIsSaving(false)
-                                        })()
-                                    }}
+                                    onClick={() => void saveSettings('Account settings saved!')}
                                     disabled={isSaving}
                                     className="h-[44px] px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2"
                                 >
@@ -186,14 +322,90 @@ export default function SettingsPage() {
                         </div>
                     )}
 
-                    {(activeTab !== 'Account' && activeTab !== 'Billing') && (
-                        <div className="flex flex-col items-center justify-center py-20 text-center opacity-70">
-                            {activeTab === 'Notifications' && <Bell className="w-[48px] h-[48px] text-(--text-tertiary) mb-4" />}
-                            {activeTab === 'Security' && <Shield className="w-[48px] h-[48px] text-(--text-tertiary) mb-4" />}
-                            <h3 className="font-display font-bold text-[20px] text-(--text-primary) mb-2">{activeTab} Settings</h3>
-                            <p className="font-body text-[14px] text-(--text-secondary) max-w-[300px]">This section is under construction. Settings features will be available in v1.1.</p>
+                    {activeTab === 'Notifications' && (
+                        <div className="flex flex-col gap-8">
+                            <div>
+                                <h3 className="font-display font-black text-[18px] text-(--text-primary)">Notification Preferences</h3>
+                                <p className="font-body text-[13px] text-(--text-secondary)">Control which coach updates you receive by email and in-app alerts.</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="flex flex-col gap-2">
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">Email Reminders</label>
+                                    <select value={emailReminders ? 'yes' : 'no'} onChange={(event) => setEmailReminders(event.target.value === 'yes')} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)">
+                                        <option value="yes">Enabled</option>
+                                        <option value="no">Disabled</option>
+                                    </select>
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">New Submission Alerts</label>
+                                    <select value={newSubmissionAlerts ? 'yes' : 'no'} onChange={(event) => setNewSubmissionAlerts(event.target.value === 'yes')} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)">
+                                        <option value="yes">Enabled</option>
+                                        <option value="no">Disabled</option>
+                                    </select>
+                                </div>
+
+                                <div className="flex flex-col gap-2 md:col-span-2">
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">Message Notifications</label>
+                                    <select value={messageNotifications ? 'yes' : 'no'} onChange={(event) => setMessageNotifications(event.target.value === 'yes')} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)">
+                                        <option value="yes">Enabled</option>
+                                        <option value="no">Disabled</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end pt-4 border-t border-(--border-subtle)">
+                                <button
+                                    onClick={() => void saveSettings('Notification settings saved!')}
+                                    disabled={isSaving}
+                                    className="h-[44px] px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2"
+                                >
+                                    <Save className="w-[18px] h-[18px]" /> Save Preferences
+                                </button>
+                            </div>
                         </div>
                     )}
+
+                    {activeTab === 'Security' && (
+                        <div className="flex flex-col gap-8">
+                            <div>
+                                <h3 className="font-display font-black text-[18px] text-(--text-primary)">Security Controls</h3>
+                                <p className="font-body text-[13px] text-(--text-secondary)">Manage account protection and credential updates.</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="flex flex-col gap-2 md:col-span-2">
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">Two-Factor Authentication</label>
+                                    <select value={twoFactorEnabled ? 'yes' : 'no'} onChange={(event) => setTwoFactorEnabled(event.target.value === 'yes')} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)">
+                                        <option value="yes">Enabled</option>
+                                        <option value="no">Disabled</option>
+                                    </select>
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">Current Password</label>
+                                    <input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)" />
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <label className="font-body text-[13px] font-bold text-(--text-secondary)">New Password</label>
+                                    <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="h-[44px] px-4 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) focus:border-emerald-500 font-body text-[14px] outline-none w-full text-(--text-primary)" />
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end pt-4 border-t border-(--border-subtle)">
+                                <button
+                                    onClick={() => void saveSettings('Security settings saved!')}
+                                    disabled={isSaving}
+                                    className="h-[44px] px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2"
+                                >
+                                    <Save className="w-[18px] h-[18px]" /> Save Security
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                 </div>
             </div>
         </motion.div>

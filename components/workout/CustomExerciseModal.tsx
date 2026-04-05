@@ -87,18 +87,22 @@ export default function CustomExerciseModal({ isOpen, onClose }: { isOpen: boole
         // Manual Validation
         if (!data.name || data.name.length < 2) {
             setError('name', { type: 'manual', message: 'Exercise name is required' })
+            toast.error('Exercise name is required.')
             return
         }
         if (!data.muscleGroups || data.muscleGroups.length === 0) {
             setError('muscleGroups', { type: 'manual', message: 'Select at least one muscle group' })
+            toast.error('Select at least one muscle group.')
             return
         }
         if (!data.equipment || data.equipment.length === 0) {
             setError('equipment', { type: 'manual', message: 'Select at least one equipment type' })
+            toast.error('Select at least one equipment type.')
             return
         }
         if (!data.movementPattern) {
             setError('movementPattern', { type: 'manual', message: 'Select a movement type' })
+            toast.error('Select a movement type.')
             return
         }
 

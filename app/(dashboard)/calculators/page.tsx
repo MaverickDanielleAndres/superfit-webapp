@@ -1,10 +1,13 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import dynamic from 'next/dynamic'
 import { Calculator, Activity, Zap, TrendingDown, Droplet, CheckCircle2, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useCalculatorStore } from '@/store/useCalculatorStore'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const WidgetLoading = () => (
     <div className="w-full min-h-[360px] rounded-[16px] border border-(--border-default) bg-[var(--bg-elevated)] animate-pulse" />
@@ -32,6 +35,89 @@ type CalcTab = 'bmi' | 'protein' | 'creatine' | 'deficit' | 'water'
 export default function CalculatorsPage() {
     const [activeTab, setActiveTab] = useState<CalcTab>('bmi')
     const [wizardStep, setWizardStep] = useState(1)
+    const [wizardAnswers, setWizardAnswers] = useState<{ goal?: string; activityLevel?: string; waterIntake?: string }>({})
+    const bmiDraft = useCalculatorStore((state) => state.drafts.bmi)
+    const hydrateDrafts = useCalculatorStore((state) => state.hydrateDrafts)
+    const saveDraft = useCalculatorStore((state) => state.saveDraft)
+    const resetDraft = useCalculatorStore((state) => state.resetDraft)
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [isConfirming, setIsConfirming] = useState(false)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = useState<null | (() => Promise<void>)>(null)
+
+    useEffect(() => {
+        void hydrateDrafts('bmi')
+    }, [hydrateDrafts])
+
+    useEffect(() => {
+        if (!bmiDraft) return
+        setWizardStep(bmiDraft.wizardStep)
+        setWizardAnswers(bmiDraft.responses as { goal?: string; activityLevel?: string; waterIntake?: string })
+    }, [bmiDraft])
+
+    const advanceWizard = (nextStep: number, patch: Partial<typeof wizardAnswers> = {}) => {
+        const nextAnswers = { ...wizardAnswers, ...patch }
+        setWizardAnswers(nextAnswers)
+        setWizardStep(nextStep)
+        void saveDraft({
+            calculatorType: 'bmi',
+            wizardStep: nextStep,
+            responses: nextAnswers,
+            result: nextStep === 0 ? { completedAt: new Date().toISOString(), ...nextAnswers } : null,
+        })
+    }
+
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
+    }
+
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
+
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
+    }
+
+    const handleResetQuestionnaire = () => {
+        openConfirmation(
+            {
+                title: 'Reset Questionnaire?',
+                message: 'Your current calculator answers will be cleared and the wizard will restart.',
+                confirmText: 'Reset Now',
+                tone: 'danger',
+            },
+            async () => {
+                setWizardAnswers({})
+                setWizardStep(1)
+                await resetDraft('bmi')
+                toast.success('Calculator questionnaire reset.')
+            },
+        )
+    }
 
     const tabs = [
         { id: 'bmi', label: 'BMI & Risk', icon: Activity },
@@ -59,6 +145,11 @@ export default function CalculatorsPage() {
 
             {wizardStep > 0 ? (
                 <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] overflow-hidden shadow-sm flex flex-col min-h-[400px]">
+                    <div className="flex items-center justify-end px-6 pt-4">
+                        <button onClick={handleResetQuestionnaire} className="h-[34px] px-3 rounded-[10px] bg-(--bg-elevated) border border-(--border-default) text-(--text-secondary) hover:text-(--text-primary) font-body text-[12px] font-semibold transition-colors">
+                            Reset questionnaire
+                        </button>
+                    </div>
                     {wizardStep === 1 && (
                         <div className="flex flex-col md:flex-row flex-1">
                             <div className="md:w-1/2 p-8 lg:p-12 flex flex-col justify-center">
@@ -81,7 +172,7 @@ export default function CalculatorsPage() {
                                         <span className="font-body text-[15px] text-(--text-primary)">Syncs seamlessly with your daily tracking goals</span>
                                     </div>
                                 </div>
-                                <button onClick={() => setWizardStep(2)} className="h-[48px] px-8 bg-emerald-500 text-white rounded-[14px] font-display font-bold text-[15px] flex items-center justify-center gap-2 hover:bg-emerald-600 transition-colors w-max cursor-pointer">
+                                <button onClick={() => advanceWizard(2)} className="h-[48px] px-8 bg-emerald-500 text-white rounded-[14px] font-display font-bold text-[15px] flex items-center justify-center gap-2 hover:bg-emerald-600 transition-colors w-max cursor-pointer">
                                     Start Questionnaire <ArrowRight className="w-[18px] h-[18px]" />
                                 </button>
                             </div>
@@ -102,7 +193,7 @@ export default function CalculatorsPage() {
                                     { title: 'Build Muscle', img: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=400&fit=crop', desc: 'Hypertrophy & caloric surplus' },
                                     { title: 'Recomposition', img: 'https://images.unsplash.com/photo-1447031388589-38374a274534?w=400&fit=crop', desc: 'Burn fat and build muscle simultaneously' },
                                 ].map(opt => (
-                                    <button key={opt.title} onClick={() => setWizardStep(3)} className="group text-left border border-(--border-default) rounded-[20px] overflow-hidden hover:border-emerald-500 transition-colors bg-[var(--bg-elevated)] cursor-pointer flex flex-col shadow-sm hover:shadow-md">
+                                    <button key={opt.title} onClick={() => advanceWizard(3, { goal: opt.title })} className="group text-left border border-(--border-default) rounded-[20px] overflow-hidden hover:border-emerald-500 transition-colors bg-[var(--bg-elevated)] cursor-pointer flex flex-col shadow-sm hover:shadow-md">
                                         <div className="w-full h-[160px] overflow-hidden shrink-0">
                                             <img src={opt.img} alt={opt.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                         </div>
@@ -127,7 +218,7 @@ export default function CalculatorsPage() {
                                     { title: 'Moderately Active', img: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&fit=crop', desc: '3-5 days of moderate exercise' },
                                     { title: 'Very Active', img: 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=400&fit=crop', desc: '6-7 days of hard exercise' }
                                 ].map(opt => (
-                                    <button key={opt.title} onClick={() => setWizardStep(4)} className="group text-left border border-(--border-default) rounded-[20px] overflow-hidden hover:border-emerald-500 transition-colors bg-[var(--bg-elevated)] flex flex-col cursor-pointer shadow-sm hover:shadow-md">
+                                    <button key={opt.title} onClick={() => advanceWizard(4, { activityLevel: opt.title })} className="group text-left border border-(--border-default) rounded-[20px] overflow-hidden hover:border-emerald-500 transition-colors bg-[var(--bg-elevated)] flex flex-col cursor-pointer shadow-sm hover:shadow-md">
                                         <div className="w-full h-[120px] overflow-hidden shrink-0">
                                             <img src={opt.img} alt={opt.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                         </div>
@@ -150,7 +241,7 @@ export default function CalculatorsPage() {
                             <p className="font-body text-[15px] text-(--text-secondary) mb-8 max-w-md">How much water do you typically drink daily? We will customize a hydration plan for your biometrics.</p>
                             <div className="flex flex-wrap items-center justify-center gap-4 w-full max-w-2xl mb-8">
                                 {['Less than 1L', '1L - 2L', '2L - 3L', 'Over 3L'].map(opt => (
-                                    <button key={opt} onClick={() => setWizardStep(0)} className="h-[48px] px-6 rounded-[14px] border border-(--border-default) bg-[var(--bg-elevated)] hover:border-blue-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-500/10 font-body text-[15px] font-medium text-(--text-primary) transition-colors cursor-pointer shadow-sm">
+                                    <button key={opt} onClick={() => advanceWizard(0, { waterIntake: opt })} className="h-[48px] px-6 rounded-[14px] border border-(--border-default) bg-[var(--bg-elevated)] hover:border-blue-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-500/10 font-body text-[15px] font-medium text-(--text-primary) transition-colors cursor-pointer shadow-sm">
                                         {opt}
                                     </button>
                                 ))}
@@ -206,6 +297,18 @@ export default function CalculatorsPage() {
                 </>
             )}
 
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
         </motion.div>
     )
 }

@@ -1,10 +1,41 @@
 'use client'
 import React, { useEffect } from 'react'
-import { Plus, Copy, Send, MoreVertical, LayoutGrid, Image as ImageIcon, X, ArrowLeft, GripVertical, Search } from 'lucide-react'
+import { Plus, Copy, Send, LayoutGrid, X, ArrowLeft, Search, Trash2, ChevronUp, ChevronDown, ImagePlus, UploadCloud } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
-import { useCoachPortalStore } from '@/store/useCoachPortalStore'
+import { useCoachPortalData } from '@/lib/hooks/useCoachPortalData'
+import { requestApi } from '@/lib/api/client'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+
+const DAY_NAME_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+function nextDayName(index: number) {
+    return DAY_NAME_OPTIONS[index] || `Day ${index + 1}`
+}
+
+interface ProgramExercise {
+    id: string
+    name: string
+    sets: number
+    reps: number
+    imageUrl: string | null
+}
+
+interface ProgramDay {
+    id: string
+    name: string
+    exercises: ProgramExercise[]
+}
+
+function createExercise(index: number): ProgramExercise {
+    return {
+        id: `ex-${Date.now()}-${index}`,
+        name: '',
+        sets: 3,
+        reps: 10,
+        imageUrl: null,
+    }
+}
 
 export default function ProgramsPage() {
     const {
@@ -15,8 +46,9 @@ export default function ProgramsPage() {
         addProgram,
         updateProgram,
         duplicateProgram,
+        deleteProgram,
         assignProgram,
-    } = useCoachPortalStore()
+    } = useCoachPortalData()
 
     const [builderState, setBuilderState] = React.useState<{
         isOpen: boolean
@@ -33,17 +65,53 @@ export default function ProgramsPage() {
         length: '4 Weeks',
         cover: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&fit=crop',
     })
-    const [builderDays, setBuilderDays] = React.useState<{id: string, name: string, exercises: string[]}[]>([
-        {id: 'd1', name: 'Day 1: Lower Body', exercises: ['Squat (Barbell)', 'Romanian Deadlift', 'Leg Press']},
-        {id: 'd2', name: 'Day 2: Upper Body', exercises: ['Bench Press', 'Pull Up', 'Overhead Press']}
+    const [builderDays, setBuilderDays] = React.useState<ProgramDay[]>([
+        {
+            id: 'd1',
+            name: 'Monday',
+            exercises: [
+                { id: 'd1-ex1', name: 'Squat (Barbell)', sets: 4, reps: 6, imageUrl: null },
+                { id: 'd1-ex2', name: 'Romanian Deadlift', sets: 3, reps: 8, imageUrl: null },
+                { id: 'd1-ex3', name: 'Leg Press', sets: 3, reps: 12, imageUrl: null },
+            ],
+        },
+        {
+            id: 'd2',
+            name: 'Tuesday',
+            exercises: [
+                { id: 'd2-ex1', name: 'Bench Press', sets: 4, reps: 6, imageUrl: null },
+                { id: 'd2-ex2', name: 'Pull Up', sets: 4, reps: 8, imageUrl: null },
+                { id: 'd2-ex3', name: 'Overhead Press', sets: 3, reps: 10, imageUrl: null },
+            ],
+        },
     ])
 
     const [assignModal, setAssignModal] = React.useState<{isOpen: boolean, programId: string | null}>({isOpen: false, programId: null})
     const [selectedClients, setSelectedClients] = React.useState<string[]>([])
+    const [isPageLoading, setIsPageLoading] = React.useState(true)
+    const [isUploadingExerciseKey, setIsUploadingExerciseKey] = React.useState<string | null>(null)
+    const [expandedImageUrl, setExpandedImageUrl] = React.useState<string | null>(null)
+    const [confirmDialog, setConfirmDialog] = React.useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = React.useState<null | (() => Promise<void>)>(null)
+    const [isConfirming, setIsConfirming] = React.useState(false)
 
     useEffect(() => {
-        void fetchPrograms()
-        void fetchClients()
+        let isMounted = true
+
+        void (async () => {
+            setIsPageLoading(true)
+            await Promise.all([fetchPrograms(), fetchClients()])
+            if (isMounted) setIsPageLoading(false)
+        })()
+
+        return () => {
+            isMounted = false
+        }
     }, [fetchClients, fetchPrograms])
 
     const clients = roster.map((client) => ({
@@ -52,26 +120,93 @@ export default function ProgramsPage() {
         plan: client.status,
     }))
 
-    const handleDragStart = (e: React.DragEvent, dayId: string, exIndex: number) => {
-        e.dataTransfer.setData('application/json', JSON.stringify({ dayId, exIndex }))
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
     }
 
-    const handleDrop = (e: React.DragEvent, targetDayId: string, targetExIndex: number) => {
-        e.preventDefault()
-        const data = e.dataTransfer.getData('application/json')
-        if (!data) return
-        const { dayId: sourceDayId, exIndex: sourceIndex } = JSON.parse(data)
-        
-        setBuilderDays(prev => {
-            const next = [...prev]
-            const sourceDay = next.find(d => d.id === sourceDayId)
-            const targetDay = next.find(d => d.id === targetDayId)
-            if (!sourceDay || !targetDay) return next
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
 
-            const [moved] = sourceDay.exercises.splice(sourceIndex, 1)
-            targetDay.exercises.splice(targetExIndex, 0, moved)
-            return next
-        })
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
+    }
+
+    const uploadExerciseImage = async (dayId: string, exerciseIndex: number, file: File) => {
+        const uploadKey = `${dayId}:${exerciseIndex}`
+        setIsUploadingExerciseKey(uploadKey)
+
+        try {
+            const formData = new FormData()
+            formData.append('file', file)
+            formData.append('category', 'programs')
+
+            const response = await requestApi<{ url: string }>('/api/v1/coach/media/upload', {
+                method: 'POST',
+                body: formData,
+            })
+
+            const uploadedUrl = String(response.data.url || '')
+            if (!uploadedUrl) {
+                toast.error('Upload failed: no media URL returned.')
+                return
+            }
+
+            setBuilderDays((prev) => prev.map((entry) => {
+                if (entry.id !== dayId) return entry
+                return {
+                    ...entry,
+                    exercises: entry.exercises.map((exercise, currentExerciseIndex) =>
+                        currentExerciseIndex === exerciseIndex
+                            ? { ...exercise, imageUrl: uploadedUrl }
+                            : exercise,
+                    ),
+                }
+            }))
+
+            toast.success('Exercise image uploaded.')
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Unable to upload exercise image.')
+        } finally {
+            setIsUploadingExerciseKey(null)
+        }
+    }
+
+    const moveExerciseWithinDay = (dayId: string, sourceIndex: number, delta: number) => {
+        setBuilderDays((prev) => prev.map((day) => {
+            if (day.id !== dayId) return day
+            const targetIndex = sourceIndex + delta
+            if (targetIndex < 0 || targetIndex >= day.exercises.length) return day
+
+            const nextExercises = [...day.exercises]
+            const [moved] = nextExercises.splice(sourceIndex, 1)
+            nextExercises.splice(targetIndex, 0, moved)
+
+            return {
+                ...day,
+                exercises: nextExercises,
+            }
+        }))
     }
 
     if (builderState.isOpen) {
@@ -87,7 +222,6 @@ export default function ProgramsPage() {
                             onChange={(e) => setBuilderState({...builderState, name: e.target.value})}
                             className="font-display font-black text-[16px] sm:text-[18px] lg:text-[20px] bg-transparent border-none outline-none text-(--text-primary) w-[170px] sm:w-[240px] md:w-[300px]"
                             placeholder="Program Name"
-                            defaultValue={builderState.name}
                         />
                     </div>
                     <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
@@ -95,23 +229,48 @@ export default function ProgramsPage() {
                         <button
                             onClick={() => {
                                 void (async () => {
+                                    const normalizedDays = builderDays.map((day, index) => ({
+                                        ...day,
+                                        name: (day.name || nextDayName(index)).trim(),
+                                        exercises: day.exercises
+                                            .map((exercise, exerciseIndex) => ({
+                                                id: exercise.id || `${day.id}-ex-${exerciseIndex + 1}`,
+                                                name: (exercise.name || '').trim(),
+                                                sets: Math.max(1, Math.min(99, Math.round(Number(exercise.sets || 3)))),
+                                                reps: Math.max(1, Math.min(99, Math.round(Number(exercise.reps || 10)))),
+                                                imageUrl: exercise.imageUrl?.trim() ? exercise.imageUrl.trim() : null,
+                                            }))
+                                            .filter((exercise) => exercise.name.length > 0),
+                                    }))
+
                                     const payload = {
                                         name: builderState.name || 'Untitled Program',
                                         difficulty: builderState.difficulty,
                                         length: builderState.length,
                                         cover: builderState.cover,
-                                        builderDays,
+                                        builderDays: normalizedDays,
                                     }
 
-                                    if (builderState.programId) {
-                                        await updateProgram(builderState.programId, payload)
-                                        toast.success('Program updated.')
-                                    } else {
-                                        await addProgram(payload)
-                                        toast.success('Program created.')
-                                    }
+                                    openConfirmation(
+                                        {
+                                            title: builderState.programId ? 'Update Program?' : 'Create Program?',
+                                            message: builderState.programId
+                                                ? 'This will save all changes to the program and exercises.'
+                                                : 'This will create a new program with the current workout setup.',
+                                            confirmText: builderState.programId ? 'Update Program' : 'Create Program',
+                                        },
+                                        async () => {
+                                            if (builderState.programId) {
+                                                await updateProgram(builderState.programId, payload)
+                                                toast.success('Program updated.')
+                                            } else {
+                                                await addProgram(payload)
+                                                toast.success('Program created.')
+                                            }
 
-                                    setBuilderState((prev) => ({ ...prev, isOpen: false, programId: null }))
+                                            setBuilderState((prev) => ({ ...prev, isOpen: false, programId: null }))
+                                        },
+                                    )
                                 })()
                             }}
                             className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 sm:px-6 h-[40px] rounded-[12px] font-bold text-[13px] sm:text-[14px]"
@@ -124,37 +283,216 @@ export default function ProgramsPage() {
                     {builderDays.map(day => (
                         <div key={day.id} className="w-[280px] sm:w-[320px] md:w-[340px] shrink-0 bg-(--bg-surface) border border-(--border-subtle) rounded-[20px] shadow-sm flex flex-col max-h-full">
                             <div className="p-4 border-b border-(--border-subtle) flex items-center justify-between bg-[var(--bg-elevated)] rounded-t-[20px]">
-                                <h4 className="font-display font-bold text-[16px]">{day.name}</h4>
-                                <MoreVertical className="w-[16px] h-[16px] text-(--text-tertiary)" />
-                            </div>
-                            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 min-h-[100px]"
-                                onDragOver={e => e.preventDefault()}
-                                onDrop={e => {
-                                    // Drop at the end if dropping on the container
-                                    if (e.target === e.currentTarget) {
-                                        handleDrop(e, day.id, day.exercises.length)
-                                    }
-                                }}
-                            >
-                                {day.exercises.map((ex, i) => (
-                                    <div 
-                                        key={i} 
-                                        draggable
-                                        onDragStart={e => handleDragStart(e, day.id, i)}
-                                        onDragOver={e => e.preventDefault()}
-                                        onDrop={e => { e.stopPropagation(); handleDrop(e, day.id, i) }}
-                                        className="bg-[var(--bg-elevated)] border border-(--border-default) rounded-[12px] p-3 flex items-center gap-3 cursor-grab hover:border-emerald-500/50 transition-colors"
+                                <select
+                                    value={day.name}
+                                    onChange={(event) => {
+                                        const nextName = event.target.value
+                                        setBuilderDays((prev) => prev.map((entry) => entry.id === day.id ? { ...entry, name: nextName } : entry))
+                                    }}
+                                    className="h-[34px] px-2 rounded-[10px] bg-(--bg-surface) border border-(--border-default) text-[13px] font-bold text-(--text-primary) outline-none"
+                                >
+                                    {DAY_NAME_OPTIONS.map((dayName) => (
+                                        <option key={dayName} value={dayName}>{dayName}</option>
+                                    ))}
+                                </select>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => {
+                                            if (builderDays.length <= 1) {
+                                                toast.info('At least one day is required.')
+                                                return
+                                            }
+
+                                            setBuilderDays((prev) => prev.filter((entry) => entry.id !== day.id))
+                                        }}
+                                        className="w-[28px] h-[28px] rounded-[8px] bg-(--bg-surface) border border-(--border-default) text-(--text-secondary) hover:text-red-600 hover:border-red-500/30 flex items-center justify-center"
+                                        title="Delete day"
                                     >
-                                        <div className="text-(--text-tertiary) cursor-grab active:cursor-grabbing"><GripVertical className="w-[16px] h-[16px]" /></div>
-                                        <div>
-                                            <span className="block font-bold text-[14px]">{ex}</span>
-                                            <span className="block text-[12px] text-(--text-secondary)">3 sets x 10 reps</span>
+                                        <Trash2 className="w-[14px] h-[14px]" />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 min-h-[100px]">
+                                {day.exercises.map((exercise, i) => (
+                                    <div
+                                        key={exercise.id}
+                                        className="bg-[var(--bg-elevated)] border border-(--border-default) rounded-[12px] p-3 flex flex-col gap-2 hover:border-emerald-500/40 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                value={exercise.name}
+                                                onChange={(event) => {
+                                                    const nextName = event.target.value
+                                                    setBuilderDays((prev) => prev.map((entry) => {
+                                                        if (entry.id !== day.id) return entry
+                                                        return {
+                                                            ...entry,
+                                                            exercises: entry.exercises.map((entryExercise, exerciseIndex) =>
+                                                                exerciseIndex === i
+                                                                    ? { ...entryExercise, name: nextName }
+                                                                    : entryExercise,
+                                                            ),
+                                                        }
+                                                    }))
+                                                }}
+                                                placeholder="Exercise name"
+                                                className="flex-1 h-[34px] px-2 rounded-[8px] bg-(--bg-surface) border border-(--border-default) font-bold text-[13px] text-(--text-primary) outline-none focus:border-emerald-500"
+                                            />
+                                            <button
+                                                onClick={() => moveExerciseWithinDay(day.id, i, -1)}
+                                                disabled={i === 0}
+                                                className="w-[28px] h-[28px] rounded-[8px] bg-(--bg-surface) border border-(--border-default) text-(--text-secondary) disabled:opacity-40"
+                                                title="Move up"
+                                            >
+                                                <ChevronUp className="w-[14px] h-[14px] mx-auto" />
+                                            </button>
+                                            <button
+                                                onClick={() => moveExerciseWithinDay(day.id, i, 1)}
+                                                disabled={i === day.exercises.length - 1}
+                                                className="w-[28px] h-[28px] rounded-[8px] bg-(--bg-surface) border border-(--border-default) text-(--text-secondary) disabled:opacity-40"
+                                                title="Move down"
+                                            >
+                                                <ChevronDown className="w-[14px] h-[14px] mx-auto" />
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setBuilderDays((prev) => prev.map((entry) => {
+                                                        if (entry.id !== day.id) return entry
+                                                        return {
+                                                            ...entry,
+                                                            exercises: entry.exercises.filter((_, exerciseIndex) => exerciseIndex !== i),
+                                                        }
+                                                    }))
+                                                }}
+                                                className="w-[28px] h-[28px] rounded-[8px] bg-(--bg-surface) border border-(--border-default) text-(--text-secondary) hover:text-red-600 hover:border-red-500/30"
+                                                title="Delete exercise"
+                                            >
+                                                <Trash2 className="w-[14px] h-[14px] mx-auto" />
+                                            </button>
                                         </div>
+
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <label className="text-[11px] font-bold text-(--text-secondary) uppercase tracking-wide">
+                                                Sets
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    max={99}
+                                                    value={exercise.sets}
+                                                    onChange={(event) => {
+                                                        const nextSets = Math.max(1, Math.min(99, Number(event.target.value || 1)))
+                                                        setBuilderDays((prev) => prev.map((entry) => {
+                                                            if (entry.id !== day.id) return entry
+                                                            return {
+                                                                ...entry,
+                                                                exercises: entry.exercises.map((entryExercise, exerciseIndex) =>
+                                                                    exerciseIndex === i
+                                                                        ? { ...entryExercise, sets: nextSets }
+                                                                        : entryExercise,
+                                                                ),
+                                                            }
+                                                        }))
+                                                    }}
+                                                    className="mt-1 w-full h-[32px] px-2 rounded-[8px] bg-(--bg-surface) border border-(--border-default) text-[13px] text-(--text-primary) outline-none focus:border-emerald-500"
+                                                />
+                                            </label>
+                                            <label className="text-[11px] font-bold text-(--text-secondary) uppercase tracking-wide">
+                                                Reps
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    max={99}
+                                                    value={exercise.reps}
+                                                    onChange={(event) => {
+                                                        const nextReps = Math.max(1, Math.min(99, Number(event.target.value || 1)))
+                                                        setBuilderDays((prev) => prev.map((entry) => {
+                                                            if (entry.id !== day.id) return entry
+                                                            return {
+                                                                ...entry,
+                                                                exercises: entry.exercises.map((entryExercise, exerciseIndex) =>
+                                                                    exerciseIndex === i
+                                                                        ? { ...entryExercise, reps: nextReps }
+                                                                        : entryExercise,
+                                                                ),
+                                                            }
+                                                        }))
+                                                    }}
+                                                    className="mt-1 w-full h-[32px] px-2 rounded-[8px] bg-(--bg-surface) border border-(--border-default) text-[13px] text-(--text-primary) outline-none focus:border-emerald-500"
+                                                />
+                                            </label>
+                                        </div>
+
+                                        <div className="flex flex-col gap-2">
+                                            <input
+                                                id={`exercise-image-input-${day.id}-${exercise.id}`}
+                                                type="file"
+                                                accept="image/png,image/jpeg,image/jpg,image/webp"
+                                                className="hidden"
+                                                onChange={(event) => {
+                                                    const file = event.target.files?.[0]
+                                                    if (!file) return
+                                                    void uploadExerciseImage(day.id, i, file)
+                                                    event.target.value = ''
+                                                }}
+                                            />
+                                            <div
+                                                onDragOver={(event) => event.preventDefault()}
+                                                onDrop={(event) => {
+                                                    event.preventDefault()
+                                                    const file = event.dataTransfer.files?.[0]
+                                                    if (!file) return
+                                                    void uploadExerciseImage(day.id, i, file)
+                                                }}
+                                                className="rounded-[10px] border border-dashed border-(--border-subtle) bg-(--bg-surface) p-2 flex items-center justify-between gap-2"
+                                            >
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <ImagePlus className="w-[14px] h-[14px] text-(--text-tertiary)" />
+                                                    <span className="text-[11px] text-(--text-secondary) truncate">
+                                                        {isUploadingExerciseKey === `${day.id}:${i}` ? 'Uploading image...' : 'Drag image or browse'}
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const input = document.getElementById(`exercise-image-input-${day.id}-${exercise.id}`) as HTMLInputElement | null
+                                                        input?.click()
+                                                    }}
+                                                    className="h-[26px] px-2 rounded-[8px] border border-(--border-default) text-[11px] font-bold text-(--text-primary) flex items-center gap-1"
+                                                >
+                                                    <UploadCloud className="w-[11px] h-[11px]" /> Browse
+                                                </button>
+                                            </div>
+                                            {exercise.imageUrl && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setExpandedImageUrl(exercise.imageUrl)}
+                                                    className="rounded-[10px] border border-(--border-subtle) overflow-hidden text-left"
+                                                >
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    <img
+                                                        src={exercise.imageUrl}
+                                                        alt={`${exercise.name || 'Exercise'} preview`}
+                                                        className="w-full h-[100px] object-cover"
+                                                    />
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <span className="block text-[12px] text-(--text-secondary)">
+                                            {exercise.sets} sets x {exercise.reps} reps
+                                        </span>
                                     </div>
                                 ))}
-                                <button 
+                                <button
                                     onClick={() => {
-                                        setBuilderDays(prev => prev.map(d => d.id === day.id ? {...d, exercises: [...d.exercises, 'New Exercise']} : d))
+                                        setBuilderDays((prev) => prev.map((entry) =>
+                                            entry.id === day.id
+                                                ? {
+                                                    ...entry,
+                                                    exercises: [...entry.exercises, createExercise(entry.exercises.length)],
+                                                }
+                                                : entry,
+                                        ))
                                     }}
                                     className="w-full h-[44px] rounded-[12px] border border-dashed border-(--border-subtle) flex items-center justify-center gap-2 text-(--text-secondary) font-bold text-[13px] hover:bg-[var(--bg-elevated)] hover:text-(--text-primary) transition-colors mt-2"
                                 >
@@ -165,7 +503,7 @@ export default function ProgramsPage() {
                     ))}
                     <button 
                         onClick={() => {
-                            setBuilderDays([...builderDays, {id: 'd' + Date.now(), name: `Day ${builderDays.length + 1}`, exercises: []}])
+                            setBuilderDays([...builderDays, {id: 'd' + Date.now(), name: nextDayName(builderDays.length), exercises: []}])
                         }}
                         className="w-[280px] sm:w-[320px] md:w-[340px] shrink-0 h-[60px] bg-(--bg-surface) border border-dashed border-(--border-subtle) rounded-[20px] flex items-center justify-center gap-2 text-(--text-secondary) font-bold text-[14px] hover:bg-[var(--bg-elevated)] hover:text-(--text-primary) transition-colors"
                     >
@@ -176,6 +514,20 @@ export default function ProgramsPage() {
         )
     }
 
+    if (isPageLoading && programs.length === 0) {
+        return (
+            <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 animate-pulse">
+                <div className="h-7 w-56 rounded bg-[var(--bg-elevated)]" />
+                <div className="h-4 w-80 rounded bg-[var(--bg-elevated)]" />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {Array.from({ length: 8 }).map((_, index) => (
+                        <div key={index} className="h-72 rounded-[24px] bg-[var(--bg-elevated)]" />
+                    ))}
+                </div>
+            </div>
+        )
+    }
+
     return (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 w-full max-w-6xl mx-auto h-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-(--border-subtle) pb-6">
@@ -183,7 +535,12 @@ export default function ProgramsPage() {
                     <h1 className="font-display font-bold text-[22px] sm:text-[24px] lg:text-[28px] text-(--text-primary)">Program Builder</h1>
                     <p className="font-body text-[14px] text-(--text-secondary)">Create and manage your reusable workout templates and master programs.</p>
                 </div>
-                <button onClick={() => setBuilderState({isOpen: true, name: 'Untitled Program', programId: null, difficulty: 'Beginner', length: '4 Weeks', cover: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&fit=crop'})} className="h-[44px] px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2">
+                <button onClick={() => {
+                    setBuilderDays([
+                        {id: 'd1', name: 'Monday', exercises: [createExercise(0)]},
+                    ])
+                    setBuilderState({isOpen: true, name: 'Untitled Program', programId: null, difficulty: 'Beginner', length: '4 Weeks', cover: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&fit=crop'})
+                }} className="h-[44px] px-6 rounded-[12px] bg-emerald-500 text-white font-bold text-[14px] shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2">
                     <Plus className="w-[18px] h-[18px]" /> Create Program
                 </button>
             </div>
@@ -192,7 +549,8 @@ export default function ProgramsPage() {
                 {programs.map(p => (
                     <div key={p.id} className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] overflow-hidden shadow-sm hover:shadow-md transition-all group flex flex-col cursor-pointer">
                         <div className="h-[140px] relative overflow-hidden bg-[var(--bg-elevated)]">
-                            <img src={p.cover} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={p.cover} alt={`${p.name} cover`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                             <div className="absolute top-3 right-3 bg-[var(--bg-surface)]/90 backdrop-blur-sm px-2.5 py-1 rounded-[8px] font-bold text-[11px] text-(--text-primary) shadow-sm border border-(--border-subtle)">
                                 {p.enrolled} Enrolled
                             </div>
@@ -207,7 +565,7 @@ export default function ProgramsPage() {
                             <div className="mt-auto flex items-center gap-2 pt-4 border-t border-(--border-subtle)">
                                 <button onClick={() => {
                                     setBuilderDays(p.builderDays?.length ? p.builderDays : [
-                                        {id: 'd1', name: 'Day 1', exercises: []}
+                                        {id: 'd1', name: 'Monday', exercises: [createExercise(0)]}
                                     ])
                                     setBuilderState({
                                         isOpen: true,
@@ -226,13 +584,38 @@ export default function ProgramsPage() {
                                 <button onClick={() => setAssignModal({isOpen: true, programId: p.id})} className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-(--border-subtle) border border-(--border-default) flex items-center justify-center text-(--text-secondary) transition-colors cursor-pointer" title="Assign">
                                     <Send className="w-[16px] h-[16px]" />
                                 </button>
+                                <button
+                                    onClick={() => {
+                                        openConfirmation(
+                                            {
+                                                title: 'Delete Program?',
+                                                message: `Delete \"${p.name}\"? This action cannot be undone.`,
+                                                confirmText: 'Delete Program',
+                                                tone: 'danger',
+                                            },
+                                            async () => {
+                                                await deleteProgram(p.id)
+                                                toast.success(`Deleted ${p.name}`)
+                                            },
+                                        )
+                                    }}
+                                    className="w-[36px] h-[36px] rounded-[10px] bg-[var(--bg-elevated)] hover:bg-red-500/10 border border-(--border-default) flex items-center justify-center text-(--text-secondary) hover:text-red-600 transition-colors cursor-pointer"
+                                    title="Delete"
+                                >
+                                    <Trash2 className="w-[16px] h-[16px]" />
+                                </button>
                             </div>
                         </div>
                     </div>
                 ))}
             </div>
             
-            <div onClick={() => setBuilderState({isOpen: true, name: 'Untitled Program', programId: null, difficulty: 'Beginner', length: '4 Weeks', cover: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&fit=crop'})} className="mt-8 bg-(--bg-surface) border border-dashed border-(--border-subtle) rounded-[24px] p-10 flex flex-col items-center justify-center text-center hover:bg-[var(--bg-elevated)]/50 transition-colors cursor-pointer">
+            <div onClick={() => {
+                setBuilderDays([
+                    {id: 'd1', name: 'Monday', exercises: [createExercise(0)]},
+                ])
+                setBuilderState({isOpen: true, name: 'Untitled Program', programId: null, difficulty: 'Beginner', length: '4 Weeks', cover: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&fit=crop'})
+            }} className="mt-8 bg-(--bg-surface) border border-dashed border-(--border-subtle) rounded-[24px] p-10 flex flex-col items-center justify-center text-center hover:bg-[var(--bg-elevated)]/50 transition-colors cursor-pointer">
                 <div className="w-[64px] h-[64px] rounded-full bg-emerald-500/10 flex items-center justify-center mb-4 text-emerald-500">
                     <Plus className="w-[32px] h-[32px]" />
                 </div>
@@ -277,12 +660,19 @@ export default function ProgramsPage() {
                                     disabled={selectedClients.length === 0}
                                     onClick={() => {
                                         if (!assignModal.programId) return
-                                        void (async () => {
-                                            await assignProgram(assignModal.programId!, selectedClients)
-                                            toast.success(`Program assigned to ${selectedClients.length} clients`)
-                                            setAssignModal({isOpen: false, programId: null})
-                                            setSelectedClients([])
-                                        })()
+                                        openConfirmation(
+                                            {
+                                                title: 'Assign Program?',
+                                                message: `Assign this program to ${selectedClients.length} selected client(s)?`,
+                                                confirmText: 'Assign Program',
+                                            },
+                                            async () => {
+                                                await assignProgram(assignModal.programId!, selectedClients)
+                                                toast.success(`Program assigned to ${selectedClients.length} clients`)
+                                                setAssignModal({isOpen: false, programId: null})
+                                                setSelectedClients([])
+                                            },
+                                        )
                                     }} 
                                     className="w-full h-[48px] rounded-[12px] bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-[15px] shadow-sm transition-colors mt-2"
                                 >
@@ -293,6 +683,33 @@ export default function ProgramsPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            {expandedImageUrl && (
+                <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-[2px] flex items-center justify-center p-4" onClick={() => setExpandedImageUrl(null)}>
+                    <button
+                        type="button"
+                        onClick={() => setExpandedImageUrl(null)}
+                        className="absolute top-4 right-4 w-[36px] h-[36px] rounded-[10px] bg-white/10 text-white flex items-center justify-center"
+                    >
+                        <X className="w-[16px] h-[16px]" />
+                    </button>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={expandedImageUrl} alt="Expanded exercise preview" className="max-w-[95vw] max-h-[90vh] object-contain rounded-[12px]" />
+                </div>
+            )}
+
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
         </motion.div>
     )
 }

@@ -16,12 +16,13 @@ export default function AdminPage() {
         applications,
         reports,
         settings,
+        isLoading,
         error,
         updateReportStatus,
     } = useAdminPortalStore()
 
     useEffect(() => {
-        void initialize()
+        void initialize({ includePayments: false })
     }, [initialize])
 
     const pendingApplications = useMemo(
@@ -32,6 +33,24 @@ export default function AdminPage() {
         () => reports.filter((report) => report.status === 'Pending').length,
         [reports],
     )
+
+    if (isLoading && users.length === 0 && coaches.length === 0 && applications.length === 0 && reports.length === 0) {
+        return (
+            <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 animate-pulse">
+                <div className="h-7 w-56 rounded bg-[var(--bg-elevated)]" />
+                <div className="h-4 w-80 rounded bg-[var(--bg-elevated)]" />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {Array.from({ length: 4 }).map((_, index) => (
+                        <div key={index} className="h-32 rounded-[20px] bg-[var(--bg-elevated)]" />
+                    ))}
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="h-64 rounded-[20px] bg-[var(--bg-elevated)]" />
+                    <div className="h-64 rounded-[20px] bg-[var(--bg-elevated)]" />
+                </div>
+            </div>
+        )
+    }
 
     return (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-6xl mx-auto h-full flex flex-col gap-6 pb-20">
@@ -123,8 +142,12 @@ export default function AdminPage() {
                                 <button
                                     onClick={() => {
                                         void (async () => {
-                                            await updateReportStatus(report.id, 'Dismissed')
-                                            toast.success('Report dismissed')
+                                            try {
+                                                await updateReportStatus(report.id, 'Dismissed')
+                                                toast.success('Report dismissed')
+                                            } catch (error) {
+                                                toast.error(error instanceof Error ? error.message : 'Unable to dismiss report.')
+                                            }
                                         })()
                                     }}
                                     className="h-[30px] px-3 rounded-[8px] bg-[var(--bg-surface)] border border-(--border-default) text-[12px] font-bold text-(--text-primary) hover:bg-[var(--bg-surface-alt)]"

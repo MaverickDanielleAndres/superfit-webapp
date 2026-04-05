@@ -10,6 +10,8 @@ import { toast } from 'sonner'
 import { requestApi } from '@/lib/api/client'
 import { useAuthStore } from '@/store/useAuthStore'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { getAvatarFallbackUrl, getSafeImageSrc } from '@/lib/media'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -20,6 +22,10 @@ interface CoachOverviewResponse {
         avatar: string
         bio: string
         specialties: string[]
+        monthlyPrice?: number
+        clientCap?: number
+        activeClientCount?: number
+        isAvailable?: boolean
     }
     rating: {
         average: number
@@ -57,20 +63,18 @@ interface CoachOverviewResponse {
     viewerCanReview: boolean
 }
 
-const PLAN_TIERS = [
-    { name: 'Basic Tier', price: 49, features: ['1 Custom Program', 'Monthly Check-in', 'App Access'] },
-    { name: 'Premium Tier', price: 99, features: ['Weekly Check-ins', 'Macro Adjustments', 'Form Reviews', 'Priority Chat'] },
-    { name: 'Elite Tier', price: 199, features: ['Daily Chat Support', '1-on-1 Zoom Calls', 'Vip Meetups', 'Custom Nutrition'] },
-]
-
 function getFallbackOverview(coachId: string): CoachOverviewResponse {
     return {
         coach: {
             id: coachId,
             name: 'Coach Profile',
-            avatar: `https://api.dicebear.com/7.x/notionists/svg?seed=${coachId}`,
+            avatar: getAvatarFallbackUrl(coachId),
             bio: 'Personalized training, accountability, and expert programming to help you progress faster.',
             specialties: ['Strength', 'Hypertrophy', 'Nutrition'],
+            monthlyPrice: 69,
+            clientCap: 30,
+            activeClientCount: 0,
+            isAvailable: true,
         },
         rating: {
             average: 0,
@@ -109,6 +113,14 @@ export default function CoachProfilePage() {
 
     const [replyDraftByReview, setReplyDraftByReview] = useState<Record<string, string>>({})
     const [isReplyingTo, setIsReplyingTo] = useState<string | null>(null)
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [isConfirming, setIsConfirming] = useState(false)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = useState<null | (() => Promise<void>)>(null)
 
     const tabs: Array<'programs' | 'posts' | 'reviews'> = ['programs', 'posts', 'reviews']
 
@@ -144,8 +156,20 @@ export default function CoachProfilePage() {
     }, [loadOverview])
 
     const coach = useMemo(() => overview?.coach ?? (coachId ? getFallbackOverview(coachId).coach : null), [coachId, overview])
+    const coachAvatarSrc = useMemo(() => {
+        const fallback = getAvatarFallbackUrl(coach?.id || coachId || 'coach')
+        return getSafeImageSrc(coach?.avatar, fallback)
+    }, [coach?.avatar, coach?.id, coachId])
+    const planTiers = useMemo(() => {
+        const basePrice = Math.max(39, Number(coach?.monthlyPrice || 69))
+        return [
+            { name: 'Basic Tier', price: basePrice, features: ['1 Custom Program', 'Monthly Check-in', 'App Access'] },
+            { name: 'Premium Tier', price: Math.round(basePrice * 1.7), features: ['Weekly Check-ins', 'Macro Adjustments', 'Form Reviews', 'Priority Chat'] },
+            { name: 'Elite Tier', price: Math.round(basePrice * 2.6), features: ['Daily Chat Support', '1-on-1 Zoom Calls', 'VIP Support', 'Custom Nutrition'] },
+        ]
+    }, [coach?.monthlyPrice])
 
-    const handleSubscribe = async (planName = 'Premium Tier', amountCents = 9900) => {
+    const handleSubscribe = async (planName = 'Premium Tier', amountCents = Math.round(Math.max(39, Number(coach?.monthlyPrice || 69)) * 170)) => {
         if (!coachId) {
             toast.error('Invalid coach profile.')
             return
@@ -278,6 +302,63 @@ export default function CoachProfilePage() {
         }
     }
 
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
+    }
+
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
+
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
+    }
+
+    const requestSubscribe = (planName = 'Premium Tier', amountCents = Math.round(Math.max(39, Number(coach?.monthlyPrice || 69)) * 170)) => {
+        openConfirmation(
+            {
+                title: 'Confirm Subscription?',
+                message: `Subscribe to ${coach?.name || 'this coach'} on ${planName}?`,
+                confirmText: 'Subscribe',
+            },
+            async () => {
+                await handleSubscribe(planName, amountCents)
+            },
+        )
+    }
+
+    const requestSubmitReview = () => {
+        openConfirmation(
+            {
+                title: 'Submit Review?',
+                message: 'Your review will be published to the coach profile.',
+                confirmText: 'Submit Review',
+            },
+            async () => {
+                await handleSubmitReview()
+            },
+        )
+    }
+
     if (!coachId) {
         return (
             <div className="w-full max-w-5xl mx-auto py-20 text-center">
@@ -315,13 +396,13 @@ export default function CoachProfilePage() {
             {coach && (
                 <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] overflow-hidden shadow-sm mb-6 relative">
                     <div className="h-[200px] w-full bg-[#1c1c1c] relative overflow-hidden">
-                        <img src={coach.avatar} alt={coach.name} className="w-full h-full object-cover opacity-30 blur-[1px]" />
+                        <img src={coachAvatarSrc} alt={coach.name} className="w-full h-full object-cover opacity-30 blur-[1px]" />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
                     </div>
 
                     <div className="px-6 sm:px-10 pb-8 relative pt-20">
                         <div className="absolute -top-[60px] left-6 sm:left-10 p-2 bg-(--bg-surface) rounded-[24px] border border-(--border-subtle) shadow-md">
-                            <img src={coach.avatar} alt={coach.name} className="w-[100px] h-[100px] rounded-[16px] object-cover" />
+                            <img src={coachAvatarSrc} alt={coach.name} className="w-[100px] h-[100px] rounded-[16px] object-cover" />
                         </div>
 
                         <div className="flex flex-col lg:flex-row justify-between lg:items-end gap-6">
@@ -331,6 +412,11 @@ export default function CoachProfilePage() {
                                     <span className="bg-blue-500/10 text-blue-500 font-bold text-[11px] px-2 py-1 rounded-[6px] flex items-center gap-1 uppercase tracking-wider">
                                         <CheckCircle2 className="w-[12px] h-[12px]" /> Verified
                                     </span>
+                                    {coach.isAvailable === false && (
+                                        <span className="bg-red-500/10 text-red-500 font-bold text-[11px] px-2 py-1 rounded-[6px] uppercase tracking-wider">
+                                            Waitlist
+                                        </span>
+                                    )}
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-4 font-body text-[14px] text-(--text-secondary) font-medium mb-4">
@@ -344,16 +430,21 @@ export default function CoachProfilePage() {
                                             {spec}
                                         </span>
                                     ))}
+                                    <span className="bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full font-body text-[12px] font-bold text-emerald-600">
+                                        {coach.activeClientCount || 0}/{coach.clientCap || 30} active clients
+                                    </span>
                                 </div>
                             </div>
 
                             <div className="flex flex-col gap-3 min-w-[220px]">
                                 <button
-                                    onClick={() => { void handleSubscribe() }}
-                                    disabled={isSubscribing}
+                                    onClick={() => {
+                                        requestSubscribe()
+                                    }}
+                                    disabled={isSubscribing || coach.isAvailable === false}
                                     className="h-[48px] px-8 rounded-[14px] bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-display font-bold text-[16px] transition-all shadow-md flex items-center justify-center gap-2 w-full cursor-pointer"
                                 >
-                                    {isSubscribing ? 'Processing...' : 'Subscribe Now'}
+                                    {coach.isAvailable === false ? 'Join Waitlist' : (isSubscribing ? 'Processing...' : 'Subscribe Now')}
                                 </button>
                                 <button
                                     onClick={() => { void handleMessageCoach() }}
@@ -384,7 +475,7 @@ export default function CoachProfilePage() {
 
                     {activeTab === 'programs' && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {PLAN_TIERS.map((plan) => (
+                            {planTiers.map((plan) => (
                                 <div key={plan.name} className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm flex flex-col cursor-pointer hover:border-emerald-500 transition-colors group">
                                     <h3 className="font-display font-black text-[20px] text-(--text-primary) mb-1">{plan.name}</h3>
                                     <div className="font-display font-black text-[32px] text-(--text-primary) mb-6">${plan.price}<span className="text-[14px] font-body text-(--text-secondary) font-medium">/mo</span></div>
@@ -396,7 +487,9 @@ export default function CoachProfilePage() {
                                         ))}
                                     </ul>
                                     <button
-                                        onClick={() => { void handleSubscribe(plan.name, plan.price * 100) }}
+                                        onClick={() => {
+                                            requestSubscribe(plan.name, plan.price * 100)
+                                        }}
                                         disabled={isSubscribing}
                                         className="w-full h-[44px] rounded-[12px] bg-[var(--bg-elevated)] group-hover:bg-emerald-500 group-hover:text-white border border-(--border-default) group-hover:border-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed font-bold text-[14px] transition-colors cursor-pointer"
                                     >
@@ -478,7 +571,9 @@ export default function CoachProfilePage() {
                                         className="w-full p-3 rounded-[12px] border border-(--border-default) bg-[var(--bg-elevated)] text-[14px] mb-3 outline-none resize-none"
                                     />
                                     <button
-                                        onClick={() => { void handleSubmitReview() }}
+                                        onClick={() => {
+                                            requestSubmitReview()
+                                        }}
                                         disabled={isSubmittingReview}
                                         className="h-[40px] px-5 rounded-[10px] bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold text-[13px]"
                                     >
@@ -491,7 +586,7 @@ export default function CoachProfilePage() {
                                 <div key={review.id} className="bg-(--bg-surface) border border-(--border-subtle) rounded-[20px] p-5 shadow-sm">
                                     <div className="flex items-start justify-between gap-3 mb-2">
                                         <div className="flex items-center gap-3">
-                                            <img src={review.reviewer.avatar} alt={review.reviewer.name} className="w-[38px] h-[38px] rounded-full object-cover border border-(--border-subtle)" />
+                                            <img src={getSafeImageSrc(review.reviewer.avatar, getAvatarFallbackUrl(review.reviewer.id || review.id))} alt={review.reviewer.name} className="w-[38px] h-[38px] rounded-full object-cover border border-(--border-subtle)" />
                                             <div>
                                                 <p className="font-display font-bold text-[14px] text-(--text-primary)">{review.reviewer.name}</p>
                                                 <p className="text-[12px] text-(--text-tertiary)">{formatDate(review.createdAt)}</p>
@@ -546,6 +641,19 @@ export default function CoachProfilePage() {
                     </div>
                 </div>
             </div>
+
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming || isSubscribing || isSubmittingReview}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
         </motion.div>
     )
 }

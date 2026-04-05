@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CoachCard } from '@/components/coaching/CoachCard'
 import { AIAssistantCard } from '@/components/coaching/AIAssistantCard'
@@ -8,10 +8,85 @@ import { ClientHub } from '@/components/coaching/ClientHub'
 import { Search, Filter, MapPin, Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCoachingStore } from '@/store/useCoachingStore'
+import { requestApi } from '@/lib/api/client'
+import { toast } from 'sonner'
+
+interface CoachDiscoveryItem {
+    id: string
+    name: string
+    avatar: string
+    location?: string
+    bio: string
+    tags: string[]
+    rating: number
+    reviewCount: number
+    monthlyPrice: number
+    isAvailable: boolean
+}
+
+interface CoachingHubSummary {
+    coach: {
+        id: string
+    } | null
+}
 
 export default function CoachingPage() {
-    const { activeCoachId, coaches } = useCoachingStore()
+    const { activeCoachId, setCoaches } = useCoachingStore()
     const [activeTab, setActiveTab] = useState<'marketplace' | 'hub'>(activeCoachId ? 'hub' : 'marketplace')
+    const [marketplaceCoaches, setMarketplaceCoaches] = useState<CoachDiscoveryItem[]>([])
+    const [isLoadingCoaches, setIsLoadingCoaches] = useState(true)
+
+    useEffect(() => {
+        void (async () => {
+            setIsLoadingCoaches(true)
+            try {
+                const response = await requestApi<{ coaches: CoachDiscoveryItem[] }>('/api/v1/coaching/discover')
+                const discovered = Array.isArray(response.data.coaches) ? response.data.coaches : []
+                setMarketplaceCoaches(discovered)
+                setCoaches(
+                    discovered.map((coach) => ({
+                        id: coach.id,
+                        name: coach.name,
+                        avatar: coach.avatar,
+                        bio: coach.bio,
+                        rating: coach.rating,
+                        reviewCount: coach.reviewCount,
+                        tags: coach.tags,
+                        pricing: {
+                            basic: coach.monthlyPrice,
+                            premium: Math.round(coach.monthlyPrice * 1.7),
+                            elite: Math.round(coach.monthlyPrice * 2.6),
+                        },
+                    })),
+                )
+
+                try {
+                    const hubResponse = await requestApi<CoachingHubSummary>('/api/v1/coaching/hub')
+                    if (hubResponse.data.coach?.id) {
+                        setActiveTab((current) => (current === 'marketplace' ? 'hub' : current))
+                    }
+                } catch {
+                    // Keep marketplace fallback if hub summary fails.
+                }
+            } catch (error) {
+                toast.error(getErrorMessage(error))
+                const fallback = useCoachingStore.getState().coaches.map((coach) => ({
+                    id: coach.id,
+                    name: coach.name,
+                    avatar: coach.avatar || '',
+                    bio: coach.bio,
+                    tags: coach.tags,
+                    rating: coach.rating,
+                    reviewCount: coach.reviewCount,
+                    monthlyPrice: coach.pricing?.basic || 49,
+                    isAvailable: true,
+                }))
+                setMarketplaceCoaches(fallback)
+            } finally {
+                setIsLoadingCoaches(false)
+            }
+        })()
+    }, [setCoaches])
 
     // Filters
     const [searchQuery, setSearchQuery] = useState('')
@@ -21,21 +96,20 @@ export default function CoachingPage() {
     const [sortFilter, setSortFilter] = useState('recommended')
 
     const filteredCoaches = useMemo(() => {
-        return coaches.filter(c => {
+        return marketplaceCoaches.filter(c => {
             const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.bio.toLowerCase().includes(searchQuery.toLowerCase())
-            // Add fallback checks since the global store types might lack location, we mock it via tags/name for now or just skip location
-            const location = (c as any).location || 'Online Only'
+            const location = c.location || 'Online Only'
             const matchesLocation = locationFilter ? location === locationFilter : true
             const matchesSpecialty = specialtyFilter ? c.tags.some(tag => tag.toLowerCase().replace(' ', '_').includes(specialtyFilter)) : true
             const matchesRating = ratingFilter ? c.rating >= parseFloat(ratingFilter) : true
             return matchesSearch && matchesLocation && matchesSpecialty && matchesRating
         }).sort((a, b) => {
-            if (sortFilter === 'price_low') return (a.pricing?.basic || 0) - (b.pricing?.basic || 0)
-            if (sortFilter === 'price_high') return (b.pricing?.basic || 0) - (a.pricing?.basic || 0)
+            if (sortFilter === 'price_low') return (a.monthlyPrice || 0) - (b.monthlyPrice || 0)
+            if (sortFilter === 'price_high') return (b.monthlyPrice || 0) - (a.monthlyPrice || 0)
             if (sortFilter === 'rating') return b.rating - a.rating
             return 0
         })
-    }, [coaches, searchQuery, locationFilter, specialtyFilter, ratingFilter, sortFilter])
+    }, [marketplaceCoaches, searchQuery, locationFilter, specialtyFilter, ratingFilter, sortFilter])
 
     return (
         <motion.div
@@ -126,6 +200,10 @@ export default function CoachingPage() {
                         </div>
 
                         {/* Coach Grid */}
+                        {isLoadingCoaches && (
+                            <div className="mb-4 text-[13px] text-(--text-secondary)">Loading coaches...</div>
+                        )}
+
                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-[16px]">
                             <AnimatePresence>
                                 {filteredCoaches.map((coach, i) => (
@@ -140,20 +218,20 @@ export default function CoachingPage() {
                                     >
                                         <div className="absolute top-4 right-4 z-10 bg-[var(--bg-elevated)] px-3 py-1.5 rounded-full border border-(--border-subtle) flex items-center gap-1.5 shadow-sm">
                                             <MapPin className="w-[12px] h-[12px] text-emerald-500" />
-                                            <span className="font-body font-bold text-[11px] text-(--text-secondary) uppercase tracking-wider">{(coach as any).location || 'Online'}</span>
+                                            <span className="font-body font-bold text-[11px] text-(--text-secondary) uppercase tracking-wider">{coach.location || 'Online'}</span>
                                         </div>
                                         <div className="p-1">
                                             <CoachCard 
                                                 id={coach.id}
                                                 name={coach.name}
                                                 avatar={coach.avatar || ''}
-                                                location={(coach as any).location || 'Online'}
+                                                location={coach.location || 'Online'}
                                                 specialty={coach.tags}
                                                 shortBio={coach.bio}
                                                 rating={coach.rating}
                                                 reviewCount={coach.reviewCount}
-                                                price={coach.pricing?.basic || 50}
-                                                isAvailable={true}
+                                                price={coach.monthlyPrice || 50}
+                                                isAvailable={coach.isAvailable}
                                             />
                                         </div>
                                     </motion.div>
@@ -197,4 +275,9 @@ export default function CoachingPage() {
             )}
         </motion.div>
     )
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) return error.message
+    return 'Unable to load coaches right now.'
 }

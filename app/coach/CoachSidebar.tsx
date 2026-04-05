@@ -9,6 +9,8 @@ import {
     Users,
     CalendarDays,
     FileVideo,
+    Bell,
+    LifeBuoy,
     MessageCircle,
     FormInput,
     Store,
@@ -19,6 +21,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useUIStore } from '@/store/useUIStore'
+import { disableCoachUserAppMode } from '@/lib/navigation/portalMode'
 
 interface NavItemProps {
     icon: React.ElementType
@@ -28,13 +31,17 @@ interface NavItemProps {
     isCollapsed: boolean
     badge?: number
     onClick?: (e: React.MouseEvent) => void
+    onMouseEnter?: () => void
 }
 
-const NavItem = ({ icon: Icon, label, href, isActive, isCollapsed, badge, onClick }: NavItemProps) => (
+const NavItem = ({ icon: Icon, label, href, isActive, isCollapsed, badge, onClick, onMouseEnter }: NavItemProps) => (
     <div className="relative group/navitem w-full">
         <Link
             href={href}
+            prefetch={false}
             onClick={onClick}
+            onMouseEnter={onMouseEnter}
+            onFocus={onMouseEnter}
             className={cn(
                 'flex items-center h-[44px] px-3 mx-2 my-0.5 rounded-[10px] gap-2.5 transition-all duration-120 cursor-pointer relative',
                 isActive
@@ -66,37 +73,53 @@ export function CoachSidebar() {
     const {
         isSidebarCollapsed: isCollapsed,
         toggleSidebar,
+        setSidebarCollapsed,
         isMobileNavOpen,
         closeMobileNav,
     } = useUIStore()
     const pathname = usePathname()
     const router = useRouter()
     const { user, logout } = useAuthStore()
+    const prefetchedRoutesRef = React.useRef<Set<string>>(new Set())
+    const asideRef = React.useRef<HTMLElement | null>(null)
+
+    const prefetchOnIntent = React.useCallback((href: string) => {
+        if (prefetchedRoutesRef.current.has(href)) return
+        prefetchedRoutesRef.current.add(href)
+        void router.prefetch(href)
+    }, [router])
 
     const handleLogout = (e: React.MouseEvent) => {
         e.stopPropagation()
         closeMobileNav()
+        disableCoachUserAppMode()
         logout()
         router.push('/')
     }
 
-    const handleLinkClick = (e: React.MouseEvent) => {
-        e.stopPropagation()
-
+    const handleLinkClick = () => {
         if (isMobileNavOpen) {
             closeMobileNav()
             return
         }
 
-        if (isCollapsed) {
-            toggleSidebar()
+        if (window.innerWidth >= 1024 && isCollapsed) {
+            setSidebarCollapsed(false)
+            return
+        }
+
+        if (window.innerWidth >= 1024) {
+            setSidebarCollapsed(true)
         }
     }
 
-    const handleSidebarClick = () => {
-        if (isCollapsed && !isMobileNavOpen) {
-            toggleSidebar()
-        }
+    const handleSidebarSurfaceClick = (event: React.MouseEvent<HTMLElement>) => {
+        if (isMobileNavOpen || !isCollapsed || window.innerWidth < 1024) return
+
+        const target = event.target as HTMLElement
+        if (target.closest('a,button,input,textarea,select,[role="button"]')) return
+
+        setSidebarCollapsed(false)
     }
 
     React.useEffect(() => {
@@ -121,6 +144,23 @@ export function CoachSidebar() {
         }
     }, [isMobileNavOpen, closeMobileNav])
 
+    React.useEffect(() => {
+        if (isMobileNavOpen || isCollapsed) return
+
+        const handlePointerDown = (event: MouseEvent) => {
+            if (window.innerWidth < 1024) return
+
+            if (asideRef.current && !asideRef.current.contains(event.target as Node)) {
+                setSidebarCollapsed(true)
+            }
+        }
+
+        document.addEventListener('mousedown', handlePointerDown)
+        return () => {
+            document.removeEventListener('mousedown', handlePointerDown)
+        }
+    }, [isCollapsed, isMobileNavOpen, setSidebarCollapsed])
+
     // MAIN
     const mainItems = [
         { icon: LayoutDashboard, label: 'Dashboard', href: '/coach' },
@@ -132,6 +172,9 @@ export function CoachSidebar() {
 
     // TOOLS
     const toolItems = [
+        { icon: MessageCircle, label: 'Messages', href: '/coach/messages' },
+        { icon: LifeBuoy, label: 'Support', href: '/coach/support' },
+        { icon: Bell, label: 'Notifications', href: '/coach/notifications' },
         { icon: MessageCircle, label: 'Broadcast', href: '/coach/broadcast' },
         { icon: FormInput, label: 'Forms', href: '/coach/forms' },
         { icon: Store, label: 'Marketplace', href: '/coach/marketplace' },
@@ -156,13 +199,14 @@ export function CoachSidebar() {
             />
 
             <aside
-                onClick={handleSidebarClick}
+                ref={asideRef}
+                onClick={handleSidebarSurfaceClick}
                 className={cn(
                     'fixed top-0 left-0 h-screen z-50 bg-(--sidebar-bg) border-r border-(--sidebar-border) overflow-y-auto flex flex-col',
                     'transition-[width,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
                     '[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]',
                     'w-[280px] sm:w-[320px] lg:w-[240px]',
-                    isCollapsed ? 'lg:w-[64px] lg:cursor-pointer' : '',
+                    isCollapsed ? 'lg:w-[64px]' : '',
                     isMobileNavOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 )}
             >
@@ -180,6 +224,7 @@ export function CoachSidebar() {
 
             {/* 2. User Block */}
             <div className="px-4 py-3 flex items-center gap-[10px] shrink-0 overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                     src={user?.avatar || "https://api.dicebear.com/7.x/notionists/svg?seed=CO"}
                     alt="Avatar"
@@ -223,6 +268,7 @@ export function CoachSidebar() {
                         isActive={isActive}
                         isCollapsed={isCollapsed}
                         onClick={handleLinkClick}
+                        onMouseEnter={() => prefetchOnIntent(item.href)}
                     />
                 )})}
 
@@ -241,6 +287,7 @@ export function CoachSidebar() {
                         isActive={isActive}
                         isCollapsed={isCollapsed}
                         onClick={handleLinkClick}
+                        onMouseEnter={() => prefetchOnIntent(item.href)}
                     />
                 )})}
 
@@ -259,20 +306,9 @@ export function CoachSidebar() {
                         isActive={isActive}
                         isCollapsed={isCollapsed}
                         onClick={handleLinkClick}
+                        onMouseEnter={() => prefetchOnIntent(item.href)}
                     />
                 )})}
-
-                {/* Switch to User App */}
-                <div className="mt-2">
-                    <NavItem
-                        icon={Activity}
-                        label="User App"
-                        href="/dashboard"
-                        isActive={false}
-                        isCollapsed={isCollapsed}
-                        onClick={handleLinkClick}
-                    />
-                </div>
 
                 {/* Separator before logout */}
                 <div className="mt-auto pt-4 relative">

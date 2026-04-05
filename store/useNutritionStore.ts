@@ -14,10 +14,17 @@ interface NutritionState {
     error: string | null
 
     fetchDayLog: (date: string) => Promise<void>
-    addEntry: (date: string, entry: Omit<MealEntry, 'id'>) => Promise<void>
+    addEntry: (date: string, entry: Omit<MealEntry, 'id'>, options?: AddEntryOptions) => Promise<void>
     removeEntry: (date: string, entryId: string) => Promise<void>
     getDayLog: (date: string) => DayLog | undefined
     getDailyTotals: (date: string) => { calories: number; protein: number; carbs: number; fat: number }
+}
+
+interface AddEntryOptions {
+    imageUrl?: string
+    imageSource?: 'manual_upload' | 'ai_scan' | 'food_api'
+    isAiGenerated?: boolean
+    scanMetadata?: Record<string, unknown>
 }
 
 type NutritionRow = Database['public']['Tables']['nutrition_entries']['Row']
@@ -49,7 +56,7 @@ export const useNutritionStore = create<NutritionState>()(
                 }
             },
 
-            addEntry: async (date, entry) => {
+            addEntry: async (date, entry, options) => {
                 if (isSupabaseAuthEnabled()) {
                     try {
                         const payload: {
@@ -59,6 +66,10 @@ export const useNutritionStore = create<NutritionState>()(
                             mealSlot: MealEntry['mealSlot']
                             loggedAt: string
                             notes?: string
+                            imageUrl?: string
+                            imageSource?: 'manual_upload' | 'ai_scan' | 'food_api'
+                            isAiGenerated?: boolean
+                            scanMetadata?: Record<string, unknown>
                         } = {
                             foodItemId: entry.foodItemId,
                             foodItem: entry.foodItem,
@@ -70,6 +81,22 @@ export const useNutritionStore = create<NutritionState>()(
                         const normalizedNotes = entry.notes?.trim()
                         if (normalizedNotes) {
                             payload.notes = normalizedNotes
+                        }
+
+                        if (options?.imageUrl) {
+                            payload.imageUrl = options.imageUrl
+                        }
+
+                        if (options?.imageSource) {
+                            payload.imageSource = options.imageSource
+                        }
+
+                        if (typeof options?.isAiGenerated === 'boolean') {
+                            payload.isAiGenerated = options.isAiGenerated
+                        }
+
+                        if (options?.scanMetadata) {
+                            payload.scanMetadata = options.scanMetadata
                         }
 
                         await requestApi<{ entry: NutritionRow }>('/api/v1/nutrition', {
@@ -151,10 +178,13 @@ export const useNutritionStore = create<NutritionState>()(
 )
 
 function mapRowToEntry(row: NutritionRow): MealEntry {
+    const foodItem = row.food_item as unknown as FoodItem
+    const rowWithImage = row as NutritionRow & { image_url?: string | null }
+
     return {
         id: row.id,
         foodItemId: row.food_item_id,
-        foodItem: row.food_item as unknown as FoodItem,
+        foodItem: foodItem.imageUrl ? foodItem : { ...foodItem, imageUrl: rowWithImage.image_url || undefined },
         quantity: Number(row.quantity),
         mealSlot: row.meal_slot as MealEntry['mealSlot'],
         loggedAt: row.logged_at,

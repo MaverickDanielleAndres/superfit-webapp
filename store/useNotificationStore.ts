@@ -28,7 +28,7 @@ interface NotificationState {
   isLoading: boolean
   error: string | null
 
-  initialize: () => Promise<void>
+  initialize: (options?: { force?: boolean }) => Promise<void>
   markAllRead: () => Promise<void>
   markAllSeen: () => Promise<void>
   markRead: (id: string) => Promise<void>
@@ -40,6 +40,10 @@ let notificationsChannel: RealtimeChannel | null = null
 let notificationsChannelUserId: string | null = null
 let notificationsSubscribers = 0
 let notificationsRefreshTimer: ReturnType<typeof setTimeout> | null = null
+let notificationsInitializeInFlight: Promise<void> | null = null
+let notificationsLastInitializedAt = 0
+
+const NOTIFICATIONS_INIT_CACHE_MS = 20_000
 
 export const useNotificationStore = create<NotificationState>()(
   persist(
@@ -49,27 +53,52 @@ export const useNotificationStore = create<NotificationState>()(
       isLoading: false,
       error: null,
 
-      initialize: async () => {
+      initialize: async (options) => {
         if (!isSupabaseAuthEnabled()) {
           set({ notifications: [], unreadCount: 0, isLoading: false, error: null })
           return
         }
 
-        set({ isLoading: true, error: null })
+        const state = get()
+        const now = Date.now()
+        if (
+          !options?.force &&
+          state.notifications.length > 0 &&
+          now - notificationsLastInitializedAt < NOTIFICATIONS_INIT_CACHE_MS
+        ) {
+          return
+        }
+
+        if (notificationsInitializeInFlight) {
+          await notificationsInitializeInFlight
+          return
+        }
+
+        notificationsInitializeInFlight = (async () => {
+          set({ isLoading: true, error: null })
+
+          try {
+            const response = await requestApi<{ notifications: AppNotification[]; unreadCount: number }>('/api/v1/notifications?limit=30')
+            set({
+              notifications: response.data.notifications,
+              unreadCount: response.data.unreadCount,
+              isLoading: false,
+              error: null,
+            })
+            notificationsLastInitializedAt = Date.now()
+          } catch (error) {
+            set({
+              isLoading: false,
+              error: getErrorMessage(error),
+            })
+            notificationsLastInitializedAt = Date.now()
+          }
+        })()
 
         try {
-          const response = await requestApi<{ notifications: AppNotification[]; unreadCount: number }>('/api/v1/notifications?limit=30')
-          set({
-            notifications: response.data.notifications,
-            unreadCount: response.data.unreadCount,
-            isLoading: false,
-            error: null,
-          })
-        } catch (error) {
-          set({
-            isLoading: false,
-            error: getErrorMessage(error),
-          })
+          await notificationsInitializeInFlight
+        } finally {
+          notificationsInitializeInFlight = null
         }
       },
 
@@ -176,7 +205,7 @@ export const useNotificationStore = create<NotificationState>()(
           }
 
           notificationsRefreshTimer = setTimeout(() => {
-            void get().initialize()
+            void get().initialize({ force: true })
           }, 180)
         }
 
@@ -209,6 +238,46 @@ export const useNotificationStore = create<NotificationState>()(
               schema: 'public',
               table: 'user_friendships',
               filter: `addressee_id=eq.${userId}`,
+            },
+            refresh,
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'user_follows',
+              filter: `follower_id=eq.${userId}`,
+            },
+            refresh,
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'user_follows',
+              filter: `followee_id=eq.${userId}`,
+            },
+            refresh,
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'coach_client_links',
+              filter: `coach_id=eq.${userId}`,
+            },
+            refresh,
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'coach_client_links',
+              filter: `client_id=eq.${userId}`,
             },
             refresh,
           )

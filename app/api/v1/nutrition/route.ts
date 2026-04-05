@@ -27,7 +27,18 @@ const NutritionCreateSchema = z.object({
   mealSlot: z.enum(['breakfast', 'morning_snack', 'lunch', 'afternoon_snack', 'dinner', 'evening_snack']),
   loggedAt: z.string().datetime().optional(),
   notes: z.string().max(500).optional(),
+  imageUrl: z.string().url().optional(),
+  imageSource: z.enum(['manual_upload', 'ai_scan', 'food_api']).optional(),
+  isAiGenerated: z.boolean().optional(),
+  scanMetadata: z.record(z.string(), z.unknown()).optional(),
 })
+
+type NutritionInsertPayload = Database['public']['Tables']['nutrition_entries']['Insert'] & {
+  image_url?: string | null
+  image_source?: string | null
+  is_ai_generated?: boolean
+  scan_metadata?: Json | null
+}
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID()
@@ -134,7 +145,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const payload: Database['public']['Tables']['nutrition_entries']['Insert'] = {
+  const payload: NutritionInsertPayload = {
     user_id: user.id,
     food_item_id: parsed.data.foodItemId,
     food_item: parsed.data.foodItem as unknown as Json,
@@ -143,6 +154,18 @@ export async function POST(request: Request) {
     logged_at: parsed.data.loggedAt || new Date().toISOString(),
     notes: parsed.data.notes || null,
   }
+
+  payload.image_url = parsed.data.imageUrl || null
+  payload.image_source = parsed.data.imageSource || null
+  payload.is_ai_generated = parsed.data.isAiGenerated || false
+  payload.scan_metadata = (parsed.data.scanMetadata as Json | undefined) || null
+
+  const scanLogId =
+    parsed.data.scanMetadata &&
+    typeof parsed.data.scanMetadata === 'object' &&
+    typeof parsed.data.scanMetadata.scanLogId === 'string'
+      ? parsed.data.scanMetadata.scanLogId
+      : null
 
   const { data, error } = await supabase
     .from('nutrition_entries')
@@ -158,6 +181,24 @@ export async function POST(request: Request) {
       detail: error?.message || 'Unable to add nutrition entry.',
       requestId,
     })
+  }
+
+  if (scanLogId) {
+    const dynamicSupabase = supabase as unknown as {
+      from: (table: string) => {
+        update: (values: Record<string, unknown>) => {
+          eq: (column: string, value: string) => {
+            eq: (column: string, value: string) => Promise<unknown>
+          }
+        }
+      }
+    }
+
+    await dynamicSupabase
+      .from('nutrition_scan_logs')
+      .update({ nutrition_entry_id: data.id })
+      .eq('id', scanLogId)
+      .eq('user_id', user.id)
   }
 
   return dataResponse({

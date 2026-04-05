@@ -26,6 +26,12 @@ interface SpoonIngredient {
   image?: string
 }
 
+function buildSpoonacularImageUrl(image: string | undefined): string | undefined {
+  if (!image) return undefined
+  if (image.startsWith('http://') || image.startsWith('https://')) return image
+  return `https://img.spoonacular.com/ingredients_250x250/${image}`
+}
+
 function normalizeCategory(value: string): NutrientCategory {
   const text = value.toLowerCase()
   if (text.includes('fruit')) return 'Fruits'
@@ -204,6 +210,7 @@ export async function GET(request: Request) {
             const spoonItem: FoodItem = {
               id: `spoon-${info.id || ingredientId}`,
               name: String(info.name || ingredient.name || 'Ingredient'),
+              imageUrl: buildSpoonacularImageUrl(ingredient.image),
               servingSize: 100,
               servingUnit: 'g',
               calories: Number(getValue(['calories']).toFixed(1)),

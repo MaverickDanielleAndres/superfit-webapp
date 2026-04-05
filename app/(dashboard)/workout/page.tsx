@@ -10,6 +10,7 @@ import CreateWorkoutSheet from '@/components/workout/CreateWorkoutSheet'
 import ExercisePickerDrawer from '@/components/workout/ExercisePickerDrawer'
 import RestTimerPill from '@/components/workout/RestTimerPill'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 export default function WorkoutPage() {
     const { activeSession, startSession, endSession, logSet, addExerciseToSession, addSetToExercise, removeSetFromExercise, removeExerciseFromSession, fetchSessions } = useWorkoutStore()
@@ -17,6 +18,14 @@ export default function WorkoutPage() {
     const [sessionTimer, setSessionTimer] = useState(0)
     const [showExerciseModal, setShowExerciseModal] = useState(false)
     const [showCreateSheet, setShowCreateSheet] = useState(false)
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [isConfirming, setIsConfirming] = useState(false)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = useState<null | (() => Promise<void>)>(null)
 
     useEffect(() => {
         void fetchSessions()
@@ -41,6 +50,37 @@ export default function WorkoutPage() {
         return h > 0
             ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
             : `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+    }
+
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
+    }
+
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
+
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
     }
 
     // If no active session, show the Start / Template screen
@@ -124,7 +164,18 @@ export default function WorkoutPage() {
                     </div>
 
                     <button
-                        onClick={() => endSession()}
+                        onClick={() => {
+                            openConfirmation(
+                                {
+                                    title: 'Finish Workout Session?',
+                                    message: 'This will end your active session now.',
+                                    confirmText: 'Finish Session',
+                                },
+                                async () => {
+                                    endSession()
+                                },
+                            )
+                        }}
                         className="h-[40px] px-6 rounded-[12px] bg-(--accent) text-white font-display font-bold text-[14px] hover:bg-(--accent-hover) transition-all cursor-pointer flex items-center gap-2"
                     >
                         <Square className="w-[14px] h-[14px] fill-current" /> Finish
@@ -151,7 +202,19 @@ export default function WorkoutPage() {
                                     <span className="font-body text-[13px] text-(--text-secondary) capitalize">{exLog.exercise.muscleGroups.join(', ')} • {exLog.exercise.equipment.join(', ')}</span>
                                 </div>
                             </div>
-                            <button onClick={() => removeExerciseFromSession(exLog.exerciseId)} className="w-[32px] h-[32px] rounded-full flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 transition-colors text-(--text-tertiary)">
+                            <button onClick={() => {
+                                openConfirmation(
+                                    {
+                                        title: 'Remove Exercise?',
+                                        message: `${exLog.exercise.name} and its sets will be removed from this session.`,
+                                        confirmText: 'Remove Exercise',
+                                        tone: 'danger',
+                                    },
+                                    async () => {
+                                        removeExerciseFromSession(exLog.exerciseId)
+                                    },
+                                )
+                            }} className="w-[32px] h-[32px] rounded-full flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 transition-colors text-(--text-tertiary)">
                                 <Trash2 className="w-[16px] h-[16px]" />
                             </button>
                         </div>
@@ -170,7 +233,19 @@ export default function WorkoutPage() {
                         {/* Sets Rows */}
                         {exLog.sets.map((setInfo, setIdx) => (
                             <div key={setInfo.id} className={cn("grid grid-cols-[40px_1fr_80px_80px_48px] gap-2 px-4 py-2 items-center", setIdx % 2 === 0 ? "bg-[var(--bg-elevated)]" : "")}>
-                                <div className="text-center font-display font-bold text-[14px] text-(--text-secondary) cursor-pointer" onDoubleClick={() => removeSetFromExercise(exLog.exerciseId, setIdx)}>
+                                <div className="text-center font-display font-bold text-[14px] text-(--text-secondary) cursor-pointer" onDoubleClick={() => {
+                                    openConfirmation(
+                                        {
+                                            title: 'Remove Set?',
+                                            message: `Set ${setInfo.setType === 'warmup' ? 'W' : setInfo.setNumber} will be removed from ${exLog.exercise.name}.`,
+                                            confirmText: 'Remove Set',
+                                            tone: 'danger',
+                                        },
+                                        async () => {
+                                            removeSetFromExercise(exLog.exerciseId, setIdx)
+                                        },
+                                    )
+                                }}>
                                     {setInfo.setType === 'warmup' ? 'W' : setInfo.setNumber}
                                 </div>
                                 <div className="text-left pl-2 font-body text-[13px] text-(--text-tertiary) truncate">
@@ -226,6 +301,19 @@ export default function WorkoutPage() {
             />
 
             <RestTimerPill />
+
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
 
         </motion.div>
     )

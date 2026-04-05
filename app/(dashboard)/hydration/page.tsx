@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { DrinkType } from '@/types'
 import { toast } from 'sonner'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 // Explicit interface for QuickDrink to satisfy TS strictly
 interface QuickDrink {
@@ -45,6 +46,14 @@ export default function HydrationPage() {
     const [showCustom, setShowCustom] = useState(false)
     const [customDrink, setCustomDrink] = useState({ label: '', amount: 250, caffeine: 0, color: 'text-cyan-500', image: null as string | null })
     const fileInputRef = React.useRef<HTMLInputElement>(null)
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [isConfirming, setIsConfirming] = useState(false)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = useState<null | (() => Promise<void>)>(null)
 
     const changeDate = (direction: 'prev' | 'next') => {
         const newDate = new Date(viewDate)
@@ -135,6 +144,37 @@ export default function HydrationPage() {
             return Math.max(20, Math.min(100, Math.round(value)))
         })
     }, [viewDate, viewMode])
+
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
+    }
+
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
+
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
+    }
 
     return (
         <motion.div
@@ -331,8 +371,18 @@ export default function HydrationPage() {
                                     </div>
                                     <button
                                         onClick={() => {
-                                            void removeDrink(dateStr, entry.id)
-                                            toast.success('Entry removed')
+                                            openConfirmation(
+                                                {
+                                                    title: 'Remove Drink Entry?',
+                                                    message: `${entry.label} will be removed from your hydration log.`,
+                                                    confirmText: 'Remove Entry',
+                                                    tone: 'danger',
+                                                },
+                                                async () => {
+                                                    await removeDrink(dateStr, entry.id)
+                                                    toast.success('Entry removed')
+                                                },
+                                            )
                                         }}
                                         className="opacity-0 group-hover:opacity-100 p-2 text-(--status-danger) hover:bg-red-500/10 rounded-[8px] transition-all cursor-pointer"
                                     >
@@ -427,6 +477,19 @@ export default function HydrationPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
         </motion.div>
     )
 }

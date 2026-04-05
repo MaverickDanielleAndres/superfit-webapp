@@ -1,11 +1,16 @@
 'use client'
 
 import React from 'react'
-import { Star, MessageCircle, ArrowRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Star, MessageCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useMessageStore } from '@/store/useMessageStore'
+import { requestApi } from '@/lib/api/client'
 import { toast } from 'sonner'
+
+function getSafeCoachAvatar(avatar: string, name: string): string {
+    const trimmed = String(avatar || '').trim()
+    if (trimmed.length > 0) return trimmed
+    return `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(name || 'coach')}`
+}
 
 interface CoachCardProps {
     id?: string
@@ -21,23 +26,32 @@ interface CoachCardProps {
 }
 
 export function CoachCard({
-    id, name, avatar, location, specialty, shortBio, rating, reviewCount, price, isAvailable
+    id, name, avatar, specialty, shortBio, rating, reviewCount, price, isAvailable
 }: CoachCardProps) {
     const router = useRouter()
-    const { addConversation } = useMessageStore()
+    const safeAvatar = getSafeCoachAvatar(avatar, name)
 
-    const handleMessage = () => {
+    const handleMessage = async () => {
         if (!id) return
-        addConversation({
-            id: `conv_${id}`,
-            participants: [
-                { id, name, avatar }
-            ],
-            isGroup: false,
-            updatedAt: new Date().toISOString(),
-            unreadCount: 0
-        })
-        router.push('/messages')
+
+        try {
+            const response = await requestApi<{ threadId: string }>('/api/v1/messages/direct-thread', {
+                method: 'POST',
+                body: JSON.stringify({ participantId: id }),
+            })
+            router.push(`/messages?thread=${encodeURIComponent(response.data.threadId)}`)
+        } catch (error) {
+            const status = typeof error === 'object' && error !== null && 'status' in error
+                ? Number((error as { status?: unknown }).status)
+                : 0
+
+            if (status === 403) {
+                toast.info('Subscribe first, or establish an active coach-client link before messaging.')
+                return
+            }
+
+            toast.error('Unable to open chat right now.')
+        }
     }
 
     const handleViewProfile = () => {
@@ -52,7 +66,8 @@ export function CoachCard({
             <div className="flex justify-between items-start mb-[16px]">
                 <div className="flex items-center gap-[12px]">
                     <div className="relative">
-                        <img src={avatar} alt={name} className="w-[48px] h-[48px] rounded-full object-cover border border-(--border-subtle)" />
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={safeAvatar} alt={name} className="w-[48px] h-[48px] rounded-full object-cover border border-(--border-subtle)" />
                         {isAvailable && (
                             <div className="absolute bottom-0 right-0 w-[12px] h-[12px] bg-(--status-success) rounded-full border-2 border-[var(--bg-elevated)]" />
                         )}
@@ -90,7 +105,7 @@ export function CoachCard({
             {/* Actions */}
             <div className="flex gap-[8px]">
                 <button 
-                    onClick={() => toast.success(`Subscribed to ${name}! Welcome aboard.`)}
+                    onClick={handleViewProfile}
                     className="flex-1 h-[40px] rounded-[10px] bg-emerald-500 hover:bg-emerald-600 text-white font-body font-bold text-[13px] transition-colors flex items-center justify-center cursor-pointer shadow-sm"
                 >
                     Subscribe
@@ -102,7 +117,7 @@ export function CoachCard({
                     Profile
                 </button>
                 <button 
-                    onClick={handleMessage}
+                    onClick={() => { void handleMessage() }}
                     title="Message Coach"
                     className="w-[40px] h-[40px] shrink-0 rounded-[10px] bg-[var(--bg-elevated)] border border-(--border-default) hover:bg-(--bg-surface-alt) text-(--text-primary) transition-colors flex items-center justify-center cursor-pointer shadow-sm"
                 >

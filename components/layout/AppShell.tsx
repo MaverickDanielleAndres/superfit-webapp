@@ -4,8 +4,6 @@ import React from 'react'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { useUIStore } from '@/store/useUIStore'
-import { useAuthStore } from '@/store/useAuthStore'
-import { useMessageStore } from '@/store/useMessageStore'
 import { cn } from '@/lib/utils'
 
 interface AppShellProps {
@@ -14,13 +12,6 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
     const { isSidebarCollapsed } = useUIStore()
-    const { user } = useAuthStore()
-    const { initialize } = useMessageStore()
-
-    React.useEffect(() => {
-        if (!user?.id) return
-        void initialize()
-    }, [initialize, user?.id])
 
     return (
         <div className="min-h-screen bg-(--bg-base) flex overflow-x-hidden">

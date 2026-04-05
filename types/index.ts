@@ -39,6 +39,7 @@ export interface UserProfile {
     joinDate: string       // ISO date string
     timezone: string
     role: 'user' | 'coach' | 'admin'
+    accountStatus?: 'active' | 'suspended' | 'inactive' | 'pending_review'
 }
 
 // ══════════════════════════════════════════
@@ -51,6 +52,7 @@ export interface FoodItem {
     id: string
     name: string
     brand?: string
+    imageUrl?: string
     servingSize: number       // grams
     servingUnit: string       // 'g' | 'ml' | 'oz' | 'piece' | 'cup' etc.
     calories: number       // per serving

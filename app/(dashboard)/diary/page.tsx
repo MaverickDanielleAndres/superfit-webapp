@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Plus, ScanLine, Utensils, Flame, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2, ArrowLeft, Camera, X, Check, Activity, ChevronDown } from 'lucide-react'
+import { Search, Plus, ScanLine, Utensils, Flame, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2, ArrowLeft, Camera, X, Check, Activity, ChevronDown, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import { useNutritionStore } from '@/store/useNutritionStore'
@@ -12,10 +12,28 @@ import { MealSlot, FoodItem } from '@/types'
 import { requestApi } from '@/lib/api/client'
 import { toast } from 'sonner'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+
+type ScanResultPayload = {
+    item: FoodItem
+    quantity: number
+    mealSlot: MealSlot
+    hints?: string[]
+    confidenceScore?: number
+    scanLogId?: string | null
+    imageUrl?: string | null
+    sourceType?: 'upload' | 'camera'
+}
+
+type NutritionUploadResponse = {
+    path: string
+    url: string
+    sourceType: 'upload' | 'camera'
+}
 
 export default function DiaryPage() {
     const { user } = useAuthStore()
-    const { getDayLog, getDailyTotals, addEntry, fetchDayLog } = useNutritionStore()
+    const { getDayLog, getDailyTotals, addEntry, removeEntry, fetchDayLog } = useNutritionStore()
     const { activeSession } = useWorkoutStore()
     const isSimulationMode = !isSupabaseAuthEnabled()
 
@@ -33,16 +51,54 @@ export default function DiaryPage() {
     const [isFoodSearchLoading, setIsFoodSearchLoading] = useState(false)
     const [foodSearchError, setFoodSearchError] = useState<string | null>(null)
     const [addFoodTab, setAddFoodTab] = useState<'search' | 'manual'>('search')
-    const [manualFood, setManualFood] = useState({ name: '', brand: '', calories: '', protein: '', carbs: '', fat: '' })
+    const [manualFood, setManualFood] = useState({ name: '', brand: '', calories: '', protein: '', carbs: '', fat: '', imageUrl: '', imagePath: '' })
+    const [isManualImageUploading, setIsManualImageUploading] = useState(false)
 
     // AI Scanner State
     const [isScannerOpen, setIsScannerOpen] = useState(false)
     const [scanState, setScanState] = useState<'idle' | 'uploading' | 'analyzing' | 'results'>('idle')
     const [scanImage, setScanImage] = useState<string | null>(null)
-    const [scanResults, setScanResults] = useState<{ item: FoodItem, quantity: number, mealSlot: MealSlot } | null>(null)
+    const [scanResults, setScanResults] = useState<ScanResultPayload | null>(null)
+    const [selectedScanMealSlot, setSelectedScanMealSlot] = useState<MealSlot>('breakfast')
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [isConfirming, setIsConfirming] = useState(false)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = useState<null | (() => Promise<void>)>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const manualImageInputRef = useRef<HTMLInputElement>(null)
     const videoRef = useRef<HTMLVideoElement>(null)
     const [stream, setStream] = useState<MediaStream | null>(null)
+
+    const readFileAsDataUrl = (file: File) =>
+        new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = (event) => {
+                if (!event.target?.result || typeof event.target.result !== 'string') {
+                    reject(new Error('Unable to read file.'))
+                    return
+                }
+                resolve(event.target.result)
+            }
+            reader.onerror = () => reject(new Error('Unable to read file.'))
+            reader.readAsDataURL(file)
+        })
+
+    const uploadNutritionImage = async (file: File, sourceType: 'upload' | 'camera'): Promise<NutritionUploadResponse> => {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('sourceType', sourceType)
+
+        const response = await requestApi<NutritionUploadResponse>('/api/v1/nutrition/upload', {
+            method: 'POST',
+            body: formData,
+        })
+
+        return response.data
+    }
 
     const changeDate = (days: number) => {
         const newDate = new Date(viewDate)
@@ -55,6 +111,7 @@ export default function DiaryPage() {
         setScanState('idle')
         setScanImage(null)
         setScanResults(null)
+        setSelectedScanMealSlot('breakfast')
         try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
             setStream(mediaStream)
@@ -76,6 +133,7 @@ export default function DiaryPage() {
         }
         setScanState('idle')
         setScanImage(null)
+        setSelectedScanMealSlot('breakfast')
     }
 
     useEffect(() => {
@@ -137,8 +195,14 @@ export default function DiaryPage() {
             const ctx = canvas.getContext('2d')
             if (ctx) {
                 ctx.drawImage(videoRef.current, 0, 0)
-                const dataUrl = canvas.toDataURL('image/jpeg')
-                processImage(dataUrl)
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        toast.error('Unable to capture this frame.')
+                        return
+                    }
+                    const capturedFile = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' })
+                    void processImageFile(capturedFile, 'camera')
+                }, 'image/jpeg', 0.9)
             }
         }
     }
@@ -146,28 +210,47 @@ export default function DiaryPage() {
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (file) {
-            const reader = new FileReader()
-            reader.onload = (event) => {
-                if (event.target?.result) {
-                    processImage(event.target.result as string)
-                }
-            }
-            reader.readAsDataURL(file)
+            void processImageFile(file, 'upload')
             if (!isScannerOpen) setIsScannerOpen(true)
         }
+
+        e.target.value = ''
     }
 
-    const processImage = async (imageData: string) => {
-        setScanImage(imageData)
-        setScanState('analyzing')
+    const processImageFile = async (file: File, sourceType: 'upload' | 'camera') => {
+        setScanState('uploading')
 
         try {
-            const response = await requestApi<{ item: FoodItem; quantity: number; mealSlot: MealSlot }>('/api/v1/nutrition/ai-scan', {
+            const imageData = await readFileAsDataUrl(file)
+            setScanImage(imageData)
+
+            let uploadedImage: NutritionUploadResponse | null = null
+            try {
+                uploadedImage = await uploadNutritionImage(file, sourceType)
+            } catch (error) {
+                console.error('Nutrition image upload failed:', error)
+                toast.error('Image upload failed. Continuing scan without cloud image.')
+            }
+
+            setScanState('analyzing')
+
+            const response = await requestApi<ScanResultPayload>('/api/v1/nutrition/ai-scan', {
                 method: 'POST',
-                body: JSON.stringify({ imageData }),
+                body: JSON.stringify({
+                    imageData,
+                    imageUrl: uploadedImage?.url,
+                    sourceType,
+                }),
             })
 
-            setScanResults(response.data)
+            const payload = {
+                ...response.data,
+                imageUrl: response.data.imageUrl || uploadedImage?.url || null,
+                sourceType,
+            }
+
+            setScanResults(payload)
+            setSelectedScanMealSlot(payload.mealSlot)
             setScanState('results')
         } catch (error) {
             setScanState('idle')
@@ -184,19 +267,61 @@ export default function DiaryPage() {
 
     const displayedSearchFoods = foodSearchQuery.trim().length >= 2 ? foodSearchResults : defaultFoodSuggestions
 
-    const addFoodEntry = async (foodItem: FoodItem, mealSlot: MealSlot, quantity = 1) => {
+    const handleManualFoodImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0]
+        if (!file) return
+
+        setIsManualImageUploading(true)
+        try {
+            const uploaded = await uploadNutritionImage(file, 'upload')
+            setManualFood((previous) => ({ ...previous, imageUrl: uploaded.url, imagePath: uploaded.path }))
+            toast.success('Image uploaded for this food item.')
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Image upload failed.')
+        } finally {
+            setIsManualImageUploading(false)
+            event.target.value = ''
+        }
+    }
+
+    const addFoodEntry = async (
+        foodItem: FoodItem,
+        mealSlot: MealSlot,
+        quantity = 1,
+        options?: {
+            imageUrl?: string
+            imageSource?: 'manual_upload' | 'ai_scan' | 'food_api'
+            isAiGenerated?: boolean
+            scanMetadata?: Record<string, unknown>
+        },
+    ) => {
         await addEntry(dateStr, {
             foodItemId: foodItem.id,
             foodItem,
             quantity,
             mealSlot,
             loggedAt: new Date().toISOString(),
-        })
+        }, options)
     }
 
     const handleSaveScanResult = async () => {
         if (scanResults) {
-            await addFoodEntry(scanResults.item, scanResults.mealSlot, scanResults.quantity)
+            await addFoodEntry(
+                { ...scanResults.item, imageUrl: scanResults.imageUrl || scanResults.item.imageUrl },
+                selectedScanMealSlot,
+                scanResults.quantity,
+                {
+                    imageUrl: scanResults.imageUrl || undefined,
+                    imageSource: scanResults.imageUrl ? 'ai_scan' : undefined,
+                    isAiGenerated: true,
+                    scanMetadata: {
+                        scanLogId: scanResults.scanLogId || null,
+                        confidenceScore: scanResults.confidenceScore || null,
+                        hints: scanResults.hints || [],
+                        sourceType: scanResults.sourceType || 'upload',
+                    },
+                },
+            )
             toast.success('Meal added to diary!')
             closeScanner()
         }
@@ -209,9 +334,11 @@ export default function DiaryPage() {
 
     const mealSlots: { id: MealSlot, label: string }[] = [
         { id: 'breakfast', label: 'Breakfast' },
+        { id: 'morning_snack', label: 'Morning Snack' },
         { id: 'lunch', label: 'Lunch' },
+        { id: 'afternoon_snack', label: 'Afternoon Snack' },
         { id: 'dinner', label: 'Dinner' },
-        { id: 'morning_snack', label: 'Snacks' }
+        { id: 'evening_snack', label: 'Evening Snack' },
     ]
 
     const MacroBar = ({ label, current, target, color }: { label: string, current: number, target: number, color: string }) => {
@@ -232,6 +359,37 @@ export default function DiaryPage() {
                 </div>
             </div>
         )
+    }
+
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
+    }
+
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
+
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
     }
 
     return (
@@ -340,15 +498,48 @@ export default function DiaryPage() {
                                             <div className="flex flex-col gap-2 mb-3">
                                                 {slotEntries.map(entry => (
                                                     <div key={entry.id} className="flex items-center justify-between p-3 rounded-[12px] bg-(--bg-base) border border-(--border-subtle) hover:border-(--border-default) transition-colors group">
-                                                        <div>
-                                                            <span className="block font-body text-[15px] text-(--text-primary) font-semibold">{entry.foodItem.name}</span>
-                                                            <span className="block font-body text-[13px] text-(--text-secondary) mt-0.5">{entry.foodItem.brand ? `${entry.foodItem.brand} • ` : ''}{entry.quantity * entry.foodItem.servingSize}{entry.foodItem.servingUnit}</span>
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            {entry.foodItem.imageUrl ? (
+                                                                <img
+                                                                    src={entry.foodItem.imageUrl}
+                                                                    alt={entry.foodItem.name}
+                                                                    className="w-[44px] h-[44px] rounded-[10px] object-cover border border-(--border-subtle)"
+                                                                />
+                                                            ) : (
+                                                                <div className="w-[44px] h-[44px] rounded-[10px] bg-(--bg-elevated) border border-(--border-subtle) flex items-center justify-center">
+                                                                    <Utensils className="w-[16px] h-[16px] text-(--text-tertiary)" />
+                                                                </div>
+                                                            )}
+                                                            <div className="min-w-0">
+                                                                <span className="block truncate font-body text-[15px] text-(--text-primary) font-semibold">{entry.foodItem.name}</span>
+                                                                <span className="block font-body text-[13px] text-(--text-secondary) mt-0.5">{entry.foodItem.brand ? `${entry.foodItem.brand} • ` : ''}{entry.quantity * entry.foodItem.servingSize}{entry.foodItem.servingUnit}</span>
+                                                            </div>
                                                         </div>
                                                         <div className="flex items-center gap-4">
                                                             <div className="text-right">
                                                                 <span className="block font-body text-[15px] text-(--text-primary) font-bold">{entry.foodItem.calories * entry.quantity}</span>
                                                                 <span className="block font-body text-[12px] text-(--text-tertiary) font-medium mt-0.5">P: {entry.foodItem.protein * entry.quantity}g</span>
                                                             </div>
+                                                            <button
+                                                                onClick={() => {
+                                                                    openConfirmation(
+                                                                        {
+                                                                            title: 'Remove Diary Item?',
+                                                                            message: `${entry.foodItem.name} will be removed from ${slot.label}.`,
+                                                                            confirmText: 'Remove Item',
+                                                                            tone: 'danger',
+                                                                        },
+                                                                        async () => {
+                                                                            await removeEntry(dateStr, entry.id)
+                                                                            toast.success('Diary item removed.')
+                                                                        },
+                                                                    )
+                                                                }}
+                                                                className="p-2 rounded-[10px] text-(--status-danger) hover:bg-red-500/10 transition-colors"
+                                                                title="Remove item"
+                                                            >
+                                                                <Trash2 className="w-[16px] h-[16px]" />
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 ))}
@@ -410,7 +601,15 @@ export default function DiaryPage() {
                                 <img src={scanImage} className="absolute inset-0 w-full h-full object-cover filter brightness-75 blur-[2px]" />
                             ) : null}
 
-                            {/* Analysis Overlay */}
+                            {/* Upload/Analysis Overlay */}
+                            {scanState === 'uploading' && (
+                                <div className="absolute inset-0 bg-black/40 backdrop-blur-sm shadow-[inset_0_0_100px_rgba(56,189,248,0.25)] flex flex-col items-center justify-center z-30">
+                                    <div className="w-[120px] h-[120px] rounded-full border-4 border-sky-500/20 border-t-sky-500 animate-spin mb-6" />
+                                    <h2 className="font-display font-black text-[22px] sm:text-[24px] lg:text-[28px] text-white mb-2">Uploading Image...</h2>
+                                    <p className="font-body text-sky-300 font-medium">Saving a secure copy for your diary log</p>
+                                </div>
+                            )}
+
                             {scanState === 'analyzing' && (
                                 <div className="absolute inset-0 bg-black/40 backdrop-blur-sm shadow-[inset_0_0_100px_rgba(16,185,129,0.3)] flex flex-col items-center justify-center z-30">
                                     <div className="w-[120px] h-[120px] rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-6 drop-shadow-[0_0_20px_rgba(16,185,129,0.8)]" />
@@ -435,7 +634,7 @@ export default function DiaryPage() {
                                             </div>
                                             <div>
                                                 <h3 className="font-display font-black text-[24px] text-zinc-900 dark:text-white leading-tight">{scanResults.item.name}</h3>
-                                                <p className="font-body text-[14px] text-zinc-500 dark:text-zinc-400">AI Confidence: 94%</p>
+                                                <p className="font-body text-[14px] text-zinc-500 dark:text-zinc-400">AI Confidence: {Math.round((scanResults.confidenceScore || 0.8) * 100)}%</p>
                                             </div>
                                         </div>
 
@@ -458,8 +657,32 @@ export default function DiaryPage() {
                                             </div>
                                         </div>
 
+                                        <div className="mb-4">
+                                            <p className="font-body text-[12px] uppercase tracking-wide font-bold text-zinc-500 dark:text-zinc-400 mb-2">Log To Meal Slot</p>
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                                {mealSlots.map((slot) => (
+                                                    <button
+                                                        key={slot.id}
+                                                        onClick={() => setSelectedScanMealSlot(slot.id)}
+                                                        className={cn(
+                                                            'h-[38px] rounded-[12px] border font-body text-[12px] font-bold transition-colors',
+                                                            selectedScanMealSlot === slot.id
+                                                                ? 'bg-emerald-500 text-white border-emerald-500'
+                                                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700',
+                                                        )}
+                                                    >
+                                                        {slot.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
                                         <div className="flex items-center gap-3">
-                                            <button onClick={() => setScanState('idle')} className="h-[56px] px-6 rounded-[16px] bg-zinc-100 dark:bg-zinc-800 font-body font-bold text-[16px] text-zinc-900 dark:text-white hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex-[0.5]">
+                                            <button onClick={() => {
+                                                setScanState('idle')
+                                                setScanImage(null)
+                                                setScanResults(null)
+                                            }} className="h-[56px] px-6 rounded-[16px] bg-zinc-100 dark:bg-zinc-800 font-body font-bold text-[16px] text-zinc-900 dark:text-white hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex-[0.5]">
                                                 Retake
                                             </button>
                                             <button onClick={handleSaveScanResult} className="h-[56px] px-6 rounded-[16px] bg-emerald-500 text-white font-body font-bold text-[16px] hover:bg-emerald-600 transition-colors flex-[1] shadow-[0_8px_20px_rgba(16,185,129,0.3)]">
@@ -539,15 +762,31 @@ export default function DiaryPage() {
                                             <div key={food.id} className="flex justify-between items-center p-3 rounded-[12px] border border-(--border-subtle) hover:border-emerald-500 bg-[var(--bg-elevated)] cursor-pointer group"
                                                 onClick={() => {
                                                     void (async () => {
-                                                        await addFoodEntry(food, activeTargetMeal, 1)
+                                                        await addFoodEntry(food, activeTargetMeal, 1, {
+                                                            imageUrl: food.imageUrl,
+                                                            imageSource: food.imageUrl ? 'food_api' : undefined,
+                                                        })
                                                         toast.success(`${food.name} added!`)
                                                         setIsAddFoodOpen(false)
                                                     })()
                                                 }}
                                             >
-                                                <div>
-                                                    <span className="block font-bold text-[14px] text-(--text-primary)">{food.name} {food.brand && <span className="text-(--text-tertiary) font-normal">({food.brand})</span>}</span>
-                                                    <span className="text-[12px] text-(--text-secondary)">1 {food.servingUnit} • {food.calories} kcal</span>
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    {food.imageUrl ? (
+                                                        <img
+                                                            src={food.imageUrl}
+                                                            alt={food.name}
+                                                            className="w-[40px] h-[40px] rounded-[10px] object-cover border border-(--border-subtle)"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-[40px] h-[40px] rounded-[10px] bg-(--bg-base) border border-(--border-subtle) flex items-center justify-center">
+                                                            <Utensils className="w-[14px] h-[14px] text-(--text-tertiary)" />
+                                                        </div>
+                                                    )}
+                                                    <div className="min-w-0">
+                                                        <span className="block truncate font-bold text-[14px] text-(--text-primary)">{food.name} {food.brand && <span className="text-(--text-tertiary) font-normal">({food.brand})</span>}</span>
+                                                        <span className="block text-[12px] text-(--text-secondary)">1 {food.servingUnit} • {food.calories} kcal</span>
+                                                    </div>
                                                 </div>
                                                 <button className="w-[32px] h-[32px] rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <Plus className="w-[16px] h-[16px]" />
@@ -574,6 +813,29 @@ export default function DiaryPage() {
                                         <div className="space-y-2">
                                             <label className="text-[13px] font-bold text-(--text-secondary) uppercase tracking-wider">Brand Name <span className="text-(--text-tertiary) lowercase normal-case">(optional)</span></label>
                                             <input type="text" value={manualFood.brand} onChange={e => setManualFood({...manualFood, brand: e.target.value})} className="w-full h-[48px] bg-(--bg-surface) border border-(--border-default) rounded-[12px] px-4 text-(--text-primary) font-body focus:border-(--accent) outline-none transition-colors" placeholder="e.g. Trader Joe's" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[13px] font-bold text-(--text-secondary) uppercase tracking-wider">Food Image <span className="text-(--text-tertiary) lowercase normal-case">(optional)</span></label>
+                                            <input type="file" accept="image/*" className="hidden" ref={manualImageInputRef} onChange={handleManualFoodImageChange} />
+                                            {manualFood.imageUrl ? (
+                                                <div className="rounded-[12px] border border-(--border-default) bg-(--bg-surface) p-3">
+                                                    <img src={manualFood.imageUrl} alt="Manual food" className="w-full h-[140px] rounded-[10px] object-cover" />
+                                                    <button
+                                                        onClick={() => setManualFood((previous) => ({ ...previous, imageUrl: '', imagePath: '' }))}
+                                                        className="mt-3 h-[36px] px-4 rounded-[10px] border border-(--border-default) text-(--text-secondary) hover:text-(--text-primary)"
+                                                    >
+                                                        Remove Image
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => manualImageInputRef.current?.click()}
+                                                    disabled={isManualImageUploading}
+                                                    className="w-full h-[44px] rounded-[12px] border border-dashed border-(--border-default) text-(--text-secondary) hover:text-(--accent) hover:border-(--accent) transition-colors disabled:opacity-60"
+                                                >
+                                                    {isManualImageUploading ? 'Uploading image...' : 'Upload Food Image'}
+                                                </button>
+                                            )}
                                         </div>
                                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
                                             <div className="space-y-2">
@@ -603,6 +865,7 @@ export default function DiaryPage() {
                                                     id: `manual_${Date.now()}`,
                                                     name: manualFood.name,
                                                     brand: manualFood.brand,
+                                                    imageUrl: manualFood.imageUrl || undefined,
                                                     calories: Number(manualFood.calories),
                                                     protein: Number(manualFood.protein) || 0,
                                                     carbs: Number(manualFood.carbs) || 0,
@@ -613,9 +876,12 @@ export default function DiaryPage() {
                                                     category: 'Other'
                                                 }
                                                 void (async () => {
-                                                    await addFoodEntry(item, activeTargetMeal, 1)
+                                                    await addFoodEntry(item, activeTargetMeal, 1, {
+                                                        imageUrl: manualFood.imageUrl || undefined,
+                                                        imageSource: manualFood.imageUrl ? 'manual_upload' : undefined,
+                                                    })
                                                     toast.success(`${item.name} added manually!`)
-                                                    setManualFood({ name: '', brand: '', calories: '', protein: '', carbs: '', fat: '' })
+                                                    setManualFood({ name: '', brand: '', calories: '', protein: '', carbs: '', fat: '', imageUrl: '', imagePath: '' })
                                                     setIsAddFoodOpen(false)
                                                 })()
                                             }}
@@ -630,6 +896,19 @@ export default function DiaryPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
 
         </motion.div>
     )

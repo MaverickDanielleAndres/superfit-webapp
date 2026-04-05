@@ -19,6 +19,7 @@ import {
     BookOpen,
     Timer,
     MessageCircle,
+    LifeBuoy,
     Crown,
     LogOut,
     Camera,
@@ -27,6 +28,7 @@ import {
 import { useAuthStore } from '@/store/useAuthStore'
 import { useMessageStore } from '@/store/useMessageStore'
 import { useUIStore } from '@/store/useUIStore'
+import { disableCoachUserAppMode } from '@/lib/navigation/portalMode'
 
 interface NavItemProps {
     icon: React.ElementType
@@ -43,7 +45,7 @@ const NavItem = ({ icon: Icon, label, href, isActive, isCollapsed, badge, onClic
     <div className="relative group/navitem w-full">
         <Link
             href={href}
-            prefetch={true}
+            prefetch={false}
             onClick={() => onClick?.()}
             onMouseEnter={onMouseEnter}
             className={cn(
@@ -85,10 +87,12 @@ export function Sidebar() {
     const { user, logout } = useAuthStore()
     const { getTotalUnread } = useMessageStore()
     const totalUnread = getTotalUnread()
+    const prefetchedRoutesRef = React.useRef<Set<string>>(new Set())
 
     const handleLogout = (e: React.MouseEvent) => {
         e.stopPropagation()
         closeMobileNav()
+        disableCoachUserAppMode()
         logout()
         router.push('/auth')
     }
@@ -102,6 +106,21 @@ export function Sidebar() {
         if (isCollapsed) {
             toggleSidebar()
         }
+    }
+
+    const prefetchOnIntent = (href: string) => {
+        if (prefetchedRoutesRef.current.has(href)) return
+        prefetchedRoutesRef.current.add(href)
+        void router.prefetch(href)
+    }
+
+    const handleSidebarSurfaceClick = (event: React.MouseEvent<HTMLElement>) => {
+        if (isMobileNavOpen || !isCollapsed || window.innerWidth < 1024) return
+
+        const target = event.target as HTMLElement
+        if (target.closest('a,button,input,textarea,select,[role="button"]')) return
+
+        toggleSidebar()
     }
 
     React.useEffect(() => {
@@ -134,6 +153,7 @@ export function Sidebar() {
         { icon: Utensils, label: 'Diary', href: '/diary' },
         { icon: Droplets, label: 'Hydration', href: '/hydration' },
         { icon: MessageCircle, label: 'Messages', href: '/messages', badge: totalUnread > 0 ? totalUnread : undefined },
+        { icon: LifeBuoy, label: 'Support', href: '/support' },
         { icon: BarChart3, label: 'Analytics', href: '/analytics' },
         { icon: Target, label: 'Goals', href: '/goals' },
         { icon: Camera, label: 'Progress', href: '/progress' },
@@ -144,6 +164,12 @@ export function Sidebar() {
         { icon: Crown, label: 'Go Pro', href: '/subscription' },
         { icon: Settings, label: 'Settings', href: '/settings' },
     ]
+
+    if (user?.role === 'coach') {
+        navItems.push({ icon: GraduationCap, label: 'Coach Portal', href: '/coach' })
+    } else if (user?.role === 'admin') {
+        navItems.push({ icon: Users, label: 'Admin Portal', href: '/admin' })
+    }
 
     return (
         <>
@@ -158,6 +184,7 @@ export function Sidebar() {
             />
 
             <aside
+                onClick={handleSidebarSurfaceClick}
                 className={cn(
                     'fixed top-0 left-0 h-screen z-50 bg-(--sidebar-bg) border-r border-(--sidebar-border) overflow-y-auto flex flex-col',
                     'transition-[width,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
@@ -221,10 +248,15 @@ export function Sidebar() {
                     <NavItem
                         key={item.label}
                         {...item}
-                        isActive={pathname === item.href}
+                        isActive={pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))}
                         isCollapsed={isCollapsed}
-                        onClick={handleLinkClick}
-                        onMouseEnter={() => router.prefetch(item.href)}
+                        onClick={() => {
+                            if (item.href === '/coach' || item.href === '/admin') {
+                                disableCoachUserAppMode()
+                            }
+                            handleLinkClick()
+                        }}
+                        onMouseEnter={() => prefetchOnIntent(item.href)}
                     />
                 ))}
 

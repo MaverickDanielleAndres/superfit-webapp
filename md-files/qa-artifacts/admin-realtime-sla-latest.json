@@ -1,0 +1,48 @@
+﻿{
+  "slaMs": 2000,
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "p95LatencyMs": 433
+  },
+  "eventCounts": {
+    "profiles": 2,
+    "admin_coach_applications": 2,
+    "payment_transactions": 2,
+    "admin_moderation_reports": 2,
+    "platform_settings": 1
+  },
+  "results": [
+    {
+      "probe": "Admin premium toggle -> profiles realtime",
+      "table": "profiles",
+      "latencyMs": 202,
+      "pass": true
+    },
+    {
+      "probe": "Admin settings save -> platform settings realtime",
+      "table": "platform_settings",
+      "latencyMs": 188,
+      "pass": true
+    },
+    {
+      "probe": "Admin application status flow -> applications realtime",
+      "table": "admin_coach_applications",
+      "latencyMs": 421,
+      "pass": true
+    },
+    {
+      "probe": "Admin payouts approval flow -> payments realtime",
+      "table": "payment_transactions",
+      "latencyMs": 454,
+      "pass": true
+    },
+    {
+      "probe": "Admin moderation status flow -> reports realtime",
+      "table": "admin_moderation_reports",
+      "latencyMs": 433,
+      "pass": true
+    }
+  ]
+}

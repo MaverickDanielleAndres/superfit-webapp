@@ -12,6 +12,7 @@ import { Target, Trophy, Clock, Zap, Plus, X, Loader2, CheckCircle, Trash2 } fro
 import { cn } from '@/lib/utils'
 import { useGoalStore, FitnessGoal } from '@/store/useGoalStore'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const CATEGORY_COLORS: Record<string, string> = {
     'Weight Loss': 'bg-blue-500',
@@ -27,6 +28,14 @@ export default function GoalsPage() {
     const isSimulationMode = !isSupabaseAuthEnabled()
     const [showAddModal, setShowAddModal] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [isConfirming, setIsConfirming] = useState(false)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = useState<null | (() => Promise<void>)>(null)
     const [form, setForm] = useState({
         title: '',
         category: 'Weight Loss' as FitnessGoal['category'],
@@ -70,6 +79,37 @@ export default function GoalsPage() {
         setForm({ title: '', category: 'Weight Loss', current: '', target: '', start: '', unit: 'kg', deadline: '' })
         setShowAddModal(false)
         setIsSubmitting(false)
+    }
+
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
+    }
+
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
+
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
     }
 
     return (
@@ -142,10 +182,33 @@ export default function GoalsPage() {
                                             </div>
                                         </div>
                                         <div className="flex flex-col gap-2 mt-1">
-                                            <button onClick={() => void markComplete(goal.id)} title="Mark Complete" className="w-[36px] h-[36px] rounded-[10px] bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-colors flex items-center justify-center">
+                                            <button onClick={() => {
+                                                openConfirmation(
+                                                    {
+                                                        title: 'Mark Goal Complete?',
+                                                        message: `This will move ${goal.title} to completed goals.`,
+                                                        confirmText: 'Mark Complete',
+                                                    },
+                                                    async () => {
+                                                        await markComplete(goal.id)
+                                                    },
+                                                )
+                                            }} title="Mark Complete" className="w-[36px] h-[36px] rounded-[10px] bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-colors flex items-center justify-center">
                                                 <CheckCircle className="w-[16px] h-[16px]" />
                                             </button>
-                                            <button onClick={() => void deleteGoal(goal.id)} title="Delete Goal" className="w-[36px] h-[36px] rounded-[10px] bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center">
+                                            <button onClick={() => {
+                                                openConfirmation(
+                                                    {
+                                                        title: 'Delete Goal?',
+                                                        message: `${goal.title} will be permanently removed.`,
+                                                        confirmText: 'Delete Goal',
+                                                        tone: 'danger',
+                                                    },
+                                                    async () => {
+                                                        await deleteGoal(goal.id)
+                                                    },
+                                                )
+                                            }} title="Delete Goal" className="w-[36px] h-[36px] rounded-[10px] bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center">
                                                 <Trash2 className="w-[16px] h-[16px]" />
                                             </button>
                                         </div>
@@ -176,7 +239,19 @@ export default function GoalsPage() {
                                 <span className="font-body font-bold text-[15px] text-(--text-primary)">{goal.title}</span>
                                 <span className="block font-body text-[13px] text-(--text-secondary)">{goal.category} • {goal.target} {goal.unit}</span>
                             </div>
-                            <button onClick={() => void deleteGoal(goal.id)} className="text-(--text-tertiary) hover:text-red-500 transition-colors"><X className="w-[16px] h-[16px]" /></button>
+                            <button onClick={() => {
+                                openConfirmation(
+                                    {
+                                        title: 'Delete Goal?',
+                                        message: `${goal.title} will be permanently removed.`,
+                                        confirmText: 'Delete Goal',
+                                        tone: 'danger',
+                                    },
+                                    async () => {
+                                        await deleteGoal(goal.id)
+                                    },
+                                )
+                            }} className="text-(--text-tertiary) hover:text-red-500 transition-colors"><X className="w-[16px] h-[16px]" /></button>
                         </div>
                     ))}
                 </div>
@@ -239,6 +314,19 @@ export default function GoalsPage() {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
         </motion.div>
     )
 }

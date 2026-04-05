@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>
+
 const StatusSchema = z.object({
   status: z.enum(['Active', 'Draft', 'Archived']),
 })
@@ -59,7 +61,9 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const normalized = parsed.data.status.toLowerCase()
 
-  const { error } = await (supabase as any)
+  const db = supabase as SupabaseServerClient
+
+  const { error } = await db
     .from('coach_forms')
     .update({ status: normalized })
     .eq('id', id)

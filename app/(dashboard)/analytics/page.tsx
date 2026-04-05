@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import dynamic from 'next/dynamic'
 import { Activity, TrendingUp, Scale, Calendar, Share, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { requestApi } from '@/lib/api/client'
 
 const WorkoutVolumeChart = dynamic(
     () => import('@/components/analytics/WorkoutVolumeChart').then((m) => m.WorkoutVolumeChart),
@@ -68,6 +69,60 @@ const weightDataMap: Record<string, WeightPoint[]> = {
 export default function AnalyticsPage() {
     const [activeTab, setActiveTab] = useState<'workouts' | 'body'>('workouts')
     const [timeRange, setTimeRange] = useState('6m')
+    const [isLoadingOverview, setIsLoadingOverview] = useState(false)
+    const [overviewData, setOverviewData] = useState<{
+        kpis: { totalVolume: number; workoutsCompleted: number; topEstimated1RM: number }
+        volumeSeries: Array<{ label: string; volume: number }>
+    } | null>(null)
+
+    useEffect(() => {
+        if (activeTab !== 'workouts') return
+
+        let cancelled = false
+        setIsLoadingOverview(true)
+        void (async () => {
+            try {
+                const response = await requestApi<{
+                    kpis: { totalVolume: number; workoutsCompleted: number; topEstimated1RM: number }
+                    volumeSeries: Array<{ label: string; volume: number }>
+                }>(`/api/v1/analytics/overview?range=${timeRange}`)
+
+                if (cancelled) return
+                setOverviewData(response.data)
+            } catch {
+                if (cancelled) return
+                setOverviewData(null)
+            } finally {
+                if (!cancelled) {
+                    setIsLoadingOverview(false)
+                }
+            }
+        })()
+
+        return () => {
+            cancelled = true
+        }
+    }, [activeTab, timeRange])
+
+    const workoutKpis = useMemo(() => {
+        if (overviewData) {
+            return [
+                { title: 'Total Volume', value: `${overviewData.kpis.totalVolume.toLocaleString()} kg`, trend: 'Live', icon: Activity },
+                { title: 'Workouts Completed', value: `${overviewData.kpis.workoutsCompleted}`, trend: 'Live', icon: Calendar },
+                { title: 'Estimated 1RM (Top)', value: `${overviewData.kpis.topEstimated1RM} kg`, trend: 'Live', icon: TrendingUp },
+            ]
+        }
+
+        return [
+            { title: 'Total Volume', value: '21,000 kg', trend: '+12%', icon: Activity },
+            { title: 'Workouts Completed', value: '18', trend: '+2', icon: Calendar },
+            { title: 'Estimated 1RM (Squat)', value: '145 kg', trend: '+5 kg', icon: TrendingUp },
+        ]
+    }, [overviewData])
+
+    const workoutVolumeSeries = overviewData?.volumeSeries?.length
+        ? overviewData.volumeSeries
+        : (volumeDataMap[timeRange].map((point) => ({ label: String(point.month || point.date || ''), volume: Number(point.volume || 0) })))
 
     const handleExport = () => {
         const rows = activeTab === 'workouts'
@@ -170,11 +225,7 @@ export default function AnalyticsPage() {
                 <div className="flex flex-col gap-6">
                     {/* KPI Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {[
-                            { title: 'Total Volume', value: '21,000 kg', trend: '+12%', icon: Activity },
-                            { title: 'Workouts Completed', value: '18', trend: '+2', icon: Calendar },
-                            { title: 'Estimated 1RM (Squat)', value: '145 kg', trend: '+5 kg', icon: TrendingUp },
-                        ].map((kpi, i) => (
+                        {workoutKpis.map((kpi, i) => (
                             <div key={i} className="bg-(--bg-surface) border border-(--border-subtle) rounded-[20px] p-5 shadow-sm flex items-center justify-between hover:border-(--border-default) transition-colors">
                                 <div>
                                     <span className="block font-body text-[13px] text-(--text-secondary) mb-1">{kpi.title}</span>
@@ -211,7 +262,11 @@ export default function AnalyticsPage() {
                         </div>
 
                         <div className="h-[300px] w-full">
-                            <WorkoutVolumeChart data={volumeDataMap[timeRange]} xKey={timeRange === '6m' ? 'month' : 'date'} />
+                            {isLoadingOverview ? (
+                                <div className="h-full w-full rounded-[12px] bg-[var(--bg-elevated)] animate-pulse" />
+                            ) : (
+                                <WorkoutVolumeChart data={workoutVolumeSeries} xKey="label" />
+                            )}
                         </div>
                     </div>
                 </div>

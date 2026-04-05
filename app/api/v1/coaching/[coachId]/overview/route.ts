@@ -31,7 +31,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const { data: coachProfile, error: coachError } = await (db as any)
     .from('profiles')
-    .select('id,full_name,avatar_url,email,goal,exercise_preferences,role')
+    .select('id,full_name,avatar_url,email,goal,exercise_preferences,role,session_duration,account_status')
     .eq('id', coachId)
     .eq('role', 'coach')
     .maybeSingle()
@@ -44,6 +44,22 @@ export async function GET(_request: Request, context: RouteContext) {
       detail: coachError?.message || 'Coach profile does not exist.',
       requestId,
       retriable: false,
+    })
+  }
+
+  const { count: activeClientCount, error: activeClientCountError } = await (db as any)
+    .from('coach_client_links')
+    .select('id', { count: 'exact', head: true })
+    .eq('coach_id', coachId)
+    .eq('status', 'active')
+
+  if (activeClientCountError) {
+    return problemResponse({
+      status: 500,
+      code: 'COACH_OVERVIEW_FETCH_FAILED',
+      title: 'Coach Overview Fetch Failed',
+      detail: activeClientCountError.message,
+      requestId,
     })
   }
 
@@ -279,6 +295,10 @@ export async function GET(_request: Request, context: RouteContext) {
     }
   })
 
+  const clientCap = Math.max(1, Number(coachProfile.session_duration || 30))
+  const activeClients = Number(activeClientCount || 0)
+  const monthlyPrice = Math.max(39, Math.min(249, Math.round(clientCap * 2.2)))
+
   return dataResponse({
     requestId,
     data: {
@@ -290,6 +310,11 @@ export async function GET(_request: Request, context: RouteContext) {
         specialties: Array.isArray(coachProfile.exercise_preferences)
           ? coachProfile.exercise_preferences.map((entry: unknown) => String(entry))
           : [],
+        monthlyPrice,
+        clientCap,
+        activeClientCount: activeClients,
+        isAvailable:
+          String(coachProfile.account_status || 'active').toLowerCase() === 'active' && activeClients < clientCap,
       },
       rating: {
         average: averageRating,

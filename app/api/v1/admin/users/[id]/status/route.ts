@@ -1,9 +1,14 @@
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
+import { createNotification } from '@/lib/notifications'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+import { revokeAllUserSessions } from '@/lib/auth/adminSessions'
+import { createAuditLog } from '@/lib/audit'
+import { syncAuthUserMetadata } from '@/lib/auth/userMetadata'
 
 const StatusSchema = z.object({
-  status: z.enum(['Active', 'Suspended', 'Inactive']),
+  status: z.enum(['Active', 'Suspended', 'Inactive', 'Pending Review']),
 })
 
 interface RouteContext {
@@ -74,9 +79,26 @@ export async function PATCH(request: Request, context: RouteContext) {
     })
   }
 
+  const normalizedStatus = parsed.data.status === 'Pending Review'
+    ? 'pending_review'
+    : parsed.data.status.toLowerCase()
+  const updatePayload: Record<string, unknown> = {
+    account_status: normalizedStatus,
+  }
+
+  if (normalizedStatus === 'suspended') {
+    updatePayload.suspended_at = new Date().toISOString()
+    updatePayload.suspended_by = user.id
+    updatePayload.suspension_reason = 'Updated by admin'
+  } else {
+    updatePayload.suspended_at = null
+    updatePayload.suspended_by = null
+    updatePayload.suspension_reason = null
+  }
+
   const { error } = await (supabase as any)
     .from('profiles')
-    .update({ account_status: parsed.data.status.toLowerCase() })
+    .update(updatePayload)
     .eq('id', id)
 
   if (error) {
@@ -88,6 +110,37 @@ export async function PATCH(request: Request, context: RouteContext) {
       requestId,
     })
   }
+
+  if (normalizedStatus !== 'active') {
+    await revokeAllUserSessions(id)
+  }
+
+  await syncAuthUserMetadata(id, {
+    account_status: normalizedStatus,
+  })
+
+  await createNotification(supabaseAdmin as any, {
+    recipientId: id,
+    actorId: user.id,
+    type: 'admin_user_status',
+    title: 'Account status updated',
+    body: `Your account status is now ${parsed.data.status}.`,
+    actionUrl: '/settings',
+    payload: {
+      status: parsed.data.status.toLowerCase(),
+    },
+  })
+
+  await createAuditLog(supabaseAdmin as any, {
+    userId: user.id,
+    action: 'admin.user.status.updated',
+    resource: 'profiles',
+    resourceId: id,
+    metadata: {
+      status: normalizedStatus,
+    },
+    userAgent: request.headers.get('user-agent'),
+  })
 
   return dataResponse({
     requestId,

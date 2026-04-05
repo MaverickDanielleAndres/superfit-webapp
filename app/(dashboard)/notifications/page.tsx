@@ -3,8 +3,10 @@
 import { useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Bell, CheckCheck } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useNotificationStore } from '@/store/useNotificationStore'
+import { useAuthStore } from '@/store/useAuthStore'
+import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
 
 function formatTime(value: string): string {
   const date = new Date(value)
@@ -18,11 +20,34 @@ function formatTime(value: string): string {
 
 export default function NotificationsPage() {
   const router = useRouter()
-  const { notifications, unreadCount, initialize, markAllRead, markRead } = useNotificationStore()
+  const pathname = usePathname()
+  const { user } = useAuthStore()
+  const { notifications, unreadCount, initialize, markAllRead, markRead, startRealtime, stopRealtime } = useNotificationStore()
+  const isCoachSurface = pathname.startsWith('/coach')
 
   useEffect(() => {
     void initialize()
   }, [initialize])
+
+  useEffect(() => {
+    if (!user?.id || !isSupabaseAuthEnabled()) return
+
+    startRealtime(user.id)
+    return () => {
+      stopRealtime()
+    }
+  }, [startRealtime, stopRealtime, user?.id])
+
+  const resolveActionUrl = (actionUrl: string | null): string | null => {
+    if (!actionUrl) return null
+    if (!isCoachSurface) return actionUrl
+    if (actionUrl.startsWith('/coach/')) return actionUrl
+    if (actionUrl.startsWith('/messages')) return `/coach${actionUrl}`
+    if (actionUrl.startsWith('/notifications')) return `/coach${actionUrl}`
+    if (actionUrl === '/coaching') return '/coach/clients'
+    if (actionUrl.startsWith('/coaching?')) return `/coach/clients${actionUrl.slice('/coaching'.length)}`
+    return actionUrl
+  }
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto pb-20">
@@ -59,8 +84,9 @@ export default function NotificationsPage() {
               key={item.id}
               onClick={() => {
                 void markRead(item.id)
-                if (item.actionUrl) {
-                  router.push(item.actionUrl)
+                const actionUrl = resolveActionUrl(item.actionUrl)
+                if (actionUrl) {
+                  router.push(actionUrl)
                 }
               }}
               className={`w-full text-left p-4 border-b border-(--border-subtle) last:border-b-0 hover:bg-[var(--bg-elevated)] transition-colors ${

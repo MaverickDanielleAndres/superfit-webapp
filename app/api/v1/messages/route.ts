@@ -1,6 +1,51 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
+import type { Json } from '@/types/supabase'
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>
+
+interface MembershipRow {
+  thread_id: string | null
+  last_read_at: string | null
+}
+
+interface ThreadRow {
+  id: string
+  is_group: boolean | null
+  group_name: string | null
+  group_avatar: string | null
+  updated_at: string | null
+  created_at: string | null
+}
+
+interface ParticipantRow {
+  thread_id: string | null
+  user_id: string | null
+}
+
+interface ProfileRow {
+  id: string | null
+  full_name: string | null
+  avatar_url: string | null
+}
+
+interface MessageRow {
+  id: string | null
+  thread_id: string | null
+  sender_id: string | null
+  text: string | null
+  attachments: Json | null
+  status: string | null
+  reply_to_id: string | null
+  created_at: string | null
+}
+
+interface ReactionRow {
+  message_id: string | null
+  user_id: string | null
+  emoji: string | null
+}
 
 interface MessageReaction {
   userId: string
@@ -41,7 +86,7 @@ interface ChatThread {
 export async function GET() {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
-  const db = supabaseAdmin
+  const db = supabaseAdmin as unknown as SupabaseServerClient
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -57,7 +102,7 @@ export async function GET() {
     })
   }
 
-  const { data: membershipRows, error: membershipError } = await (db as any)
+  const { data: rawMembershipRows, error: membershipError } = await db
     .from('message_thread_participants')
     .select('thread_id,last_read_at')
     .eq('user_id', user.id)
@@ -73,7 +118,7 @@ export async function GET() {
     })
   }
 
-  const memberships = Array.isArray(membershipRows) ? membershipRows : []
+  const memberships = Array.isArray(rawMembershipRows) ? (rawMembershipRows as MembershipRow[]) : []
   const threadIds = memberships.map((row) => String(row.thread_id || '')).filter(Boolean)
 
   if (!threadIds.length) {
@@ -86,10 +131,11 @@ export async function GET() {
     })
   }
 
-  const { data: threadRows, error: threadError } = await (db as any)
+  const { data: rawThreadRows, error: threadError } = await db
     .from('message_threads')
     .select('id,is_group,group_name,group_avatar,updated_at,created_at')
     .in('id', threadIds)
+  const threadRows = Array.isArray(rawThreadRows) ? (rawThreadRows as ThreadRow[]) : []
 
   if (threadError) {
     return problemResponse({
@@ -101,10 +147,11 @@ export async function GET() {
     })
   }
 
-  const { data: participantRows, error: participantError } = await (db as any)
+  const { data: rawParticipantRows, error: participantError } = await db
     .from('message_thread_participants')
     .select('thread_id,user_id')
     .in('thread_id', threadIds)
+  const participantRows = Array.isArray(rawParticipantRows) ? (rawParticipantRows as ParticipantRow[]) : []
 
   if (participantError) {
     return problemResponse({
@@ -117,15 +164,16 @@ export async function GET() {
   }
 
   const participantIds = Array.from(
-    new Set((participantRows || []).map((row: any) => String(row.user_id || '')).filter(Boolean)),
+    new Set(participantRows.map((row) => String(row.user_id || '')).filter(Boolean)),
   )
 
   const profileById = new Map<string, { full_name?: string | null; avatar_url?: string | null }>()
   if (participantIds.length) {
-    const { data: profileRows, error: profileError } = await (db as any)
+    const { data: rawProfileRows, error: profileError } = await db
       .from('profiles')
       .select('id,full_name,avatar_url')
       .in('id', participantIds)
+    const profileRows = Array.isArray(rawProfileRows) ? (rawProfileRows as ProfileRow[]) : []
 
     if (profileError) {
       return problemResponse({
@@ -137,7 +185,7 @@ export async function GET() {
       })
     }
 
-    for (const row of profileRows || []) {
+    for (const row of profileRows) {
       const id = String(row.id || '')
       if (!id) continue
       profileById.set(id, {
@@ -147,11 +195,12 @@ export async function GET() {
     }
   }
 
-  const { data: messageRows, error: messageError } = await (db as any)
+  const { data: rawMessageRows, error: messageError } = await db
     .from('messages')
     .select('id,thread_id,sender_id,text,attachments,status,reply_to_id,created_at')
     .in('thread_id', threadIds)
     .order('created_at', { ascending: true })
+  const messages = Array.isArray(rawMessageRows) ? (rawMessageRows as MessageRow[]) : []
 
   if (messageError) {
     return problemResponse({
@@ -163,15 +212,15 @@ export async function GET() {
     })
   }
 
-  const messages = Array.isArray(messageRows) ? messageRows : []
   const messageIds = messages.map((row) => String(row.id || '')).filter(Boolean)
 
   const reactionsByMessage = new Map<string, MessageReaction[]>()
   if (messageIds.length) {
-    const { data: reactionRows, error: reactionError } = await (db as any)
+    const { data: rawReactionRows, error: reactionError } = await db
       .from('message_reactions')
       .select('message_id,user_id,emoji')
       .in('message_id', messageIds)
+    const reactionRows = Array.isArray(rawReactionRows) ? (rawReactionRows as ReactionRow[]) : []
 
     if (reactionError) {
       return problemResponse({
@@ -183,7 +232,7 @@ export async function GET() {
       })
     }
 
-    for (const reactionRow of reactionRows || []) {
+    for (const reactionRow of reactionRows) {
       const messageId = String(reactionRow.message_id || '')
       const userId = String(reactionRow.user_id || '')
       const emoji = String(reactionRow.emoji || '')
@@ -195,7 +244,7 @@ export async function GET() {
   }
 
   const participantsByThread = new Map<string, ChatThread['participants']>()
-  for (const row of participantRows || []) {
+  for (const row of participantRows) {
     const threadId = String(row.thread_id || '')
     if (!threadId) continue
 
@@ -220,13 +269,16 @@ export async function GET() {
     const reactions = reactionsByMessage.get(String(row.id || '')) || []
 
     const attachments: MessageAttachment[] = Array.isArray(row.attachments)
-      ? row.attachments
-          .map((attachment: any) => ({
-            id: String(attachment.id || `att_${Date.now()}`),
+      ? (row.attachments as Array<Record<string, unknown>>)
+          .map((attachment, index) => ({
+            id: String(attachment.id || `att_${String(row.id || 'msg')}_${index}`),
             type: normalizeAttachmentType(attachment.type),
             url: String(attachment.url || ''),
-            thumbnailUrl: attachment.thumbnailUrl ? String(attachment.thumbnailUrl) : undefined,
-            name: attachment.name ? String(attachment.name) : undefined,
+            thumbnailUrl:
+              typeof attachment.thumbnailUrl === 'string' && attachment.thumbnailUrl
+                ? String(attachment.thumbnailUrl)
+                : undefined,
+            name: typeof attachment.name === 'string' && attachment.name ? String(attachment.name) : undefined,
           }))
           .filter((attachment: MessageAttachment) => !!attachment.url || !!attachment.name)
       : []
@@ -251,14 +303,7 @@ export async function GET() {
 
   const threads: ChatThread[] = []
   for (const row of memberships) {
-    const thread = (threadRows || []).find((item: any) => String(item.id || '') === String(row.thread_id || '')) as {
-      id: string
-      is_group: boolean
-      group_name: string | null
-      group_avatar: string | null
-      updated_at: string | null
-      created_at: string | null
-    } | undefined
+    const thread = threadRows.find((item) => String(item.id || '') === String(row.thread_id || ''))
 
     if (!thread || !thread.id) continue
 

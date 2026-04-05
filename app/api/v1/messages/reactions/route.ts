@@ -3,6 +3,12 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>
+
+interface MessageThreadRow {
+  thread_id: string | null
+}
+
 const ReactionSchema = z.object({
   messageId: z.string().uuid(),
   emoji: z.string().min(1).max(16),
@@ -11,7 +17,7 @@ const ReactionSchema = z.object({
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
-  const db = supabaseAdmin
+  const db = supabaseAdmin as unknown as SupabaseServerClient
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -54,11 +60,12 @@ export async function POST(request: Request) {
     })
   }
 
-  const { data: message, error: messageError } = await (db as any)
+  const { data: rawMessage, error: messageError } = await db
     .from('messages')
     .select('thread_id')
     .eq('id', parsed.data.messageId)
     .maybeSingle()
+  const message = (rawMessage ?? null) as MessageThreadRow | null
 
   if (messageError || !message?.thread_id) {
     return problemResponse({
@@ -71,7 +78,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const { data: membership, error: membershipError } = await (db as any)
+  const { data: membership, error: membershipError } = await db
     .from('message_thread_participants')
     .select('thread_id')
     .eq('thread_id', String(message.thread_id))
@@ -89,14 +96,14 @@ export async function POST(request: Request) {
     })
   }
 
-  await (db as any)
+  await db
     .from('message_reactions')
     .delete()
     .eq('message_id', parsed.data.messageId)
     .eq('user_id', user.id)
     .eq('emoji', parsed.data.emoji)
 
-  const { error } = await (db as any)
+  const { error } = await db
     .from('message_reactions')
     .insert({
       message_id: parsed.data.messageId,
@@ -127,7 +134,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const requestId = crypto.randomUUID()
   const supabase = await createServerSupabaseClient()
-  const db = supabaseAdmin
+  const db = supabaseAdmin as unknown as SupabaseServerClient
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -170,7 +177,7 @@ export async function DELETE(request: Request) {
     })
   }
 
-  const { error } = await (db as any)
+  const { error } = await db
     .from('message_reactions')
     .delete()
     .eq('message_id', parsed.data.messageId)

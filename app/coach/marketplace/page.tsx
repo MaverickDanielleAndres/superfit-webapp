@@ -2,16 +2,26 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Globe, TrendingUp, Tags, Image as ImageIcon } from 'lucide-react'
+import { Globe, TrendingUp, Tags, Image as ImageIcon, UploadCloud, X, Plus, ImagePlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
-import { useCoachPortalStore } from '@/store/useCoachPortalStore'
+import { useCoachPortalData } from '@/lib/hooks/useCoachPortalData'
 import { useRouter } from 'next/navigation'
 import { requestApi } from '@/lib/api/client'
+import { useAuthStore } from '@/store/useAuthStore'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+
+interface PricingTier {
+    id: string
+    name: string
+    price: number
+    billingCycle: 'monthly' | 'quarterly' | 'one_time'
+    description: string
+}
 
 export default function MarketplacePage() {
     const router = useRouter()
+    const { updateProfile } = useAuthStore()
     const [isActive, setIsActive] = useState(true)
     const [displayName, setDisplayName] = useState('')
     const [headline, setHeadline] = useState('')
@@ -21,16 +31,26 @@ export default function MarketplacePage() {
     const [monthlyRevenue, setMonthlyRevenue] = useState(0)
     const [transactionCount, setTransactionCount] = useState(0)
     const [isSaving, setIsSaving] = useState(false)
-    const { initialize, programs, clients } = useCoachPortalStore()
+    const [isUploadingCover, setIsUploadingCover] = useState(false)
+    const [expandedCoverUrl, setExpandedCoverUrl] = useState<string | null>(null)
+    const [pricingTiers, setPricingTiers] = useState<PricingTier[]>([])
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = useState<null | (() => Promise<void>)>(null)
+    const [isConfirming, setIsConfirming] = useState(false)
+    const { programs, clients, fetchClients, fetchPrograms } = useCoachPortalData()
+    const coverInputRef = React.useRef<HTMLInputElement>(null)
 
     useEffect(() => {
-        void initialize()
-    }, [initialize])
+        void Promise.all([fetchClients(), fetchPrograms()])
+    }, [fetchClients, fetchPrograms])
 
     useEffect(() => {
         void (async () => {
-            if (!isSupabaseAuthEnabled()) return
-
             try {
                 const response = await requestApi<{
                     displayName: string
@@ -57,6 +77,33 @@ export default function MarketplacePage() {
         })()
     }, [])
 
+    useEffect(() => {
+        const persisted = window.localStorage.getItem('superfit-marketplace-pricing-tiers')
+        if (persisted) {
+            try {
+                const parsed = JSON.parse(persisted) as PricingTier[]
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    setPricingTiers(parsed)
+                    return
+                }
+            } catch {
+                // Ignore malformed persisted values.
+            }
+        }
+
+        if (!programs.length) return
+
+        setPricingTiers(
+            programs.slice(0, 4).map((program, index) => ({
+                id: `${program.id}-tier`,
+                name: program.name,
+                price: 79 + index * 20,
+                billingCycle: 'monthly' as const,
+                description: `${program.difficulty} • ${program.length}`,
+            })),
+        )
+    }, [programs])
+
     const activeClients = useMemo(
         () => clients.filter((client) => client.status === 'Active').length,
         [clients],
@@ -67,12 +114,60 @@ export default function MarketplacePage() {
         return Math.min(100, (activeClients / cap) * 100)
     }, [activeClients, clientCap])
 
-    const handleSave = async () => {
-        if (!isSupabaseAuthEnabled()) {
-            toast.success('Simulation mode: marketplace profile updated locally.')
-            return
-        }
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
+    }
 
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
+
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
+    }
+
+    const handleCoverUpload = async (file: File) => {
+        setIsUploadingCover(true)
+        try {
+            const formData = new FormData()
+            formData.append('file', file)
+            formData.append('category', 'marketplace')
+
+            const response = await requestApi<{ url: string }>('/api/v1/coach/media/upload', {
+                method: 'POST',
+                body: formData,
+            })
+
+            setCoverUrl(String(response.data.url || ''))
+            toast.success('Cover uploaded.')
+        } catch (error) {
+            toast.error(getErrorMessage(error))
+        } finally {
+            setIsUploadingCover(false)
+        }
+    }
+
+    const handleSave = async () => {
         setIsSaving(true)
 
         try {
@@ -89,6 +184,13 @@ export default function MarketplacePage() {
                     clientCap: Number(clientCap) || 30,
                     isActive,
                 }),
+            })
+
+            window.localStorage.setItem('superfit-marketplace-pricing-tiers', JSON.stringify(pricingTiers))
+
+            updateProfile({
+                name: displayName.trim() || undefined,
+                avatar: coverUrl.trim() || null,
             })
 
             toast.success('Marketplace profile updated.')
@@ -133,17 +235,68 @@ export default function MarketplacePage() {
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-2">
                                 <label className="font-body text-[13px] font-bold text-(--text-secondary)">Header Image</label>
-                                <div className="h-[160px] rounded-[16px] border-2 border-dashed border-(--border-subtle) bg-[var(--bg-elevated)] flex flex-col items-center justify-center text-(--text-tertiary) hover:text-emerald-500 hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-colors group">
-                                    <ImageIcon className="w-[32px] h-[32px] mb-2 group-hover:scale-110 transition-transform" />
-                                    <span className="font-body font-bold text-[14px]">Paste your cover image URL</span>
-                                    <span className="font-body text-[12px] opacity-70">Use any publicly accessible image URL</span>
-                                </div>
                                 <input
-                                    value={coverUrl}
-                                    onChange={(event) => setCoverUrl(event.target.value)}
-                                    placeholder="https://..."
-                                    className="h-[42px] px-3 rounded-[10px] bg-[var(--bg-elevated)] border border-(--border-default) text-[13px] outline-none"
+                                    ref={coverInputRef}
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/jpg,image/webp"
+                                    className="hidden"
+                                    onChange={(event) => {
+                                        const file = event.target.files?.[0]
+                                        if (!file) return
+                                        void handleCoverUpload(file)
+                                        event.target.value = ''
+                                    }}
                                 />
+                                <div
+                                    onDragOver={(event) => event.preventDefault()}
+                                    onDrop={(event) => {
+                                        event.preventDefault()
+                                        const file = event.dataTransfer.files?.[0]
+                                        if (!file) return
+                                        void handleCoverUpload(file)
+                                    }}
+                                    className="h-[160px] rounded-[16px] border-2 border-dashed border-(--border-subtle) bg-[var(--bg-elevated)] flex flex-col items-center justify-center text-(--text-tertiary) hover:text-emerald-500 hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-colors group overflow-hidden relative"
+                                >
+                                    {coverUrl ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setExpandedCoverUrl(coverUrl)}
+                                            className="absolute inset-0"
+                                        >
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img src={coverUrl} alt="Marketplace cover" className="absolute inset-0 w-full h-full object-cover" />
+                                        </button>
+                                    ) : null}
+                                    <div className={cn('relative z-10 flex flex-col items-center justify-center', coverUrl ? 'bg-black/35 w-full h-full text-white' : '')}>
+                                        <ImageIcon className="w-[32px] h-[32px] mb-2 group-hover:scale-110 transition-transform" />
+                                        <span className="font-body font-bold text-[14px]">{coverUrl ? 'Change cover image' : 'Upload cover image'}</span>
+                                        <span className="font-body text-[12px] opacity-80">{isUploadingCover ? 'Uploading...' : 'Drag image or click browse'}</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => coverInputRef.current?.click()}
+                                        className="h-[34px] px-3 rounded-[10px] border border-(--border-default) text-[12px] font-bold text-(--text-primary) flex items-center gap-1.5"
+                                    >
+                                        <UploadCloud className="w-[13px] h-[13px]" /> Browse
+                                    </button>
+                                    {coverUrl && (
+                                        <button
+                                            onClick={() => setExpandedCoverUrl(coverUrl)}
+                                            className="h-[34px] px-3 rounded-[10px] border border-(--border-default) text-[12px] font-bold text-(--text-primary) flex items-center gap-1.5"
+                                        >
+                                            <ImagePlus className="w-[13px] h-[13px]" /> Enlarge
+                                        </button>
+                                    )}
+                                    {coverUrl && (
+                                        <button
+                                            onClick={() => setCoverUrl('')}
+                                            className="h-[34px] px-3 rounded-[10px] border border-(--border-default) text-[12px] font-bold text-(--text-secondary) flex items-center gap-1.5"
+                                        >
+                                            <X className="w-[13px] h-[13px]" /> Clear
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                             
                             <div className="grid grid-cols-2 gap-4">
@@ -200,23 +353,73 @@ export default function MarketplacePage() {
                             <h3 className="font-display font-black text-[18px] text-(--text-primary) flex items-center gap-2"><Tags className="w-[18px] h-[18px] text-purple-500" /> Pricing Tiers</h3>
                         </div>
                         <div className="flex flex-col gap-3 flex-1">
-                            {programs.slice(0, 3).map((program) => (
-                                <div key={program.id} className="p-3 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) flex items-center justify-between hover:border-emerald-500 transition-colors">
-                                    <div>
-                                        <span className="block font-display font-bold text-[14px] text-(--text-primary)">{program.name}</span>
-                                        <span className="block font-body text-[12px] text-(--text-secondary)">{program.enrolled} enrolled • {program.difficulty}</span>
+                            {pricingTiers.map((tier) => (
+                                <div key={tier.id} className="p-3 rounded-[12px] bg-[var(--bg-elevated)] border border-(--border-default) flex flex-col gap-2 hover:border-emerald-500 transition-colors">
+                                    <div className="grid grid-cols-12 gap-2 items-center">
+                                        <input
+                                            value={tier.name}
+                                            onChange={(event) => setPricingTiers((current) => current.map((entry) => entry.id === tier.id ? { ...entry, name: event.target.value } : entry))}
+                                            className="col-span-6 h-[32px] px-2 rounded-[8px] border border-(--border-default) bg-(--bg-surface) text-[12px] font-bold text-(--text-primary)"
+                                        />
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            value={tier.price}
+                                            onChange={(event) => setPricingTiers((current) => current.map((entry) => entry.id === tier.id ? { ...entry, price: Math.max(0, Number(event.target.value || 0)) } : entry))}
+                                            className="col-span-3 h-[32px] px-2 rounded-[8px] border border-(--border-default) bg-(--bg-surface) text-[12px] text-(--text-primary)"
+                                        />
+                                        <select
+                                            value={tier.billingCycle}
+                                            onChange={(event) => setPricingTiers((current) => current.map((entry) => entry.id === tier.id ? { ...entry, billingCycle: event.target.value as PricingTier['billingCycle'] } : entry))}
+                                            className="col-span-3 h-[32px] px-2 rounded-[8px] border border-(--border-default) bg-(--bg-surface) text-[11px] text-(--text-primary)"
+                                        >
+                                            <option value="monthly">Monthly</option>
+                                            <option value="quarterly">Quarterly</option>
+                                            <option value="one_time">One-time</option>
+                                        </select>
                                     </div>
-                                    <span className="font-display font-black text-[16px] text-(--text-primary)">{program.length}</span>
+                                    <textarea
+                                        value={tier.description}
+                                        onChange={(event) => setPricingTiers((current) => current.map((entry) => entry.id === tier.id ? { ...entry, description: event.target.value } : entry))}
+                                        rows={2}
+                                        className="w-full resize-none rounded-[8px] border border-(--border-default) bg-(--bg-surface) p-2 text-[11px] text-(--text-secondary)"
+                                    />
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[11px] font-bold text-(--text-secondary)">
+                                            Preview: ${tier.price.toFixed(2)} {tier.billingCycle === 'one_time' ? 'one-time' : `/${tier.billingCycle === 'monthly' ? 'mo' : 'qtr'}`}
+                                        </span>
+                                        <button
+                                            onClick={() => setPricingTiers((current) => current.filter((entry) => entry.id !== tier.id))}
+                                            className="h-[24px] px-2 rounded-[7px] border border-(--border-default) text-[10px] font-bold text-(--text-secondary)"
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
-                            {!programs.length && (
+                            {!pricingTiers.length && (
                                 <div className="p-3 rounded-[12px] border border-dashed border-(--border-subtle) text-[12px] text-(--text-secondary)">
-                                    No program tiers yet. Add one from Program Builder.
+                                    No pricing tiers configured yet.
                                 </div>
                             )}
                         </div>
-                        <button onClick={() => router.push('/coach/programs')} className="w-full h-[40px] mt-4 rounded-[10px] border border-dashed border-(--border-subtle) text-(--text-secondary) font-bold text-[13px] hover:text-(--text-primary) hover:border-emerald-500 transition-colors">
-                            + Add New Tier
+                        <button
+                            onClick={() => setPricingTiers((current) => [
+                                ...current,
+                                {
+                                    id: `tier-${Date.now()}`,
+                                    name: `Tier ${current.length + 1}`,
+                                    price: 99,
+                                    billingCycle: 'monthly',
+                                    description: 'Describe support level, check-ins, and deliverables.',
+                                },
+                            ])}
+                            className="w-full h-[40px] mt-4 rounded-[10px] border border-dashed border-(--border-subtle) text-(--text-secondary) font-bold text-[13px] hover:text-(--text-primary) hover:border-emerald-500 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Plus className="w-[14px] h-[14px]" /> Add Pricing Tier
+                        </button>
+                        <button onClick={() => router.push('/coach/programs')} className="w-full h-[36px] mt-2 rounded-[10px] border border-(--border-default) text-(--text-secondary) font-bold text-[12px] hover:text-(--text-primary)">
+                            Open Program Builder
                         </button>
                     </div>
                 </div>
@@ -224,13 +427,51 @@ export default function MarketplacePage() {
 
             <div className="flex justify-end pt-4 border-t border-(--border-subtle)">
                 <button 
-                    onClick={() => { void handleSave() }}
+                    onClick={() => {
+                        openConfirmation(
+                            {
+                                title: 'Save Marketplace Changes?',
+                                message: 'This updates your public marketplace listing and profile details.',
+                                confirmText: 'Save Changes',
+                            },
+                            async () => {
+                                await handleSave()
+                            },
+                        )
+                    }}
                     disabled={isSaving}
                     className="h-[48px] px-8 rounded-[14px] bg-emerald-500 hover:bg-emerald-600 text-white font-display font-bold text-[16px] transition-all shadow-md flex items-center justify-center gap-2"
                 >
                     {isSaving ? 'Saving...' : 'Save Changes'}
                 </button>
             </div>
+
+            {expandedCoverUrl && (
+                <div className="fixed inset-0 z-[70] bg-black/75 backdrop-blur-[2px] flex items-center justify-center p-4" onClick={() => setExpandedCoverUrl(null)}>
+                    <button
+                        type="button"
+                        onClick={() => setExpandedCoverUrl(null)}
+                        className="absolute top-4 right-4 w-[36px] h-[36px] rounded-[10px] bg-white/10 text-white flex items-center justify-center"
+                    >
+                        <X className="w-[16px] h-[16px]" />
+                    </button>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={expandedCoverUrl} alt="Expanded marketplace cover" className="max-w-[95vw] max-h-[90vh] object-contain rounded-[12px]" />
+                </div>
+            )}
+
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
         </motion.div>
     )
 }

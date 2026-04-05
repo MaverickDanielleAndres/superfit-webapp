@@ -6,6 +6,7 @@ import { X, Trophy, TrendingUp, Activity, Dumbbell, History, Play } from 'lucide
 import { Exercise } from '@/types'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import QuickLogModal from '@/components/workout/QuickLogModal'
+import { toast } from 'sonner'
 
 const mockProgressionData = [
     { date: 'Jan 1', rm: 60 }, { date: 'Jan 8', rm: 62.5 }, 
@@ -21,6 +22,17 @@ const mockVolumeData = [
 
 export default function ExerciseDetailSheet({ exercise, isOpen, onClose }: { exercise: Exercise | null, isOpen: boolean, onClose: () => void }) {
     const [showQuickLog, setShowQuickLog] = useState(false)
+
+    const handleOpenPreview = (event: React.MouseEvent<HTMLDivElement>) => {
+        event.stopPropagation()
+        if (!exercise?.videoUrl) {
+            toast.error('No media preview is available for this exercise yet.')
+            return
+        }
+
+        window.open(exercise.videoUrl, '_blank', 'noopener,noreferrer')
+        toast.success('Opening exercise media preview...')
+    }
 
     if (!isOpen || !exercise) return null
 
@@ -39,7 +51,10 @@ export default function ExerciseDetailSheet({ exercise, isOpen, onClose }: { exe
                     {exercise.videoUrl ? (
                         <>
                             <img src={exercise.videoUrl} alt={exercise.name} className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                            <div
+                                onClick={handleOpenPreview}
+                                className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            >
                                 <div className="w-[48px] h-[48px] rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white">
                                     <Play className="w-[20px] h-[20px] ml-1" />
                                 </div>

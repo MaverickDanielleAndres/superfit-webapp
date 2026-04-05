@@ -17,13 +17,16 @@ import { toast } from 'sonner'
 import { useMessageStore } from '@/store/useMessageStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { ChatMessage, ChatThread, MessageAttachment } from '@/types'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { requestApi } from '@/lib/api/client'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 export default function MessagesPage() {
     const router = useRouter()
+    const pathname = usePathname()
     const searchParams = useSearchParams()
-    const { threads, sendMessage, markAsRead, getMessages, addReaction, removeReaction, initialize, startRealtime, stopRealtime, isLoading, error } = useMessageStore()
+    const { threads, sendMessage, markAsRead, getMessages, addReaction, removeReaction, initialize, startRealtime, stopRealtime, addConversation, isLoading, error } = useMessageStore()
     const { user } = useAuthStore()
     const currentUserId = user?.id || 'me'
     const isSimulationMode = !isSupabaseAuthEnabled()
@@ -45,17 +48,43 @@ export default function MessagesPage() {
     const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
     const [editedMessageTexts, setEditedMessageTexts] = useState<Record<string, string>>({})
     const [isComposerMenuOpen, setIsComposerMenuOpen] = useState(false)
+    const [followingContacts, setFollowingContacts] = useState<Array<{ userId: string; name: string; handle: string; avatar: string; role: string }>>([])
+    const [isLoadingContacts, setIsLoadingContacts] = useState(false)
+    const [startingConversationUserId, setStartingConversationUserId] = useState<string | null>(null)
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [isConfirming, setIsConfirming] = useState(false)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = useState<null | (() => Promise<void>)>(null)
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const selectedThreadId = activeThreadId || threads[0]?.id || ''
+    const isCoachSurface = pathname.startsWith('/coach')
+    const messagesBasePath = isCoachSurface ? '/coach/messages' : '/messages'
+    const conversationDiscoveryPath = isCoachSurface ? '/coach/clients' : '/coaching'
     const activeThread = threads.find(t => t.id === selectedThreadId)
     const activeMessages = getMessages(selectedThreadId)
     const visibleMessages = useMemo(
         () => activeMessages.filter((message) => !hiddenMessageIds.includes(message.id)),
         [activeMessages, hiddenMessageIds],
     )
+
+    const existingThreadParticipantIds = useMemo(() => {
+        const ids = new Set<string>()
+        for (const thread of threads) {
+            for (const participant of thread.participants) {
+                if (participant.id !== currentUserId) {
+                    ids.add(participant.id)
+                }
+            }
+        }
+        return ids
+    }, [currentUserId, threads])
 
     // Filter threads
     const filteredThreads = threads.filter(t => {
@@ -83,6 +112,29 @@ export default function MessagesPage() {
         if (!threads.some((thread) => thread.id === requestedThreadId)) return
         setActiveThreadId(requestedThreadId)
     }, [searchParams, threads])
+
+    useEffect(() => {
+        if (!user?.id || isSimulationMode) {
+            setFollowingContacts([])
+            return
+        }
+
+        setIsLoadingContacts(true)
+        void (async () => {
+            try {
+                const response = await requestApi<{
+                    following: Array<{ userId: string; name: string; handle: string; avatar: string; role: string }>
+                }>('/api/v1/follows')
+
+                const contacts = Array.isArray(response.data.following) ? response.data.following : []
+                setFollowingContacts(contacts)
+            } catch {
+                setFollowingContacts([])
+            } finally {
+                setIsLoadingContacts(false)
+            }
+        })()
+    }, [isSimulationMode, user?.id])
 
     useEffect(() => {
         if (selectedThreadId) markAsRead(selectedThreadId)
@@ -134,6 +186,52 @@ export default function MessagesPage() {
         setIsComposerMenuOpen(false)
     }
 
+    const startDirectConversation = async (participant: { userId: string; name: string; avatar: string }) => {
+        if (!user) return
+
+        setStartingConversationUserId(participant.userId)
+
+        if (isSimulationMode) {
+            const localThreadId = `direct_${participant.userId}`
+            addConversation({
+                id: localThreadId,
+                participants: [
+                    {
+                        id: user.id,
+                        name: user.name,
+                        avatar: getSafeImageSrc(user.avatar, `self-${user.id}`),
+                    },
+                    {
+                        id: participant.userId,
+                        name: participant.name,
+                        avatar: participant.avatar,
+                    },
+                ],
+                isGroup: false,
+                unreadCount: 0,
+                updatedAt: new Date().toISOString(),
+            })
+            selectThread(localThreadId)
+            setStartingConversationUserId(null)
+            return
+        }
+
+        try {
+            const response = await requestApi<{ threadId: string }>('/api/v1/messages/direct-thread', {
+                method: 'POST',
+                body: JSON.stringify({ participantId: participant.userId }),
+            })
+
+            await initialize()
+            selectThread(response.data.threadId)
+            router.replace(`${messagesBasePath}?thread=${encodeURIComponent(response.data.threadId)}`)
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Unable to start direct conversation.')
+        }
+
+        setStartingConversationUserId(null)
+    }
+
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (!file) return
@@ -179,7 +277,7 @@ export default function MessagesPage() {
         return thread.participants.find((p) => p.id !== currentUserId)?.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${thread.id}`
     }
 
-    const getSafeImageSrc = (src: string | undefined | null, seed: string) => {
+    function getSafeImageSrc(src: string | undefined | null, seed: string) {
         const normalized = (src || '').trim()
         if (normalized.length > 0) return normalized
         return `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}`
@@ -195,7 +293,53 @@ export default function MessagesPage() {
         }
     }
 
-    const handleDeleteForMe = (messageId: string) => {
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
+    }
+
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
+
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
+    }
+
+    const handleDeleteForMe = (messageId: string, messageText: string, skipConfirmation = false) => {
+        if (!skipConfirmation) {
+            openConfirmation(
+                {
+                    title: 'Delete Message for You?',
+                    message: messageText ? `"${messageText.slice(0, 72)}${messageText.length > 72 ? '...' : ''}" will be hidden from this chat view.` : 'This message will be hidden from this chat view.',
+                    confirmText: 'Delete for Me',
+                    tone: 'danger',
+                },
+                async () => {
+                    handleDeleteForMe(messageId, messageText, true)
+                },
+            )
+            return
+        }
+
         setHiddenMessageIds((current) => (current.includes(messageId) ? current : [...current, messageId]))
         if (pinnedMessageId === messageId) {
             setPinnedMessageId(null)
@@ -233,6 +377,25 @@ export default function MessagesPage() {
         setIsComposerMenuOpen(false)
     }
 
+    const handleClearDraft = () => {
+        openConfirmation(
+            {
+                title: 'Clear Draft?',
+                message: 'Current text, attachments, and reply/edit context will be discarded.',
+                confirmText: 'Clear Draft',
+                tone: 'danger',
+            },
+            async () => {
+                setAttachments([])
+                setReplyingTo(null)
+                setEditingMessageId(null)
+                setInputText('')
+                setIsComposerMenuOpen(false)
+                toast.success('Draft cleared.')
+            },
+        )
+    }
+
     if (isLoading) {
         return (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-6xl mx-auto min-h-[600px] flex flex-col lg:flex-row gap-4 lg:gap-6 pb-6 pt-2">
@@ -257,7 +420,7 @@ export default function MessagesPage() {
                                 </span>
                             )}
                         </div>
-                        <button onClick={() => router.push('/coaching')} className="w-[36px] h-[36px] rounded-full bg-(--text-primary) text-(--bg-base) flex items-center justify-center hover:opacity-90 transition-opacity"><Smile className="w-[18px] h-[18px]" /></button>
+                        <button onClick={() => router.push(conversationDiscoveryPath)} className="w-[36px] h-[36px] rounded-full bg-(--text-primary) text-(--bg-base) flex items-center justify-center hover:opacity-90 transition-opacity"><Smile className="w-[18px] h-[18px]" /></button>
                     </div>
                     <div className="relative">
                         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[16px] h-[16px] text-(--text-tertiary)" />
@@ -268,6 +431,45 @@ export default function MessagesPage() {
                             onChange={e => setSearchQuery(e.target.value)}
                             className="w-full h-[44px] pl-10 pr-4 rounded-[16px] bg-(--bg-surface) border border-(--border-default) focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20 text-[14px] font-body outline-none transition-colors"
                         />
+                    </div>
+
+                    <div className="mt-4">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="font-body text-[11px] uppercase tracking-wider text-(--text-tertiary) font-bold">Following</span>
+                            {isLoadingContacts && <span className="font-body text-[11px] text-(--text-tertiary)">Loading...</span>}
+                        </div>
+
+                        {!isLoadingContacts && followingContacts.length === 0 && (
+                            <p className="font-body text-[12px] text-(--text-tertiary)">Follow people in Community to quickly start direct chats.</p>
+                        )}
+
+                        {followingContacts.length > 0 && (
+                            <div className="flex gap-2 overflow-x-auto pb-1">
+                                {followingContacts.slice(0, 8).map((contact) => {
+                                    const hasThread = existingThreadParticipantIds.has(contact.userId)
+                                    const isStarting = startingConversationUserId === contact.userId
+
+                                    return (
+                                        <button
+                                            key={contact.userId}
+                                            onClick={() => {
+                                                void startDirectConversation(contact)
+                                            }}
+                                            disabled={isStarting}
+                                            className={cn(
+                                                'shrink-0 min-w-[88px] rounded-[12px] border px-2 py-2 text-center transition-colors',
+                                                hasThread ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-(--border-default) bg-(--bg-surface)',
+                                                isStarting ? 'opacity-60 cursor-not-allowed' : 'hover:border-emerald-500',
+                                            )}
+                                        >
+                                            <img src={getSafeImageSrc(contact.avatar, `follow-${contact.userId}`)} alt={contact.name} className="w-[32px] h-[32px] rounded-full object-cover mx-auto mb-1" />
+                                            <span className="block text-[11px] font-bold truncate text-(--text-primary)">{contact.name}</span>
+                                            <span className="block text-[10px] text-(--text-tertiary)">{isStarting ? 'Opening...' : hasThread ? 'Open' : 'Message'}</span>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -420,7 +622,7 @@ export default function MessagesPage() {
                                                 <button onClick={() => setStarredMessageIds((current) => current.includes(msg.id) ? current.filter((id) => id !== msg.id) : [...current, msg.id])} className={cn("w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors", isStarred ? 'text-yellow-500' : 'text-(--text-tertiary) hover:text-yellow-500')} title="Star"><Star className={cn("w-[14px] h-[14px]", isStarred ? 'fill-current' : '')} /></button>
                                                 <button onClick={() => { setEditingMessageId(msg.id); setInputText(messageText) }} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Edit"><Edit2 className="w-[14px] h-[14px]" /></button>
                                                 <button onClick={() => handleForwardMessage(msg)} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Forward"><Forward className="w-[14px] h-[14px]" /></button>
-                                                <button onClick={() => handleDeleteForMe(msg.id)} className="w-[28px] h-[28px] rounded-full hover:bg-red-500/10 flex items-center justify-center text-(--text-tertiary) hover:text-red-500 transition-colors" title="Delete"><Trash2 className="w-[14px] h-[14px]" /></button>
+                                                <button onClick={() => handleDeleteForMe(msg.id, messageText)} className="w-[28px] h-[28px] rounded-full hover:bg-red-500/10 flex items-center justify-center text-(--text-tertiary) hover:text-red-500 transition-colors" title="Delete"><Trash2 className="w-[14px] h-[14px]" /></button>
                                             </div>
                                         )}
 
@@ -501,7 +703,7 @@ export default function MessagesPage() {
                                                 <button onClick={() => { setPinnedMessageId(msg.id); toast.success('Message pinned') }} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Pin"><Pin className="w-[14px] h-[14px]" /></button>
                                                 <button onClick={() => setStarredMessageIds((current) => current.includes(msg.id) ? current.filter((id) => id !== msg.id) : [...current, msg.id])} className={cn("w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors", isStarred ? 'text-yellow-500' : 'text-(--text-tertiary) hover:text-yellow-500')} title="Star"><Star className={cn("w-[14px] h-[14px]", isStarred ? 'fill-current' : '')} /></button>
                                                 <button onClick={() => handleForwardMessage(msg)} className="w-[28px] h-[28px] rounded-full hover:bg-[var(--bg-elevated)] flex items-center justify-center text-(--text-tertiary) hover:text-(--text-primary) transition-colors" title="Forward"><Forward className="w-[14px] h-[14px]" /></button>
-                                                <button onClick={() => handleDeleteForMe(msg.id)} className="w-[28px] h-[28px] rounded-full hover:bg-red-500/10 flex items-center justify-center text-(--text-tertiary) hover:text-red-500 transition-colors" title="Delete for me"><Trash2 className="w-[14px] h-[14px]" /></button>
+                                                <button onClick={() => handleDeleteForMe(msg.id, messageText)} className="w-[28px] h-[28px] rounded-full hover:bg-red-500/10 flex items-center justify-center text-(--text-tertiary) hover:text-red-500 transition-colors" title="Delete for me"><Trash2 className="w-[14px] h-[14px]" /></button>
                                             </div>
                                         )}
 
@@ -589,7 +791,7 @@ export default function MessagesPage() {
                                     <div className="absolute bottom-[48px] left-0 w-[200px] rounded-[14px] border border-(--border-subtle) bg-(--bg-surface) shadow-lg p-2 z-40">
                                         <button onClick={() => fileInputRef.current?.click()} className="w-full text-left px-3 py-2 rounded-[10px] hover:bg-[var(--bg-elevated)] text-[13px] font-body text-(--text-primary)">Upload image or video</button>
                                         <button onClick={handleVoiceNote} className="w-full text-left px-3 py-2 rounded-[10px] hover:bg-[var(--bg-elevated)] text-[13px] font-body text-(--text-primary)">Attach voice note</button>
-                                        <button onClick={() => { setAttachments([]); setReplyingTo(null); setEditingMessageId(null); setIsComposerMenuOpen(false) }} className="w-full text-left px-3 py-2 rounded-[10px] hover:bg-[var(--bg-elevated)] text-[13px] font-body text-(--text-primary)">Clear draft</button>
+                                        <button onClick={handleClearDraft} className="w-full text-left px-3 py-2 rounded-[10px] hover:bg-[var(--bg-elevated)] text-[13px] font-body text-(--text-primary)">Clear draft</button>
                                     </div>
                                 )}
                             </div>
@@ -630,9 +832,21 @@ export default function MessagesPage() {
                     </div>
                     <h3 className="font-display font-bold text-[24px] text-(--text-primary) mb-2">Your Messages</h3>
                     <p className="font-body text-[15px] max-w-[300px] text-center">Chat with athletes, coaches, and friends. Send photos and videos.</p>
-                    <button onClick={() => router.push('/coaching')} className="mt-6 bg-emerald-500 text-white px-6 py-2.5 rounded-full font-bold text-[15px] hover:bg-emerald-600 transition-colors shadow-sm cursor-pointer">Start a conversation</button>
+                    <button onClick={() => router.push(conversationDiscoveryPath)} className="mt-6 bg-emerald-500 text-white px-6 py-2.5 rounded-full font-bold text-[15px] hover:bg-emerald-600 transition-colors shadow-sm cursor-pointer">Start a conversation</button>
                 </div>
             )}
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
         </motion.div>
     )
 }

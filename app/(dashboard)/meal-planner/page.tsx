@@ -6,6 +6,7 @@ import { Calendar as CalendarIcon, ShoppingCart, GripVertical, ChevronRight, Che
 import { cn } from '@/lib/utils'
 import { requestApi } from '@/lib/api/client'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 interface RecipeSearchItem {
     id: string
@@ -35,6 +36,14 @@ export default function MealPlannerPage() {
 
     const [viewRecipe, setViewRecipe] = useState<any>(null)
     const [showRecipeBuilder, setShowRecipeBuilder] = useState(false)
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [isConfirming, setIsConfirming] = useState(false)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = useState<null | (() => Promise<void>)>(null)
 
     const [plan, setPlan] = useState<Record<string, Record<string, { id: string, name: string, cals: number }[]>>>({
         Mon: { breakfast: [{ id: '1', name: 'Oatmeal & Protein', cals: 350 }], lunch: [{ id: '2', name: 'Chicken Bowl', cals: 550 }], dinner: [{ id: '3', name: 'Salmon', cals: 450 }], snacks: [{ id: '4', name: 'Yogurt', cals: 120 }] },
@@ -143,6 +152,37 @@ export default function MealPlannerPage() {
     const getDayTotal = (dayObj: any) => {
         if (!dayObj) return 0
         return Object.values(dayObj).reduce((sum: number, arr: any) => sum + (arr || []).reduce((s: number, i: any) => s + i.cals, 0), 0) as number
+    }
+
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
+    }
+
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
+
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
     }
 
     React.useEffect(() => {
@@ -282,7 +322,19 @@ export default function MealPlannerPage() {
                                                         <MoreHorizontal className="w-[16px] h-[16px]" />
                                                     </button>
                                                     <button
-                                                        onClick={() => removeMeal(activeDay, mealKey, item.id)}
+                                                        onClick={() => {
+                                                            openConfirmation(
+                                                                {
+                                                                    title: 'Remove Meal Item?',
+                                                                    message: `${item.name} will be removed from ${activeDay} ${meal}.`,
+                                                                    confirmText: 'Remove Item',
+                                                                    tone: 'danger',
+                                                                },
+                                                                async () => {
+                                                                    removeMeal(activeDay, mealKey, item.id)
+                                                                },
+                                                            )
+                                                        }}
                                                         className="w-[36px] h-[36px] rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 hover:bg-red-500 hover:text-white transition-colors cursor-pointer"
                                                     >
                                                         <X className="w-[16px] h-[16px]" />
@@ -687,6 +739,19 @@ export default function MealPlannerPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
         </motion.div>
     )
 }

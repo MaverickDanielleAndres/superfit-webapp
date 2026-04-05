@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>
+
 const AssignSchema = z.object({
   clientIds: z.array(z.string().uuid()).min(1),
   deadline: z.string().datetime().optional().nullable(),
@@ -9,6 +11,10 @@ const AssignSchema = z.object({
 
 interface RouteContext {
   params: Promise<{ id: string }>
+}
+
+interface AssignmentIdRow {
+  id: string | null
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -65,7 +71,9 @@ export async function POST(request: Request, context: RouteContext) {
     deadline: parsed.data.deadline || null,
   }))
 
-  const { data, error } = await (supabase as any)
+  const db = supabase as SupabaseServerClient
+
+  const { data: rawAssignments, error } = await db
     .from('coach_form_assignments')
     .upsert(rows, { onConflict: 'form_id,coach_id,client_id' })
     .select('id')
@@ -80,8 +88,9 @@ export async function POST(request: Request, context: RouteContext) {
     })
   }
 
-  const assignmentIds = (data || [])
-    .map((row: any) => String(row.id || ''))
+  const assignments = Array.isArray(rawAssignments) ? (rawAssignments as AssignmentIdRow[]) : []
+  const assignmentIds = assignments
+    .map((row) => String(row.id || ''))
     .filter(Boolean)
 
   let notificationError: string | undefined

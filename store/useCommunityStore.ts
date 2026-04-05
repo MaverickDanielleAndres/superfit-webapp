@@ -26,7 +26,7 @@ interface CommunityState {
     isLoading: boolean
     error: string | null
 
-    fetchPosts: () => Promise<void>
+    fetchPosts: (feedMode?: 'foryou' | 'following') => Promise<void>
     addPost: (post: Omit<CommunityPost, 'id' | 'likes' | 'comments' | 'reposts' | 'views'>) => void
     likePost: (postId: string, userId: string) => void
     repostPost: (postId: string, userId: string, userName: string, userHandle: string) => void
@@ -105,12 +105,12 @@ export const useCommunityStore = create<CommunityState>()(
             isLoading: false,
             error: null,
 
-            fetchPosts: async () => {
+            fetchPosts: async (feedMode = 'foryou') => {
                 if (!isSupabaseAuthEnabled()) return
 
                 set({ isLoading: true, error: null })
                 try {
-                    const response = await requestApi<{ posts: CommunityPost[] }>('/api/v1/community/posts')
+                    const response = await requestApi<{ posts: CommunityPost[] }>(`/api/v1/community/posts?feed=${feedMode}`)
                     set({ posts: response.data.posts, isLoading: false, error: null })
                 } catch (error) {
                     set({ isLoading: false, error: getErrorMessage(error) })

@@ -1,31 +1,141 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-    MessageCircle, PlayCircle, Plus, Calendar, Target, 
-    Award, Heart, MessageSquare, Bookmark, Share2, FileText, 
-    Image as ImageIcon, Video, CheckCircle2, MoreHorizontal, Download, X, Utensils
+    MessageCircle, PlayCircle, Plus, Target,
+    Heart, MessageSquare, Bookmark, Share2, FileText,
+    Video, CheckCircle2, MoreHorizontal, Download, X, Utensils, Loader2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useCoachingStore, CoachFeedPost } from '@/store/useCoachingStore'
+import { useCoachingStore } from '@/store/useCoachingStore'
 import { useMessageStore } from '@/store/useMessageStore'
 import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
+import { requestApi } from '@/lib/api/client'
+import { StructuredFormSubmissionModal, type StructuredFormQuestion } from '@/components/coaching/StructuredFormSubmissionModal'
+
+const DEFAULT_COACH_AVATAR = 'https://api.dicebear.com/7.x/notionists/svg?seed=CO'
+
+function getSafeImageSrc(value: string | null | undefined, fallback: string | null = DEFAULT_COACH_AVATAR): string | null {
+    const trimmed = typeof value === 'string' ? value.trim() : ''
+    return trimmed.length > 0 ? trimmed : fallback
+}
+
+interface HubCoach {
+    id: string
+    name: string
+    avatar: string
+    bio: string
+}
+
+interface HubProgramAssignment {
+    id: string
+    status: string
+    progressPct: number
+    assignedAt: string
+    program: {
+        id: string
+        name: string
+        difficulty: string
+        lengthLabel: string
+    }
+}
+
+interface HubFormAssignment {
+    id: string
+    assignedAt: string
+    deadline: string | null
+    completedAt: string | null
+    form: {
+        id: string
+        name: string
+        status: string
+        questions: StructuredFormQuestion[]
+    }
+    submission: {
+        id: string
+        reviewStatus: string
+        submittedAt: string
+        reviewedAt: string | null
+        coachNotes: string
+        response: Record<string, unknown>
+    } | null
+}
+
+interface HubFormSubmission {
+    id: string
+    formId: string
+    formName: string
+    reviewStatus: string
+    submittedAt: string
+    reviewedAt: string | null
+    coachNotes: string
+    response: Record<string, unknown>
+}
+
+interface HubScheduleEvent {
+    id: string
+    title: string
+    eventType: string
+    status: string
+    startAt: string
+    endAt: string
+    notes: string
+    isUpcoming: boolean
+}
+
+interface HubAnnouncement {
+    id: string
+    message: string
+    createdAt: string
+    mediaUrl: string | null
+    audienceLabel: string | null
+    broadcastLogId: string | null
+}
+
+interface HubDataResponse {
+    coach: HubCoach | null
+    link: {
+        id: string
+        coachId: string
+        status: string
+        goalName: string
+    } | null
+    programAssignments: HubProgramAssignment[]
+    formAssignments: HubFormAssignment[]
+    formSubmissions: HubFormSubmission[]
+    scheduleEvents: HubScheduleEvent[]
+    announcements: HubAnnouncement[]
+    stats: {
+        activePrograms: number
+        pendingForms: number
+        upcomingSessions: number
+    }
+    sharing: {
+        weight: boolean
+        nutrition: boolean
+        progressPhotos: boolean
+    }
+}
 
 export function ClientHub() {
     const store = useCoachingStore()
     const router = useRouter()
     const { addConversation } = useMessageStore()
     const { startSession } = useWorkoutStore()
+
+    const [hubData, setHubData] = useState<HubDataResponse | null>(null)
+    const [isHubLoading, setIsHubLoading] = useState(true)
+    const [hubLoadError, setHubLoadError] = useState<string | null>(null)
     
     // Local UI states
     const [isDragActive, setIsDragActive] = useState(false)
     const [isFormCheckModalOpen, setFormCheckModalOpen] = useState(false)
     const [isCheckInModalOpen, setCheckInModalOpen] = useState<string | null>(null)
     const [formCheckData, setFormCheckData] = useState({ exerciseName: '', notes: '', file: null as File | null })
-    const [checkInAnswers, setCheckInAnswers] = useState<Record<string, any>>({})
+    const [checkInAnswers, setCheckInAnswers] = useState<Record<string, string | number>>({})
     const [commentingOnPost, setCommentingOnPost] = useState<string | null>(null)
     const [commentText, setCommentText] = useState('')
     
@@ -35,24 +145,67 @@ export function ClientHub() {
         { id: 't2', title: 'Log Meals', desc: 'Hit 2000 kcal', type: 'meal', done: false }
     ])
 
-    const coach = store.coaches.find(c => c.id === store.activeCoachId)
+    const loadHubData = async () => {
+        setIsHubLoading(true)
+        setHubLoadError(null)
+
+        try {
+            const response = await requestApi<HubDataResponse>('/api/v1/coaching/hub')
+            if (response.data?.coach) {
+                setHubData(response.data)
+            } else {
+                setHubData(null)
+            }
+        } catch (error) {
+            setHubLoadError(error instanceof Error ? error.message : 'Unable to load coaching hub.')
+            setHubData(null)
+        } finally {
+            setIsHubLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        void loadHubData()
+    }, [])
+
+    const fallbackCoach = useMemo(() => store.coaches.find(c => c.id === store.activeCoachId), [store.coaches, store.activeCoachId])
+
+    if (isHubLoading && !fallbackCoach) {
+        return (
+            <div className="flex items-center justify-center gap-3 py-16 bg-(--bg-surface) rounded-[24px] border border-(--border-subtle)">
+                <Loader2 className="w-[18px] h-[18px] animate-spin text-(--text-secondary)" />
+                <span className="text-[14px] text-(--text-secondary)">Loading your coaching hub...</span>
+            </div>
+        )
+    }
+
+    if (hubData?.coach) {
+        return <ServerBackedClientHub hubData={hubData} onRefresh={loadHubData} />
+    }
+
+    const coach = fallbackCoach
 
     if (!coach) {
         return (
             <div className="flex flex-col items-center justify-center py-20 bg-(--bg-surface) rounded-[24px] border border-(--border-subtle)">
                 <Target className="w-12 h-12 text-(--text-tertiary) mb-4" />
                 <h3 className="font-display font-bold text-xl mb-2">No Active Coach</h3>
-                <p className="text-(--text-secondary) mb-6">Find a coach in the Marketplace to get started.</p>
+                <p className="text-(--text-secondary) mb-2">Find a coach in the Marketplace to get started.</p>
+                {hubLoadError && (
+                    <p className="text-[12px] text-red-500">{hubLoadError}</p>
+                )}
             </div>
         )
     }
+
+    const coachAvatarSrc = getSafeImageSrc(coach.avatar)
 
     const handleMessageCoach = () => {
         // Create conversation if it doesn't exist
         addConversation({
             id: `conv_${coach.id}`,
             participants: [
-                { id: coach.id, name: coach.name, avatar: coach.avatar || '' }
+                { id: coach.id, name: coach.name, avatar: coachAvatarSrc || DEFAULT_COACH_AVATAR }
             ],
             isGroup: false,
             updatedAt: new Date().toISOString(),
@@ -114,7 +267,8 @@ export function ClientHub() {
                 {/* Coach Card */}
                 <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm flex flex-col items-center text-center relative overflow-hidden">
                     <div className="absolute top-0 left-0 right-0 h-[60px] bg-gradient-to-r from-emerald-500/20 to-teal-500/20" />
-                    <img src={coach.avatar || 'https://api.dicebear.com/7.x/notionists/svg?seed=CO'} className="relative z-10 w-[80px] h-[80px] rounded-full object-cover border-4 border-(--bg-surface) shadow-sm mb-3 mt-4" />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={coachAvatarSrc || DEFAULT_COACH_AVATAR} alt={`${coach.name} avatar`} className="relative z-10 w-[80px] h-[80px] rounded-full object-cover border-4 border-(--bg-surface) shadow-sm mb-3 mt-4" />
                     <h3 className="font-display font-black text-[20px] text-(--text-primary)">{coach.name}</h3>
                     <p className="font-body text-[13px] text-(--text-secondary) mb-5">Lead Coach</p>
                     <button 
@@ -144,7 +298,10 @@ export function ClientHub() {
                                 Start Today&apos;s Workout
                             </button>
                             <button 
-                                onClick={() => toast('Program viewer coming soon')}
+                                onClick={() => {
+                                    router.push('/coaching')
+                                    toast.success('Opening your full coaching workspace...')
+                                }}
                                 className="w-full h-[36px] bg-transparent text-(--text-secondary) hover:bg-(--bg-base) rounded-[10px] font-bold text-[13px] flex items-center justify-center transition-colors"
                             >
                                 View Full Program
@@ -260,7 +417,8 @@ export function ClientHub() {
                                 {fc.status === 'reviewed' && fc.coachFeedback && (
                                     <div className="mt-2 p-3 bg-(--bg-surface) border border-emerald-500/20 rounded-[12px]">
                                         <div className="flex items-center gap-2 mb-2">
-                                            <img src={coach.avatar} className="w-[20px] h-[20px] rounded-full object-cover" />
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img src={coachAvatarSrc || DEFAULT_COACH_AVATAR} alt={`${coach.name} avatar`} className="w-[20px] h-[20px] rounded-full object-cover" />
                                             <span className="text-[12px] font-bold text-emerald-600">Coach Feedback</span>
                                         </div>
                                         <p className="text-[13px] text-(--text-secondary) leading-relaxed">&ldquo;{fc.coachFeedback}&rdquo;</p>
@@ -275,12 +433,16 @@ export function ClientHub() {
                 <h3 className="font-display font-bold text-[20px] text-(--text-primary) mt-4">Coach Announcements</h3>
                 
                 <div className="flex flex-col gap-6">
-                    {store.feedPosts.map(post => (
+                    {store.feedPosts.map(post => {
+                        const postImageSrc = getSafeImageSrc(post.mediaUrl, null)
+
+                        return (
                         <div key={post.id} className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] overflow-hidden shadow-sm">
                             {/* Post Header */}
                             <div className="p-5 pb-3 flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <img src={coach.avatar || ''} className="w-[88px] h-[88px] rounded-[20px] object-cover border-4 border-(--bg-surface) shadow-sm" />
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={coachAvatarSrc || DEFAULT_COACH_AVATAR} alt={`${post.coachName} avatar`} className="w-[88px] h-[88px] rounded-[20px] object-cover border-4 border-(--bg-surface) shadow-sm" />
                                     <div>
                                         <h4 className="font-display font-bold text-[15px] text-(--text-primary)">{post.coachName}</h4>
                                         <span className="text-[12px] text-(--text-tertiary)">{new Date(post.createdAt).toLocaleDateString()}</span>
@@ -304,9 +466,10 @@ export function ClientHub() {
                                     </div>
                                 )}
                                 
-                                {post.type === 'image' && post.mediaUrl && (
+                                {post.type === 'image' && postImageSrc && (
                                     <div className="mt-4 rounded-[16px] overflow-hidden border border-(--border-subtle)">
-                                        <img src={post.mediaUrl} className="w-full h-auto max-h-[400px] object-cover" />
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={postImageSrc} alt={`${post.coachName} shared image`} className="w-full h-auto max-h-[400px] object-cover" />
                                     </div>
                                 )}
 
@@ -401,8 +564,7 @@ export function ClientHub() {
                                 </button>
                                 <div className="flex-1" />
                                 <button 
-                                    onClick={(e) => {
-                                        navState = e.currentTarget
+                                    onClick={() => {
                                         store.savePost(post.id)
                                         toast.success(post.isSaved ? 'Removed from saved' : 'Saved to your library')
                                     }}
@@ -463,7 +625,7 @@ export function ClientHub() {
                                 )}
                             </AnimatePresence>
                         </div>
-                    ))}
+                    )})}
                     {store.feedPosts.length === 0 && (
                         <p className="text-[14px] text-(--text-tertiary) text-center py-6 border border-dashed border-(--border-default) rounded-[16px]">No announcements from your coach yet.</p>
                     )}
@@ -712,4 +874,287 @@ export function ClientHub() {
     )
 }
 
-let navState: any = null // global to prevent error in onClick
+function ServerBackedClientHub({ hubData, onRefresh }: { hubData: HubDataResponse; onRefresh: () => Promise<void> }) {
+    const router = useRouter()
+    const { addConversation } = useMessageStore()
+    const { startSession } = useWorkoutStore()
+
+    const [sharing, setSharing] = useState(hubData.sharing)
+    const [submittingAssignmentId, setSubmittingAssignmentId] = useState<string | null>(null)
+    const [activeAssignmentId, setActiveAssignmentId] = useState<string | null>(null)
+    const [isStructuredModalOpen, setStructuredModalOpen] = useState(false)
+
+    useEffect(() => {
+        setSharing(hubData.sharing)
+    }, [hubData.sharing])
+
+    const coachAvatarSrc = getSafeImageSrc(hubData.coach?.avatar)
+    const pendingAssignments = hubData.formAssignments.filter((assignment) => !assignment.completedAt)
+    const upcomingSessions = hubData.scheduleEvents.filter((event) => event.isUpcoming).slice(0, 5)
+    const activeAssignment = pendingAssignments.find((assignment) => assignment.id === activeAssignmentId) || null
+
+    const handleMessageCoach = () => {
+        const coachId = String(hubData.coach?.id || '')
+        if (!coachId) return
+
+        addConversation({
+            id: `conv_${coachId}`,
+            participants: [{ id: coachId, name: hubData.coach?.name || 'Coach', avatar: coachAvatarSrc || DEFAULT_COACH_AVATAR }],
+            isGroup: false,
+            updatedAt: new Date().toISOString(),
+            unreadCount: 0,
+        })
+
+        router.push('/messages')
+    }
+
+    const handleStartWorkout = async () => {
+        const toastId = toast.loading('Loading workout...')
+        await new Promise((resolve) => setTimeout(resolve, 350))
+        startSession('coach_assigned_workout')
+        toast.success('Workout loaded! Let\'s get it.', { id: toastId })
+        router.push('/workout')
+    }
+
+    const handleSubmitAssignedForm = async (response: Record<string, unknown>) => {
+        if (!activeAssignment) return
+
+        setSubmittingAssignmentId(activeAssignment.id)
+        const toastId = toast.loading('Submitting form...')
+
+        try {
+            await requestApi('/api/v1/coaching/forms/submissions', {
+                method: 'POST',
+                body: JSON.stringify({
+                    assignmentId: activeAssignment.id,
+                    response,
+                }),
+            })
+
+            toast.success('Submitted to your coach for review.', { id: toastId })
+            setStructuredModalOpen(false)
+            setActiveAssignmentId(null)
+            await onRefresh()
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Unable to submit form right now.', { id: toastId })
+        } finally {
+            setSubmittingAssignmentId(null)
+        }
+    }
+
+    const openStructuredForm = (assignmentId: string) => {
+        setActiveAssignmentId(assignmentId)
+        setStructuredModalOpen(true)
+    }
+
+    const closeStructuredForm = () => {
+        if (submittingAssignmentId) return
+        setStructuredModalOpen(false)
+        setActiveAssignmentId(null)
+    }
+
+    const updateSharing = async (next: Partial<HubDataResponse['sharing']>) => {
+        const previous = sharing
+        const optimistic = { ...sharing, ...next }
+        setSharing(optimistic)
+
+        try {
+            const response = await requestApi<{ sharing: HubDataResponse['sharing'] }>('/api/v1/coaching/hub', {
+                method: 'PATCH',
+                body: JSON.stringify(next),
+            })
+            setSharing(response.data.sharing)
+            toast.success('Sharing preference updated.')
+        } catch (error) {
+            setSharing(previous)
+            toast.error(error instanceof Error ? error.message : 'Unable to update sharing preference.')
+        }
+    }
+
+    return (
+        <div className="flex flex-col lg:flex-row gap-6 w-full">
+            <div className="w-full lg:w-[320px] shrink-0 flex flex-col gap-6">
+                <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm flex flex-col items-center text-center relative overflow-hidden">
+                    <div className="absolute top-0 left-0 right-0 h-[60px] bg-gradient-to-r from-emerald-500/20 to-teal-500/20" />
+                    <img src={coachAvatarSrc || DEFAULT_COACH_AVATAR} alt={`${hubData.coach?.name || 'Coach'} avatar`} className="relative z-10 w-[80px] h-[80px] rounded-full object-cover border-4 border-(--bg-surface) shadow-sm mb-3 mt-4" />
+                    <h3 className="font-display font-black text-[20px] text-(--text-primary)">{hubData.coach?.name || 'Coach'}</h3>
+                    <p className="font-body text-[13px] text-(--text-secondary) mb-1">{hubData.link?.goalName || 'Coaching Program'}</p>
+                    <p className="font-body text-[12px] text-(--text-tertiary) mb-5">{hubData.coach?.bio || 'Personalized support and accountability.'}</p>
+                    <button
+                        onClick={handleMessageCoach}
+                        className="w-full h-[40px] rounded-[10px] bg-(--text-primary) text-(--bg-base) font-body font-bold text-[14px] flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+                    >
+                        <MessageCircle className="w-[16px] h-[16px]" /> Message Coach
+                    </button>
+                </div>
+
+                <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">
+                    <h3 className="font-display font-bold text-[16px] text-(--text-primary) mb-4">Assigned Programs</h3>
+                    {hubData.programAssignments.map((assignment) => (
+                        <div key={assignment.id} className="flex flex-col gap-3 bg-[var(--bg-elevated)] border border-(--border-default) rounded-[16px] p-4 mb-3">
+                            <div>
+                                <h4 className="font-display font-bold text-[15px] text-(--text-primary)">{assignment.program.name}</h4>
+                                <span className="font-body text-[12px] text-(--text-secondary)">{assignment.program.lengthLabel} • {assignment.program.difficulty}</span>
+                            </div>
+                            <div className="h-[6px] w-full bg-(--bg-base) rounded-full overflow-hidden">
+                                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.max(0, Math.min(100, assignment.progressPct))}%` }} />
+                            </div>
+                            <button
+                                onClick={handleStartWorkout}
+                                className="mt-2 w-full h-[36px] bg-emerald-500 hover:bg-emerald-600 text-white rounded-[10px] font-bold text-[13px] flex items-center justify-center transition-colors"
+                            >
+                                Start Today&apos;s Workout
+                            </button>
+                        </div>
+                    ))}
+                    {hubData.programAssignments.length === 0 && (
+                        <p className="text-[13px] text-(--text-secondary) text-center py-4">No active programs yet.</p>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex-1 flex flex-col gap-6 min-w-0">
+                {pendingAssignments.length > 0 && (
+                    <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/30 dark:to-emerald-900/10 border border-emerald-500/20 rounded-[24px] p-5">
+                        <h4 className="font-display font-black text-[16px] text-emerald-600 dark:text-emerald-400 mb-2">Pending Coach Forms</h4>
+                        <div className="flex flex-col gap-2">
+                            {pendingAssignments.map((assignment) => (
+                                <div key={assignment.id} className="flex items-center justify-between gap-3 bg-white/60 dark:bg-black/20 border border-emerald-500/10 rounded-[12px] px-4 py-3">
+                                    <div>
+                                        <p className="font-bold text-[14px] text-(--text-primary)">{assignment.form.name}</p>
+                                        <p className="text-[12px] text-(--text-secondary)">
+                                            {assignment.deadline ? `Due ${new Date(assignment.deadline).toLocaleDateString()}` : 'No deadline'}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => openStructuredForm(assignment.id)}
+                                        disabled={submittingAssignmentId === assignment.id}
+                                        className="h-[34px] px-4 rounded-[10px] bg-emerald-500 text-white text-[12px] font-bold disabled:opacity-60"
+                                    >
+                                        {submittingAssignmentId === assignment.id ? 'Submitting...' : 'Fill Form'}
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">
+                    <h3 className="font-display font-bold text-[18px] text-(--text-primary) mb-4">Coach Announcements</h3>
+                    <div className="flex flex-col gap-3">
+                        {hubData.announcements.map((announcement) => (
+                            <div key={announcement.id} className="border border-(--border-subtle) rounded-[14px] p-4 bg-[var(--bg-elevated)]">
+                                <p className="text-[14px] text-(--text-primary) whitespace-pre-wrap">{announcement.message}</p>
+                                {announcement.mediaUrl && (
+                                    <a href={announcement.mediaUrl} target="_blank" rel="noreferrer" className="inline-block mt-2 text-[12px] font-bold text-emerald-600 hover:underline">
+                                        Open attachment
+                                    </a>
+                                )}
+                                <p className="mt-2 text-[11px] text-(--text-tertiary)">{new Date(announcement.createdAt).toLocaleString()}</p>
+                            </div>
+                        ))}
+                        {hubData.announcements.length === 0 && (
+                            <p className="text-[13px] text-(--text-secondary)">No announcements yet.</p>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">
+                    <h3 className="font-display font-bold text-[18px] text-(--text-primary) mb-4">Recent Form Submissions</h3>
+                    <div className="flex flex-col gap-3">
+                        {hubData.formSubmissions.map((submission) => (
+                            <div key={submission.id} className="flex items-center justify-between gap-3 border border-(--border-subtle) rounded-[14px] px-4 py-3 bg-[var(--bg-elevated)]">
+                                <div>
+                                    <p className="font-bold text-[14px] text-(--text-primary)">{submission.formName}</p>
+                                    <p className="text-[12px] text-(--text-secondary)">{new Date(submission.submittedAt).toLocaleDateString()}</p>
+                                </div>
+                                <span className={cn('px-2 py-1 rounded-[6px] text-[11px] font-bold uppercase', submission.reviewStatus === 'reviewed' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600')}>
+                                    {submission.reviewStatus === 'reviewed' ? 'Reviewed' : 'Pending'}
+                                </span>
+                            </div>
+                        ))}
+                        {hubData.formSubmissions.length === 0 && (
+                            <p className="text-[13px] text-(--text-secondary)">No submissions yet.</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            <div className="w-full lg:w-[300px] shrink-0 flex flex-col gap-6">
+                <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">
+                    <h3 className="font-display font-bold text-[16px] text-(--text-primary)">Upcoming Sessions</h3>
+                    <div className="mt-4 flex flex-col gap-3">
+                        {upcomingSessions.map((event) => (
+                            <div key={event.id} className="border border-(--border-subtle) rounded-[12px] p-3 bg-[var(--bg-elevated)]">
+                                <p className="font-bold text-[13px] text-(--text-primary)">{event.title}</p>
+                                <p className="text-[12px] text-(--text-secondary)">{new Date(event.startAt).toLocaleString()}</p>
+                            </div>
+                        ))}
+                        {upcomingSessions.length === 0 && (
+                            <p className="text-[13px] text-(--text-secondary)">No upcoming sessions scheduled.</p>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] p-6 shadow-sm">
+                    <div className="mb-4">
+                        <h3 className="font-display font-bold text-[16px] text-(--text-primary)">Sharing with Coach</h3>
+                        <p className="font-body text-[12px] text-(--text-secondary) mt-1">Control what progress data your coach can see.</p>
+                    </div>
+
+                    <div className="flex flex-col gap-4">
+                        <div className="flex items-center justify-between">
+                            <span className="font-bold text-[14px] text-(--text-primary)">Weight Data</span>
+                            <button
+                                onClick={() => { void updateSharing({ weight: !sharing.weight }) }}
+                                className={cn('w-[44px] h-[24px] rounded-full relative transition-colors', sharing.weight ? 'bg-emerald-500' : 'bg-(--border-default)')}
+                            >
+                                <span className={cn('absolute top-[2px] w-[20px] h-[20px] bg-white rounded-full shadow-sm transition-all', sharing.weight ? 'left-[22px]' : 'left-[2px]')} />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <span className="font-bold text-[14px] text-(--text-primary)">Nutrition Diary</span>
+                            <button
+                                onClick={() => { void updateSharing({ nutrition: !sharing.nutrition }) }}
+                                className={cn('w-[44px] h-[24px] rounded-full relative transition-colors', sharing.nutrition ? 'bg-emerald-500' : 'bg-(--border-default)')}
+                            >
+                                <span className={cn('absolute top-[2px] w-[20px] h-[20px] bg-white rounded-full shadow-sm transition-all', sharing.nutrition ? 'left-[22px]' : 'left-[2px]')} />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <span className="font-bold text-[14px] text-(--text-primary)">Progress Photos</span>
+                            <button
+                                onClick={() => { void updateSharing({ progressPhotos: !sharing.progressPhotos }) }}
+                                className={cn('w-[44px] h-[24px] rounded-full relative transition-colors', sharing.progressPhotos ? 'bg-emerald-500' : 'bg-(--border-default)')}
+                            >
+                                <span className={cn('absolute top-[2px] w-[20px] h-[20px] bg-white rounded-full shadow-sm transition-all', sharing.progressPhotos ? 'left-[22px]' : 'left-[2px]')} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <StructuredFormSubmissionModal
+                open={isStructuredModalOpen}
+                assignment={
+                    activeAssignment
+                        ? {
+                            id: activeAssignment.id,
+                            deadline: activeAssignment.deadline,
+                            form: {
+                                id: activeAssignment.form.id,
+                                name: activeAssignment.form.name,
+                                questions: activeAssignment.form.questions,
+                            },
+                        }
+                        : null
+                }
+                isSubmitting={Boolean(submittingAssignmentId)}
+                onClose={closeStructuredForm}
+                onSubmit={handleSubmitAssignedForm}
+            />
+        </div>
+    )
+}

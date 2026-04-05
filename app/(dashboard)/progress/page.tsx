@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Camera, Layers, Plus, ChevronRight, ChevronLeft, Download, Trash2, X, Weight, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/useAuthStore'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 export default function ProgressPage() {
     const { user } = useAuthStore()
@@ -27,6 +28,14 @@ export default function ProgressPage() {
     // Upload Modal State
     const [stagedPhoto, setStagedPhoto] = useState<{ url: string; file: File } | null>(null)
     const [stagedWeight, setStagedWeight] = useState(user?.currentWeight?.toString() || '82.0')
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string
+        message: string
+        confirmText: string
+        tone: 'default' | 'danger'
+    } | null>(null)
+    const [isConfirming, setIsConfirming] = useState(false)
+    const [pendingConfirmationAction, setPendingConfirmationAction] = useState<null | (() => Promise<void>)>(null)
 
     const trendData = useMemo(() => {
         const sorted = [...photos]
@@ -123,6 +132,37 @@ export default function ProgressPage() {
         }
     }
 
+    const openConfirmation = (
+        dialog: { title: string; message: string; confirmText: string; tone?: 'default' | 'danger' },
+        action: () => Promise<void>,
+    ) => {
+        setConfirmDialog({
+            title: dialog.title,
+            message: dialog.message,
+            confirmText: dialog.confirmText,
+            tone: dialog.tone || 'default',
+        })
+        setPendingConfirmationAction(() => action)
+    }
+
+    const closeConfirmation = () => {
+        if (isConfirming) return
+        setConfirmDialog(null)
+        setPendingConfirmationAction(null)
+    }
+
+    const runConfirmedAction = async () => {
+        if (!pendingConfirmationAction) return
+        setIsConfirming(true)
+        try {
+            await pendingConfirmationAction()
+            setConfirmDialog(null)
+            setPendingConfirmationAction(null)
+        } finally {
+            setIsConfirming(false)
+        }
+    }
+
     return (
         <React.Fragment>
             <motion.div
@@ -198,7 +238,20 @@ export default function ProgressPage() {
                                         <Download className="w-[14px] h-[14px]" />
                                     </button>
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); deletePhoto(photo.id); }}
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            openConfirmation(
+                                                {
+                                                    title: 'Delete Progress Photo?',
+                                                    message: `${photo.label} will be removed from your progress gallery.`,
+                                                    confirmText: 'Delete Photo',
+                                                    tone: 'danger',
+                                                },
+                                                async () => {
+                                                    deletePhoto(photo.id)
+                                                },
+                                            )
+                                        }}
                                         className="w-[32px] h-[32px] rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center text-red-400 hover:bg-red-500 hover:text-white transition-colors cursor-pointer"
                                     >
                                         <Trash2 className="w-[14px] h-[14px]" />
@@ -473,6 +526,19 @@ export default function ProgressPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            <ConfirmDialog
+                isOpen={Boolean(confirmDialog)}
+                title={confirmDialog?.title || 'Confirm Action'}
+                message={confirmDialog?.message || ''}
+                confirmText={confirmDialog?.confirmText || 'Confirm'}
+                tone={confirmDialog?.tone || 'default'}
+                isLoading={isConfirming}
+                onCancel={closeConfirmation}
+                onConfirm={() => {
+                    void runConfirmedAction()
+                }}
+            />
         </React.Fragment>
     )
 }

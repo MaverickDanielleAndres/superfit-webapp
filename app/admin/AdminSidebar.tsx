@@ -4,22 +4,36 @@ import React from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { prefetchRoutesWhenIdle } from '@/lib/navigation/prefetch'
 import {
     LayoutDashboard,
     Users,
     ShieldAlert,
     CreditCard,
+    LifeBuoy,
     Settings,
     Database,
     LogOut,
     ArrowLeft
 } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
+import { disableCoachUserAppMode, enableAdminUserAppMode } from '@/lib/navigation/portalMode'
 
 interface AdminSidebarProps {
     isMobileOpen: boolean
     onCloseMobile: () => void
 }
+
+const ADMIN_NAV_ITEMS = [
+    { icon: LayoutDashboard, label: 'Dashboard', href: '/admin' },
+    { icon: Users, label: 'Users', href: '/admin/users' },
+    { icon: Users, label: 'Coaches', href: '/admin/coaches' },
+    { icon: ShieldAlert, label: 'Applications', href: '/admin/applications' },
+    { icon: CreditCard, label: 'Payments', href: '/admin/payments' },
+    { icon: LifeBuoy, label: 'Support', href: '/admin/support' },
+    { icon: Database, label: 'Content', href: '/admin/content' },
+    { icon: Settings, label: 'Settings', href: '/admin/settings' },
+]
 
 export function AdminSidebar({ isMobileOpen, onCloseMobile }: AdminSidebarProps) {
     const pathname = usePathname()
@@ -28,6 +42,7 @@ export function AdminSidebar({ isMobileOpen, onCloseMobile }: AdminSidebarProps)
 
     const handleLogout = () => {
         onCloseMobile()
+        disableCoachUserAppMode()
         logout()
         router.push('/')
     }
@@ -54,15 +69,12 @@ export function AdminSidebar({ isMobileOpen, onCloseMobile }: AdminSidebarProps)
         }
     }, [isMobileOpen, onCloseMobile])
 
-    const navItems = [
-        { icon: LayoutDashboard, label: 'Dashboard', href: '/admin' },
-        { icon: Users, label: 'Users', href: '/admin/users' },
-        { icon: Users, label: 'Coaches', href: '/admin/coaches' },
-        { icon: ShieldAlert, label: 'Applications', href: '/admin/applications' },
-        { icon: CreditCard, label: 'Payments', href: '/admin/payments' },
-        { icon: Database, label: 'Content', href: '/admin/content' },
-        { icon: Settings, label: 'Settings', href: '/admin/settings' },
-    ]
+    React.useEffect(() => {
+        const navRoutes = [...ADMIN_NAV_ITEMS.map((item) => item.href), '/dashboard']
+        return prefetchRoutesWhenIdle(navRoutes, (href) => {
+            router.prefetch(href)
+        })
+    }, [router])
 
     return (
         <>
@@ -98,13 +110,16 @@ export function AdminSidebar({ isMobileOpen, onCloseMobile }: AdminSidebarProps)
             </div>
 
             <nav className="flex-1 flex flex-col pt-1 pb-4 gap-[2px]">
-                {navItems.map((item) => {
-                    const isActive = pathname === item.href
+                {ADMIN_NAV_ITEMS.map((item) => {
+                    const isActive = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
                     return (
                         <Link
                             key={item.label}
                             href={item.href}
+                            prefetch={false}
                             onClick={onCloseMobile}
+                            onMouseEnter={() => router.prefetch(item.href)}
+                            onFocus={() => router.prefetch(item.href)}
                             className={cn(
                                 'flex items-center h-[44px] px-3 mx-2 my-0.5 rounded-[10px] gap-2.5 transition-all duration-120 cursor-pointer',
                                 isActive
@@ -121,7 +136,13 @@ export function AdminSidebar({ isMobileOpen, onCloseMobile }: AdminSidebarProps)
                 <div className="mt-auto pt-4 border-t border-(--border-subtle) mx-4 flex flex-col gap-2">
                     <Link
                         href="/dashboard"
-                        onClick={onCloseMobile}
+                        prefetch={false}
+                        onClick={() => {
+                            enableAdminUserAppMode()
+                            onCloseMobile()
+                        }}
+                        onMouseEnter={() => router.prefetch('/dashboard')}
+                        onFocus={() => router.prefetch('/dashboard')}
                         className="flex items-center h-[44px] px-3 rounded-[10px] gap-2.5 text-(--text-secondary) hover:bg-(--bg-elevated) hover:text-(--text-primary) transition-all"
                     >
                         <ArrowLeft className="w-[18px] h-[18px] shrink-0" />

@@ -8,6 +8,13 @@ const UpdateProfileSchema = z.object({
   email: z.string().email(),
   avatarUrl: z.string().url().nullable().optional(),
   measurementSystem: z.enum(['metric', 'imperial']).optional(),
+  timezone: z.string().min(1).max(120).optional().nullable(),
+  profileVisibility: z.enum(['public', 'friends_only', 'private']).optional(),
+  shareWorkouts: z.boolean().optional(),
+  shareWeightData: z.boolean().optional(),
+  weekStart: z.enum(['monday', 'sunday']).optional(),
+  integrations: z.record(z.string(), z.unknown()).optional(),
+  twoFactorEnabled: z.boolean().optional(),
   currentPassword: z.string().min(6).optional().or(z.literal('')),
   newPassword: z.string().min(8).max(128).optional().or(z.literal('')),
 })
@@ -33,7 +40,7 @@ export async function GET() {
 
   const { data: profile, error } = await (supabaseAdmin as any)
     .from('profiles')
-    .select('full_name,email,avatar_url,measurement_system')
+    .select('full_name,email,avatar_url,measurement_system,timezone')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -47,6 +54,22 @@ export async function GET() {
     })
   }
 
+  const { data: profileSettings, error: profileSettingsError } = await (supabaseAdmin as any)
+    .from('profile_settings')
+    .select('profile_visibility,share_workouts,share_weight_data,week_start,integrations,two_factor_enabled')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (profileSettingsError) {
+    return problemResponse({
+      status: 500,
+      code: 'SETTINGS_FETCH_FAILED',
+      title: 'Settings Fetch Failed',
+      detail: profileSettingsError.message,
+      requestId,
+    })
+  }
+
   return dataResponse({
     requestId,
     data: {
@@ -54,6 +77,13 @@ export async function GET() {
       email: String(profile?.email || user.email || ''),
       avatarUrl: profile?.avatar_url ? String(profile.avatar_url) : '',
       measurementSystem: String(profile?.measurement_system || 'metric'),
+      timezone: String(profile?.timezone || 'UTC'),
+      profileVisibility: String(profileSettings?.profile_visibility || 'public'),
+      shareWorkouts: Boolean(profileSettings?.share_workouts ?? true),
+      shareWeightData: Boolean(profileSettings?.share_weight_data ?? false),
+      weekStart: String(profileSettings?.week_start || 'monday'),
+      integrations: profileSettings?.integrations && typeof profileSettings.integrations === 'object' ? profileSettings.integrations : {},
+      twoFactorEnabled: Boolean(profileSettings?.two_factor_enabled ?? false),
     },
   })
 }
@@ -125,6 +155,7 @@ export async function PATCH(request: Request) {
       email: payload.email.trim(),
       avatar_url: payload.avatarUrl?.trim() || null,
       measurement_system: payload.measurementSystem || 'metric',
+      timezone: payload.timezone?.trim() || 'UTC',
     })
     .eq('id', user.id)
 
@@ -134,6 +165,31 @@ export async function PATCH(request: Request) {
       code: 'SETTINGS_UPDATE_FAILED',
       title: 'Settings Update Failed',
       detail: profileError.message,
+      requestId,
+    })
+  }
+
+  const { error: profileSettingsError } = await (supabaseAdmin as any)
+    .from('profile_settings')
+    .upsert(
+      {
+        user_id: user.id,
+        profile_visibility: payload.profileVisibility || 'public',
+        share_workouts: payload.shareWorkouts ?? true,
+        share_weight_data: payload.shareWeightData ?? false,
+        week_start: payload.weekStart || 'monday',
+        integrations: payload.integrations || {},
+        two_factor_enabled: payload.twoFactorEnabled ?? false,
+      },
+      { onConflict: 'user_id' },
+    )
+
+  if (profileSettingsError) {
+    return problemResponse({
+      status: 500,
+      code: 'SETTINGS_UPDATE_FAILED',
+      title: 'Settings Update Failed',
+      detail: profileSettingsError.message,
       requestId,
     })
   }
@@ -173,6 +229,13 @@ export async function PATCH(request: Request) {
       email: payload.email.trim(),
       avatarUrl: payload.avatarUrl?.trim() || '',
       measurementSystem: payload.measurementSystem || 'metric',
+      timezone: payload.timezone?.trim() || 'UTC',
+      profileVisibility: payload.profileVisibility || 'public',
+      shareWorkouts: payload.shareWorkouts ?? true,
+      shareWeightData: payload.shareWeightData ?? false,
+      weekStart: payload.weekStart || 'monday',
+      integrations: payload.integrations || {},
+      twoFactorEnabled: payload.twoFactorEnabled ?? false,
     },
   })
 }

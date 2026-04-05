@@ -11,6 +11,18 @@ import { toast } from 'sonner'
 import { LogOut } from 'lucide-react'
 import { requestApi } from '@/lib/api/client'
 
+function toVisibilityApi(value: 'Public' | 'Friends Only' | 'Private'): 'public' | 'friends_only' | 'private' {
+    if (value === 'Friends Only') return 'friends_only'
+    if (value === 'Private') return 'private'
+    return 'public'
+}
+
+function toVisibilityLabel(value: string): 'Public' | 'Friends Only' | 'Private' {
+    if (value === 'friends_only') return 'Friends Only'
+    if (value === 'private') return 'Private'
+    return 'Public'
+}
+
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState<'profile' | 'integrations' | 'privacy'>('profile')
     const [integrations, setIntegrations] = useState({ appleHealth: true, garmin: false, myfitnesspal: false })
@@ -42,7 +54,9 @@ export default function SettingsPage() {
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
     const [is2FAModalOpen, setIs2FAModalOpen] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
+    const [isAvatarUploading, setIsAvatarUploading] = useState(false)
     const [savedSnapshot, setSavedSnapshot] = useState('')
+    const avatarInputRef = React.useRef<HTMLInputElement>(null)
 
     const currentSnapshot = JSON.stringify({
         profileForm,
@@ -67,6 +81,13 @@ export default function SettingsPage() {
                     email: string
                     avatarUrl: string
                     measurementSystem: 'metric' | 'imperial'
+                    timezone: string
+                    profileVisibility: 'public' | 'friends_only' | 'private'
+                    shareWorkouts: boolean
+                    shareWeightData: boolean
+                    weekStart: 'monday' | 'sunday'
+                    integrations: typeof integrations
+                    twoFactorEnabled: boolean
                 }>('/api/v1/settings/profile')
 
                 setProfileForm((current) => ({
@@ -76,52 +97,17 @@ export default function SettingsPage() {
                     avatarUrl: response.data.avatarUrl,
                 }))
                 setUnitSystem(response.data.measurementSystem)
+                setProfileVisibility(toVisibilityLabel(response.data.profileVisibility))
+                setShareWorkouts(response.data.shareWorkouts)
+                setShareWeightData(response.data.shareWeightData)
+                setWeekStart(response.data.weekStart === 'sunday' ? 'Sunday' : 'Monday')
+                setIntegrations(response.data.integrations || { appleHealth: true, garmin: false, myfitnesspal: false })
+                setIsTwoFactorEnabled(response.data.twoFactorEnabled)
             } catch {
                 // Keep local defaults if server settings are not available.
             }
         })()
     }, [user?.id])
-
-    React.useEffect(() => {
-        try {
-            const raw = localStorage.getItem('superfit-user-settings-ui')
-            if (!raw) return
-            const parsed = JSON.parse(raw) as {
-                integrations?: typeof integrations
-                profileVisibility?: 'Public' | 'Friends Only' | 'Private'
-                shareWorkouts?: boolean
-                shareWeightData?: boolean
-                unitSystem?: 'metric' | 'imperial'
-                weekStart?: 'Monday' | 'Sunday'
-                location?: string
-                username?: string
-                avatarUrl?: string
-                isTwoFactorEnabled?: boolean
-            }
-
-            if (parsed.integrations) setIntegrations(parsed.integrations)
-            if (parsed.profileVisibility) setProfileVisibility(parsed.profileVisibility)
-            if (typeof parsed.shareWorkouts === 'boolean') setShareWorkouts(parsed.shareWorkouts)
-            if (typeof parsed.shareWeightData === 'boolean') setShareWeightData(parsed.shareWeightData)
-            if (parsed.unitSystem) setUnitSystem(parsed.unitSystem)
-            if (parsed.weekStart) setWeekStart(parsed.weekStart)
-            const persistedLocation = parsed.location
-            if (typeof persistedLocation === 'string') {
-                setProfileForm((current) => ({ ...current, location: persistedLocation }))
-            }
-            const persistedUsername = parsed.username
-            if (typeof persistedUsername === 'string') {
-                setProfileForm((current) => ({ ...current, username: persistedUsername }))
-            }
-            const persistedAvatarUrl = parsed.avatarUrl
-            if (typeof persistedAvatarUrl === 'string') {
-                setProfileForm((current) => ({ ...current, avatarUrl: persistedAvatarUrl }))
-            }
-            if (typeof parsed.isTwoFactorEnabled === 'boolean') setIsTwoFactorEnabled(parsed.isTwoFactorEnabled)
-        } catch {
-            // Ignore invalid persisted settings.
-        }
-    }, [])
 
     React.useEffect(() => {
         if (!savedSnapshot) {
@@ -140,6 +126,13 @@ export default function SettingsPage() {
                 email: string
                 avatarUrl: string
                 measurementSystem: 'metric' | 'imperial'
+                timezone: string
+                profileVisibility: 'public' | 'friends_only' | 'private'
+                shareWorkouts: boolean
+                shareWeightData: boolean
+                weekStart: 'monday' | 'sunday'
+                integrations: typeof integrations
+                twoFactorEnabled: boolean
             }>('/api/v1/settings/profile', {
                 method: 'PATCH',
                 body: JSON.stringify({
@@ -147,6 +140,12 @@ export default function SettingsPage() {
                     email: profileForm.email,
                     avatarUrl: profileForm.avatarUrl || null,
                     measurementSystem: unitSystem,
+                    profileVisibility: toVisibilityApi(profileVisibility),
+                    shareWorkouts,
+                    shareWeightData,
+                    weekStart: weekStart === 'Sunday' ? 'sunday' : 'monday',
+                    integrations,
+                    twoFactorEnabled: isTwoFactorEnabled,
                     currentPassword: profileForm.currentPassword,
                     newPassword: profileForm.newPassword,
                 }),
@@ -158,22 +157,6 @@ export default function SettingsPage() {
         }
 
         updateProfile({ name: profileForm.name, email: profileForm.email, avatar: profileForm.avatarUrl, measurementSystem: unitSystem })
-
-        localStorage.setItem(
-            'superfit-user-settings-ui',
-            JSON.stringify({
-                integrations,
-                profileVisibility,
-                shareWorkouts,
-                shareWeightData,
-                unitSystem,
-                weekStart,
-                username: profileForm.username,
-                location: profileForm.location,
-                avatarUrl: profileForm.avatarUrl,
-                isTwoFactorEnabled,
-            }),
-        )
 
         setProfileForm((current) => ({ ...current, currentPassword: '', newPassword: '' }))
         setSavedSnapshot(JSON.stringify({
@@ -194,6 +177,46 @@ export default function SettingsPage() {
 
     const handleToggleIntegration = (key: keyof typeof integrations) => {
         setIntegrations(prev => ({ ...prev, [key]: !prev[key] }))
+    }
+
+    const handleAvatarFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0]
+        if (!file) return
+
+        setIsAvatarUploading(true)
+        try {
+            const formData = new FormData()
+            formData.append('file', file)
+
+            const response = await requestApi<{ avatarUrl: string }>('/api/v1/settings/avatar', {
+                method: 'POST',
+                body: formData,
+            })
+
+            const nextProfileForm = {
+                ...profileForm,
+                avatarUrl: response.data.avatarUrl,
+            }
+
+            setProfileForm(nextProfileForm)
+            updateProfile({ avatar: response.data.avatarUrl })
+            setSavedSnapshot(JSON.stringify({
+                profileForm: { ...nextProfileForm, currentPassword: '', newPassword: '' },
+                profileVisibility,
+                shareWorkouts,
+                shareWeightData,
+                unitSystem,
+                weekStart,
+                integrations,
+                isTwoFactorEnabled,
+            }))
+            toast.success('Avatar uploaded and saved.')
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Unable to upload avatar.')
+        } finally {
+            setIsAvatarUploading(false)
+            event.target.value = ''
+        }
     }
 
     const handleExportData = () => {
@@ -428,23 +451,37 @@ export default function SettingsPage() {
                                 <div>
                                     <h3 className="font-display font-bold text-[20px] text-(--text-primary) mb-6">Personal Information</h3>
                                     <div className="flex items-center gap-6 mb-8">
+                                        <input
+                                            ref={avatarInputRef}
+                                            type="file"
+                                            accept="image/png,image/jpeg,image/jpg,image/webp"
+                                            onChange={handleAvatarFileChange}
+                                            className="hidden"
+                                        />
                                         <div className="relative">
                                             <img
                                                 src={profileForm.avatarUrl || user?.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${user?.id || 'user'}`}
                                                 alt="Profile avatar"
                                                 className="w-[88px] h-[88px] rounded-full object-cover border border-(--border-subtle)"
                                             />
-                                            <button className="absolute bottom-0 right-0 w-[28px] h-[28px] rounded-full bg-(--bg-elevated) flex items-center justify-center text-(--text-primary) border border-(--border-subtle) shadow-sm hover:scale-110 transition-transform"><Plus className="w-[14px] h-[14px]" /></button>
+                                            <button
+                                                onClick={() => avatarInputRef.current?.click()}
+                                                className="absolute bottom-0 right-0 w-[28px] h-[28px] rounded-full bg-(--bg-elevated) flex items-center justify-center text-(--text-primary) border border-(--border-subtle) shadow-sm hover:scale-110 transition-transform"
+                                                disabled={isAvatarUploading}
+                                                title="Upload avatar"
+                                            >
+                                                <Plus className="w-[14px] h-[14px]" />
+                                            </button>
                                         </div>
                                         <div>
-                                            <p className="font-body text-[13px] text-(--text-secondary) mb-2">Avatar URL</p>
-                                            <input
-                                                type="url"
-                                                value={profileForm.avatarUrl}
-                                                onChange={e => setProfileForm(f => ({ ...f, avatarUrl: e.target.value }))}
-                                                placeholder="https://..."
-                                                className="h-[40px] w-[280px] rounded-[12px] border border-(--border-subtle) bg-(--bg-elevated) text-(--text-primary) font-body text-[13px] px-3 outline-none focus:border-(--accent)"
-                                            />
+                                            <p className="font-body text-[13px] text-(--text-secondary) mb-2">Profile Picture</p>
+                                            <button
+                                                onClick={() => avatarInputRef.current?.click()}
+                                                className="h-[40px] px-4 rounded-[12px] border border-(--border-subtle) bg-(--bg-elevated) text-(--text-primary) font-body text-[13px] hover:border-(--accent) transition-colors"
+                                                disabled={isAvatarUploading}
+                                            >
+                                                {isAvatarUploading ? 'Uploading...' : 'Upload from computer'}
+                                            </button>
                                         </div>
                                     </div>
 

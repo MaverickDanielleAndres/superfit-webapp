@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import dynamic from 'next/dynamic'
 import { Search, Plus, Dumbbell, Grid, List as ListIcon } from 'lucide-react'
@@ -9,6 +9,7 @@ import { useWorkoutStore } from '@/store/useWorkoutStore'
 import { Exercise } from '@/types'
 import { requestApi } from '@/lib/api/client'
 import { isSupabaseAuthEnabled } from '@/lib/supabase/auth'
+import { toast } from 'sonner'
 
 const ExerciseDetailSheet = dynamic(() => import('@/components/exercises/ExerciseDetailSheet'), {
     ssr: false,
@@ -39,13 +40,14 @@ export default function ExercisesPage() {
     const [remoteExercises, setRemoteExercises] = useState<Exercise[]>([])
     const [isSearchingRemote, setIsSearchingRemote] = useState(false)
     const [remoteSource, setRemoteSource] = useState<'exercisedb' | 'fallback' | null>(null)
+    const [exerciseLogSummaryByName, setExerciseLogSummaryByName] = useState<Record<string, { setsLogged: number; totalVolume: number; lastLoggedAt: string }>>({})
     
     const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null)
     const [showDetailSheet, setShowDetailSheet] = useState(false)
     const [showCustomModal, setShowCustomModal] = useState(false)
     const [showQuickLog, setShowQuickLog] = useState(false)
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (!isSupabaseAuthEnabled()) return
 
         const query = searchQuery.trim()
@@ -76,6 +78,33 @@ export default function ExercisesPage() {
 
         return () => window.clearTimeout(timer)
     }, [searchQuery])
+
+    useEffect(() => {
+        if (!isSupabaseAuthEnabled()) return
+
+        void (async () => {
+            try {
+                const response = await requestApi<{
+                    summaries: Array<{ exerciseName: string; lastLoggedAt: string; setsLogged: number; totalVolume: number }>
+                }>('/api/v1/exercises/logs?limit=500')
+
+                const nextSummary: Record<string, { setsLogged: number; totalVolume: number; lastLoggedAt: string }> = {}
+                for (const item of response.data.summaries || []) {
+                    const key = String(item.exerciseName || '').toLowerCase().trim()
+                    if (!key) continue
+                    nextSummary[key] = {
+                        setsLogged: Number(item.setsLogged || 0),
+                        totalVolume: Number(item.totalVolume || 0),
+                        lastLoggedAt: String(item.lastLoggedAt || ''),
+                    }
+                }
+
+                setExerciseLogSummaryByName(nextSummary)
+            } catch {
+                setExerciseLogSummaryByName({})
+            }
+        })()
+    }, [])
     
     const allExercises = useMemo(() => {
         const seen = new Set<string>()
@@ -133,7 +162,19 @@ export default function ExercisesPage() {
                     <button onClick={() => setShowCustomModal(true)} className="h-[44px] px-4 rounded-[14px] bg-[var(--bg-surface)] border-2 border-dashed border-(--border-default) text-(--text-secondary) font-body font-bold text-[13px] transition-all hover:bg-[var(--bg-elevated)] hover:text-(--text-primary) flex items-center gap-2 shadow-sm">
                         <Plus className="w-[16px] h-[16px]" /> Create Exercise
                     </button>
-                    <button onClick={() => { setSelectedExercise(filteredExercises[0] || null); setShowQuickLog(true); }} className="h-[44px] px-5 rounded-[14px] bg-(--accent) text-white font-body font-bold text-[14px] hover:bg-(--accent-hover) transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/20">
+                    <button
+                        onClick={() => {
+                            const firstExercise = filteredExercises[0] || null
+                            if (!firstExercise) {
+                                toast.error('No exercises available to log. Create one first or reset filters.')
+                                return
+                            }
+
+                            setSelectedExercise(firstExercise)
+                            setShowQuickLog(true)
+                        }}
+                        className="h-[44px] px-5 rounded-[14px] bg-(--accent) text-white font-body font-bold text-[14px] hover:bg-(--accent-hover) transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/20"
+                    >
                         <Plus className="w-[18px] h-[18px]" /> Log Exercise
                     </button>
                 </div>
@@ -197,9 +238,26 @@ export default function ExercisesPage() {
                                         {Math.min(2, ex.muscleGroups.length) && <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-body font-bold text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-[6px]">{ex.muscleGroups[0]}</span>}
                                         {Math.min(1, ex.equipment.length) && <span className="bg-[var(--bg-base)] border border-(--border-default) text-(--text-secondary) font-body font-bold text-[10px] uppercase px-2 py-0.5 rounded-[6px]">{ex.equipment[0].replace('_', ' ')}</span>}
                                     </div>
+                                    {(() => {
+                                        const summary = exerciseLogSummaryByName[ex.name.toLowerCase()]
+                                        if (!summary) return null
+                                        return (
+                                            <p className="mt-2 text-[11px] font-body text-(--text-tertiary)">
+                                                {summary.setsLogged} sets logged • Last {new Date(summary.lastLoggedAt).toLocaleDateString()}
+                                            </p>
+                                        )
+                                    })()}
                                 </div>
                                 <div className="pt-4 flex gap-2">
-                                    <button className="flex-1 h-[32px] font-body text-[12px] font-bold text-(--text-secondary) bg-[var(--bg-elevated)] rounded-[8px] hover:text-(--text-primary) hover:bg-[var(--bg-base)] border border-transparent hover:border-(--border-subtle) transition-all">Details</button>
+                                    <button
+                                        onClick={(event) => {
+                                            event.stopPropagation()
+                                            handleViewDetail(ex)
+                                        }}
+                                        className="flex-1 h-[32px] font-body text-[12px] font-bold text-(--text-secondary) bg-[var(--bg-elevated)] rounded-[8px] hover:text-(--text-primary) hover:bg-[var(--bg-base)] border border-transparent hover:border-(--border-subtle) transition-all"
+                                    >
+                                        Details
+                                    </button>
                                     <button onClick={(e) => handleQuickLog(ex, e)} className="w-[32px] h-[32px] flex items-center justify-center bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-[8px] hover:bg-emerald-500 hover:text-white transition-all">
                                         <Plus className="w-[16px] h-[16px]" />
                                     </button>
@@ -221,6 +279,15 @@ export default function ExercisesPage() {
                                     <h3 className="font-display font-bold text-[16px] text-(--text-primary) truncate">{ex.name}</h3>
                                 </div>
                                 <p className="font-body text-[13px] text-(--text-secondary) capitalize truncate">{ex.muscleGroups.join(', ')} • {ex.equipment.join(', ')}</p>
+                                {(() => {
+                                    const summary = exerciseLogSummaryByName[ex.name.toLowerCase()]
+                                    if (!summary) return null
+                                    return (
+                                        <p className="font-body text-[11px] text-(--text-tertiary) mt-1 truncate">
+                                            {summary.setsLogged} sets • {summary.totalVolume.toLocaleString()} kg volume
+                                        </p>
+                                    )
+                                })()}
                             </div>
                             <div className="flex shrink-0 gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity pr-2">
                                 <button onClick={(e) => handleQuickLog(ex, e)} className="h-[36px] px-4 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[13px] font-bold rounded-[10px] flex items-center gap-2 transition-colors hover:bg-emerald-500 hover:text-white">

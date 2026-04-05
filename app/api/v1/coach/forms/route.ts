@@ -2,9 +2,22 @@ import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { dataResponse, problemResponse } from '@/lib/api/problem'
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>
+
 const CreateFormSchema = z.object({
   name: z.string().min(1).max(120),
 })
+
+interface FormRow {
+  id: string | null
+  name: string | null
+  status: string | null
+  updated_at: string | null
+}
+
+interface SubmissionCountRow {
+  form_id: string | null
+}
 
 export async function GET() {
   const requestId = crypto.randomUUID()
@@ -24,7 +37,9 @@ export async function GET() {
     })
   }
 
-  const { data: formsData, error: formsError } = await (supabase as any)
+  const db = supabase as SupabaseServerClient
+
+  const { data: rawFormsData, error: formsError } = await db
     .from('coach_forms')
     .select('id,name,status,updated_at')
     .eq('coach_id', user.id)
@@ -40,11 +55,12 @@ export async function GET() {
     })
   }
 
-  const formIds = (formsData || []).map((row: any) => row.id)
-  let submissions: any[] = []
+  const formsData = Array.isArray(rawFormsData) ? (rawFormsData as FormRow[]) : []
+  const formIds = formsData.map((row) => row.id).filter((id): id is string => Boolean(id))
+  let submissions: SubmissionCountRow[] = []
 
   if (formIds.length) {
-    const { data: submissionData, error: submissionError } = await (supabase as any)
+    const { data: submissionData, error: submissionError } = await db
       .from('coach_form_submissions')
       .select('form_id')
       .eq('coach_id', user.id)
@@ -60,7 +76,7 @@ export async function GET() {
       })
     }
 
-    submissions = submissionData || []
+    submissions = Array.isArray(submissionData) ? (submissionData as SubmissionCountRow[]) : []
   }
 
   const submissionMap = new Map<string, number>()
@@ -69,7 +85,7 @@ export async function GET() {
     submissionMap.set(formId, (submissionMap.get(formId) || 0) + 1)
   }
 
-  const forms = (formsData || []).map((row: any) => ({
+  const forms = formsData.map((row) => ({
     id: String(row.id),
     name: String(row.name || 'Untitled Form'),
     submissions: submissionMap.get(String(row.id)) || 0,
@@ -130,7 +146,9 @@ export async function POST(request: Request) {
     })
   }
 
-  const { data, error } = await (supabase as any)
+  const db = supabase as SupabaseServerClient
+
+  const { data, error } = await db
     .from('coach_forms')
     .insert({
       coach_id: user.id,
