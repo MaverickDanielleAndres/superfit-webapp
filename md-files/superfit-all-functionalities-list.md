@@ -1,6 +1,6 @@
 # SuperFit Functionality Inventory
 
-Last updated: 2026-04-03
+Last updated: 2026-04-16
 Reference: Actual repository implementation (not aspirational roadmap)
 
 ## Status Legend
@@ -24,7 +24,7 @@ Reference: Actual repository implementation (not aspirational roadmap)
 
 | Route | Status | Key Capabilities |
 |---|---|---|
-| `/` | Implemented | KPI cards, dashboard widgets, quick navigation actions. |
+| `/dashboard` | Implemented | KPI cards, dashboard widgets, quick navigation actions. |
 | `/analytics` | Partial | Visual analytics surface with chart-heavy UI; data remains mostly mock/local. |
 | `/calculators` | Implemented | BMI, protein, creatine, deficit calculators; water calculator present in-page. |
 | `/coaching` | Partial | Marketplace + client-hub patterns exist; feed/client interactions use seeded data. |
@@ -37,9 +37,11 @@ Reference: Actual repository implementation (not aspirational roadmap)
 | `/hydration` | Partial | Drink logging and totals work; aggregate chart sections include placeholders. |
 | `/meal-planner` | Partial | Weekly/monthly planner UX present with mock meal/recipe structures. |
 | `/messages` | Partial | Threads, send, reactions, unread counts work locally; attachments/uploads are mocked. |
+| `/notifications` | Partial | Notification list, unread handling, and read-state actions are wired; behavior mixes persisted API data and optimistic UI updates. |
 | `/progress` | Partial | Progress visualization available, several charts are placeholder/mock-driven. |
 | `/settings` | Partial | Account/security/preferences UI exists; many settings are local-only. |
 | `/subscription` | Partial | Subscription management UI is present, not connected to real billing backend. |
+| `/support` | Implemented | Shared support center allows ticket creation, status filtering, and threaded replies via `/api/v1/support/tickets*`. |
 | `/timer` | Partial | Multi-mode timer engine and custom intervals implemented; audio integrations are mocked. |
 | `/workout` | Implemented | Active session flow, add exercises, set logging, finish session, and persisted workout state. |
 
@@ -55,9 +57,12 @@ Reference: Actual repository implementation (not aspirational roadmap)
 | `/coach/content` | Partial | Post and meal-plan publishing now uses `/api/v1/coach/content` with persisted `community_posts`; scheduling panel remains coach-schedule based and broader content ops are still evolving. |
 | `/coach/forms` | Partial | Form listing/create/delete/status/assignment now runs through `/api/v1/coach/forms` APIs; advanced analytics and template tooling are still limited. |
 | `/coach/marketplace` | Partial | Marketplace listing load/save now runs through `/api/v1/coach/marketplace`; public listing optimization and richer package tooling remain limited. |
+| `/coach/messages` | Partial | Coach communication inbox is implemented on shared messaging state and API routes; advanced workflow tooling is still limited. |
+| `/coach/notifications` | Partial | Coach-scoped notification surface is implemented with shared notification store and action routing. |
 | `/coach/programs` | Partial | Program fetch/create/update/day edits and assignments now run through `/api/v1/coach/programs` APIs; richer lifecycle tools (archive/versioning) remain limited. |
 | `/coach/schedule` | Partial | Event list/create flows now use `/api/v1/coach/schedule-events`; richer calendar interactions and advanced scheduling automation remain limited. |
 | `/coach/settings` | Partial | Account settings load/save now runs through `/api/v1/coach/settings`; notifications/security and full payout lifecycle remain partially mocked. |
+| `/coach/support` | Implemented | Shared support center is available to coaches with ticket creation and conversation threads. |
 
 ## 4. Admin Portal (`app/admin`)
 
@@ -70,6 +75,7 @@ Reference: Actual repository implementation (not aspirational roadmap)
 | `/admin/payments` | Partial | Payment list and pending payout approvals now run through `/api/v1/admin/payments` and `/api/v1/admin/payments/approve-pending`; external settlement integration is still pending. |
 | `/admin/content` | Partial | Moderation report retrieval/status actions now run through `/api/v1/admin/reports` APIs; policy automation and richer moderation ops are still evolving. |
 | `/admin/settings` | Partial | Settings load/save now runs through `/api/v1/admin/settings`; broader platform configuration surface and audit controls are still limited. |
+| `/admin/support` | Implemented | Admin support queue is implemented through shared support center with requester-role filtering, status updates, and deletion controls. |
 
 ## 5. Shared Functional Modules
 
@@ -93,6 +99,6 @@ The following are currently hardcoded as incomplete actions:
 ## 7. Integration Readiness Summary
 
 - Front-end scaffolding and interaction design are advanced.
-- Backend/API integration is now in place for key coach/admin flows (coach clients, content, broadcast/history, forms, programs, schedule events, marketplace, settings, direct-thread creation; admin applications, users/coaches, reports, payments, settings) but several modules still rely on local/mock patterns.
+- Backend/API integration is now in place for key coach/admin flows (coach clients, content, broadcast/history, forms, programs, schedule events, marketplace, settings, direct-thread creation; admin applications, users/coaches, reports, payments, settings, support queue operations) but several modules still rely on local/mock patterns.
 - Core remaining gaps are deeper domain coverage (for example richer client-detail workflows and coach/admin advanced operations), real-time sync, and replacement of remaining mocked datasets.
 - Documentation and product messaging should continue to label these as MVP/local-state features until integrations are completed.

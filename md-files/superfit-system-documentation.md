@@ -1,51 +1,66 @@
 # SuperFit System Documentation (Detailed)
 
-Last updated: 2026-04-03
+Last updated: 2026-04-16
 Documentation mode: implementation-accurate
 
 ## 1. Purpose
 
-This document describes what is currently implemented in the SuperFit repository and how major modules connect.
+This document reflects what is implemented in the current repository, including route coverage, API surfaces, and store behavior for client, coach, and admin portals.
 
-It intentionally avoids roadmap inflation. If behavior is mocked or partial, it is labeled as such.
-
-## 2. Runtime And Tooling
+## 2. Runtime and Architecture
 
 - Next.js 16 App Router
 - React 19 + TypeScript
-- Tailwind CSS v4 + custom variable tokens
-- Zustand persistence for application state
-- Framer Motion for transitions
-- Recharts for chart surfaces
-- Sonner for toast notifications
+- Tailwind CSS v4 + CSS variable design tokens
+- Zustand domain stores (persisted and non-persisted)
+- Supabase auth + database + realtime subscriptions
+- Framer Motion and GSAP used in selected UX surfaces
 
-## 3. Top-Level Architecture
+Portal organization:
 
-The app is organized around three role-specific portals plus auth/onboarding:
+- User app: `app/(dashboard)`
+- Coach app: `app/coach`
+- Admin app: `app/admin`
+- Public/system routes: `app/page.tsx`, `app/auth`, `app/onboarding`, `app/contact`, `app/suspended`, `app/under-review`
 
-- User portal under `app/(dashboard)`
-- Coach portal under `app/coach`
-- Admin portal under `app/admin`
-- Shared entry routes: `app/auth/page.tsx`, `app/onboarding/page.tsx`
+## 3. Route Guarding and Account Status Flows
 
-### 3.1 Route Guarding Model
+### 3.1 User Layout (`app/(dashboard)/layout.tsx`)
 
-- `app/(dashboard)/layout.tsx`
-  - Requires authenticated user profile
-  - Redirects coach/admin accounts to their dedicated portals
-  - Redirects incomplete profiles to onboarding
+- Initializes auth state.
+- Redirects unauthenticated users to `/`.
+- Redirects suspended/inactive users to `/suspended`.
+- Redirects coach users in pending review to `/under-review`.
+- Redirects coach/admin users to their portal unless explicit user-app mode is enabled.
+- Redirects users with incomplete onboarding to `/onboarding`.
 
-- `app/coach/layout.tsx`
-  - Requires authenticated coach role
+### 3.2 Coach Layout (`app/coach/layout.tsx`)
 
-- `app/admin/layout.tsx`
-  - Requires authenticated admin role
+- Requires authenticated coach role.
+- Redirects suspended/inactive to `/suspended`.
+- Redirects pending review to `/under-review`.
+- Uses `CoachPortalDataProvider` and shared top bar.
 
-## 4. Route Inventory
+### 3.3 Admin Layout (`app/admin/layout.tsx`)
 
-### 4.1 User Surface
+- Requires authenticated admin role.
+- Redirects suspended/inactive to `/suspended`.
+- Starts/stops admin realtime subscriptions via `useAdminPortalStore`.
 
-- `/`
+## 4. Frontend Route Inventory
+
+### 4.1 Public and System
+
+- `/` (marketing and auth entry)
+- `/auth`
+- `/onboarding`
+- `/contact`
+- `/suspended`
+- `/under-review`
+
+### 4.2 Client/User (`app/(dashboard)`)
+
+- `/dashboard`
 - `/analytics`
 - `/calculators`
 - `/coaching`
@@ -62,10 +77,11 @@ The app is organized around three role-specific portals plus auth/onboarding:
 - `/progress`
 - `/settings`
 - `/subscription`
+- `/support`
 - `/timer`
 - `/workout`
 
-### 4.2 Coach Surface
+### 4.3 Coach (`app/coach`)
 
 - `/coach`
 - `/coach/analytics`
@@ -75,11 +91,14 @@ The app is organized around three role-specific portals plus auth/onboarding:
 - `/coach/content`
 - `/coach/forms`
 - `/coach/marketplace`
+- `/coach/messages`
+- `/coach/notifications`
 - `/coach/programs`
 - `/coach/schedule`
 - `/coach/settings`
+- `/coach/support`
 
-### 4.3 Admin Surface
+### 4.4 Admin (`app/admin`)
 
 - `/admin`
 - `/admin/applications`
@@ -87,218 +106,199 @@ The app is organized around three role-specific portals plus auth/onboarding:
 - `/admin/content`
 - `/admin/payments`
 - `/admin/settings`
+- `/admin/support`
 - `/admin/users`
 
-## 5. Backend API Inventory
+## 5. Feature Coverage by Portal
 
-API route handlers are implemented under `app/api/v1` and are consumed by dashboard, coach, and admin portals.
+### 5.1 Client/User Features
 
-### 5.1 Auth And Core User Domains
+Implemented or strongly wired:
 
-- Auth/session:
-  - `/api/v1/auth/me`
+- Workout session lifecycle and logging (`/workout` + `/api/v1/workouts*`)
+- Goal CRUD (`/goals` + `/api/v1/goals*`)
+- Hydration logging (`/hydration` + `/api/v1/hydration*`)
+- Nutrition logging plus search/upload/scan endpoints (`/diary` + `/api/v1/nutrition*`)
+- Direct messaging and reactions (`/messages` + `/api/v1/messages*`)
+- Notifications list/read actions (`/notifications` + `/api/v1/notifications*`)
+- Support ticketing UI (`/support` + `/api/v1/support/tickets*`)
 
-- User progress domains:
-  - `/api/v1/workouts`, `/api/v1/workouts/[id]`
-  - `/api/v1/goals`, `/api/v1/goals/[id]`
-  - `/api/v1/hydration`, `/api/v1/hydration/[id]`
-  - `/api/v1/nutrition`, `/api/v1/nutrition/[id]`
-  - `/api/v1/nutrition/foods/search`, `/api/v1/nutrition/ai-scan`
+Partial or mixed local/API behavior:
 
-- Social and communication:
-  - `/api/v1/messages/*`
-  - `/api/v1/notifications`, `/api/v1/notifications/[id]`
-  - `/api/v1/community/posts/*`
-  - `/api/v1/friends/*`
+- Analytics (`/analytics`)
+- Community feed depth (`/community`)
+- Coaching marketplace/client-hub UX (`/coaching*`)
+- Meal planner richness (`/meal-planner`)
+- Subscription/payment realism (`/subscription` + simulated checkout)
 
-- Settings and account:
-  - `/api/v1/settings/profile`
-  - `/api/v1/subscription`
-  - `/api/v1/simulated-checkout`
+### 5.2 Coach Features
 
-- Utility/search:
-  - `/api/v1/search`
-  - `/api/v1/health`
-  - `/api/v1/exercises/search`
-  - `/api/v1/meal-planner/recipes/search`
+Implemented or strongly wired:
 
-### 5.2 Coach Domains
+- Client list/status/summary and add-available flows
+- Programs CRUD and assignment
+- Forms CRUD, status changes, assignments, and submission views
+- Broadcast sends and history
+- Content publishing
+- Schedule event CRUD-like flows
+- Marketplace profile management
+- Settings load/save
 
-- Portal routes:
-  - `/api/v1/coach/clients*`
-  - `/api/v1/coach/programs*`
-  - `/api/v1/coach/forms*`
-  - `/api/v1/coach/content`
-  - `/api/v1/coach/broadcast*`
-  - `/api/v1/coach/schedule-events`
-  - `/api/v1/coach/marketplace`
-  - `/api/v1/coach/settings`
+Partial areas:
 
-- Marketplace/profile/reviews:
-  - `/api/v1/coaching/[coachId]/overview`
-  - `/api/v1/coaching/[coachId]/reviews`
-  - `/api/v1/coaching/reviews/[reviewId]/reply`
+- Advanced analytics depth and selected workflow tooling in coach pages
 
-### 5.3 Admin Domains
+### 5.3 Admin Features
 
-- `/api/v1/admin/users*`
+Implemented or strongly wired:
+
+- Users list/filter/update/status/premium/delete
+- Coaches list with client and revenue derived aggregates
+- Coach application review lifecycle
+- Payments listing and pending payout approval
+- Moderation report listing and status updates
+- Platform settings load/save
+
+Partial areas:
+
+- Expanded moderation automation and deeper operations beyond current controls
+
+## 6. API Inventory (`app/api/v1`)
+
+Current implementation includes 80 API route handlers.
+
+### 6.1 Core and Utility
+
+- `/api/v1/auth/me`
+- `/api/v1/health`
+- `/api/v1/search`
+- `/api/v1/analytics/overview`
+
+### 6.2 User Fitness and Tracking
+
+- `/api/v1/workouts`, `/api/v1/workouts/[id]`
+- `/api/v1/exercises/search`, `/api/v1/exercises/logs`
+- `/api/v1/goals`, `/api/v1/goals/[id]`
+- `/api/v1/hydration`, `/api/v1/hydration/[id]`
+- `/api/v1/nutrition`, `/api/v1/nutrition/[id]`
+- `/api/v1/nutrition/foods/search`, `/api/v1/nutrition/ai-scan`, `/api/v1/nutrition/upload`
+- `/api/v1/meal-planner/recipes/search`
+- `/api/v1/calculators/responses`
+
+### 6.3 Messaging, Notifications, Community, Social
+
+- `/api/v1/messages`
+- `/api/v1/messages/send`
+- `/api/v1/messages/threads`
+- `/api/v1/messages/mark-read`
+- `/api/v1/messages/reactions`
+- `/api/v1/messages/direct-thread`
+- `/api/v1/notifications`, `/api/v1/notifications/[id]`
+- `/api/v1/community/posts`, `/api/v1/community/posts/[id]`
+- `/api/v1/community/posts/[id]/comments`
+- `/api/v1/community/posts/[id]/like`
+- `/api/v1/community/posts/[id]/repost`
+- `/api/v1/friends`, `/api/v1/friends/[id]`, `/api/v1/friends/[id]/respond`
+- `/api/v1/follows`
+
+### 6.4 Profile, Subscription, Support
+
+- `/api/v1/settings/profile`
+- `/api/v1/settings/avatar`
+- `/api/v1/subscription`
+- `/api/v1/simulated-checkout`
+- `/api/v1/support/tickets`
+- `/api/v1/support/tickets/[id]`
+- `/api/v1/support/tickets/[id]/messages`
+
+### 6.5 Coach APIs
+
+- `/api/v1/coach/clients`
+- `/api/v1/coach/clients/available`
+- `/api/v1/coach/clients/[clientId]/summary`
+- `/api/v1/coach/clients/[clientId]/status`
+- `/api/v1/coach/programs`
+- `/api/v1/coach/programs/[id]`
+- `/api/v1/coach/programs/assign`
+- `/api/v1/coach/forms`
+- `/api/v1/coach/forms/[id]`
+- `/api/v1/coach/forms/[id]/status`
+- `/api/v1/coach/forms/[id]/assign`
+- `/api/v1/coach/forms/[id]/submissions`
+- `/api/v1/coach/content`
+- `/api/v1/coach/broadcast`
+- `/api/v1/coach/broadcast/history`
+- `/api/v1/coach/schedule-events`
+- `/api/v1/coach/marketplace`
+- `/api/v1/coach/media/upload`
+- `/api/v1/coach/settings`
+
+### 6.6 Coaching Discovery and Engagement
+
+- `/api/v1/coaching/discover`
+- `/api/v1/coaching/hub`
+- `/api/v1/coaching/[coachId]/overview`
+- `/api/v1/coaching/[coachId]/reviews`
+- `/api/v1/coaching/reviews/[reviewId]/reply`
+- `/api/v1/coaching/forms/submissions`
+
+### 6.7 Admin APIs
+
+- `/api/v1/admin/users`
+- `/api/v1/admin/users/[id]`
+- `/api/v1/admin/users/[id]/status`
+- `/api/v1/admin/users/[id]/premium`
 - `/api/v1/admin/coaches`
-- `/api/v1/admin/applications*`
-- `/api/v1/admin/payments*`
-- `/api/v1/admin/reports*`
+- `/api/v1/admin/applications`
+- `/api/v1/admin/applications/[id]/status`
+- `/api/v1/admin/payments`
+- `/api/v1/admin/payments/approve-pending`
+- `/api/v1/admin/reports`
+- `/api/v1/admin/reports/[id]/status`
 - `/api/v1/admin/settings`
 
-## 6. Shared Layout Components
+## 7. Store Registry and Runtime Behavior
 
-`components/layout/` contains shell primitives:
-
-- `AppShell.tsx`: wraps user routes with sidebar + top bar
-- `Sidebar.tsx`: main user navigation, unread badge support, collapse/expand
-- `TopBar.tsx`: greeting, search modal, notifications, theme toggle
-
-Role-specific sidebars:
-
-- `app/coach/CoachSidebar.tsx`
-- `app/admin/AdminSidebar.tsx`
-
-## 7. State Management
-
-State is organized by business domain and persisted locally.
-
-### 7.1 Store Registry
+### 7.1 Persisted Stores
 
 - `useAuthStore` (`superfit-auth-storage`)
-  - Handles login/signup/logout/error/user session
-  - Uses Supabase auth and profile synchronization
-
 - `useUserStore` (`superfit-user-storage`)
-  - Onboarding completion and recalculation of nutrition/hydration targets
-
 - `useWorkoutStore` (`superfit-workout-storage`)
-  - Active session state, set logging, exercise insertion/removal, custom exercises
-
 - `useNutritionStore` (`superfit-nutrition-storage`)
-  - Day logs, entries, and macro total calculations
-
 - `useHydrationStore` (`superfit-hydration-storage-v2`)
-  - Drink entries, hydration/caffeine aggregation, mock initialization
-
 - `useGoalStore` (`superfit-goals-storage`)
-  - Goal list and CRUD operations
-
-- `useCommunityStore` (`superfit-community-storage-v2`)
-  - Feed posts, likes, reposts, comment counts
-
-- `useMessageStore` (`superfit-messages-storage-v2`)
-  - Threads, message arrays, reactions, unread counters
-
+- `useCommunityStore` (`superfit-community-storage-v3`)
+- `useMessageStore` (`superfit-messages-storage-v3`)
 - `useNotificationStore` (`superfit-notifications-storage-v1`)
-  - Notifications list, unread state, mark-read/seen actions, realtime subscriptions
-
 - `useCoachingStore` (`superfit-coaching-storage`)
-  - Coach marketplace and client hub data model
-
-- `useCoachPortalStore` (non-persisted operational domain state)
-  - Coach client/program/form/event/broadcast state backed by `/api/v1/coach/*`
-
-- `useAdminPortalStore` (non-persisted operational domain state)
-  - Admin users/coaches/applications/payments/reports/settings backed by `/api/v1/admin/*`
-
+- `useCalculatorStore` (`superfit-calculator-storage-v1`)
 - `useUIStore` (`superfit-ui-storage`)
-  - Sidebar collapse state
 
-### 7.2 Important Note
+### 7.2 Non-persisted Operational Stores
 
-Both auth and user profile concerns currently exist in `useAuthStore` and `useUserStore`. This dual ownership is acceptable for MVP but should be unified during deeper backend hardening.
+- `useCoachPortalStore` for coach operations (`/api/v1/coach/*`)
+- `useAdminPortalStore` for admin operations (`/api/v1/admin/*`)
 
-## 8. Domain Modules
+### 7.3 Caching and Realtime Notes
 
-### 8.1 Calculations Layer
+- `useAuthStore` keeps a 60s auth init cache window.
+- `useMessageStore` keeps a 30s init cache and subscribes to realtime message tables.
+- `useNotificationStore` keeps a 20s init cache and subscribes to notification/social tables.
+- `useAdminPortalStore` applies a 30s TTL by dataset and force-refreshes via realtime table events.
 
-`lib/calculations.ts` provides deterministic utility functions:
+## 8. Shared UI and Module Wiring
 
-- BMR (Mifflin-St Jeor style branch by sex)
-- TDEE by activity multipliers
-- Protein target estimation by goal/activity
-- Water target estimation
-- BMI categorization
-- Creatine load/maintenance suggestion
-- Deficit scenarios for weight-loss timelines
+- User shell: `components/layout/AppShell.tsx`, `components/layout/Sidebar.tsx`, `components/layout/TopBar.tsx`
+- Coach shell: `app/coach/CoachSidebar.tsx` + shared top bar
+- Admin shell: `app/admin/AdminSidebar.tsx`, `app/admin/AdminTopBar.tsx`
+- Shared support interface for all scopes: `components/support/SupportCenter.tsx`
+- Calculation utilities: `lib/calculations.ts`
 
-### 8.2 Mock Data Layer
+## 9. Documentation Maintenance Rules
 
-`lib/mockData.ts` seeds:
+When implementation changes:
 
-- Baseline user profile
-- Baseline hydration entries
-
-Many UI routes also include local mock arrays and optimistic interactions.
-
-### 8.3 Type System
-
-`types/index.ts` centralizes type contracts for:
-
-- User, nutrition, workout, hydration, progress
-- Messaging and community
-- Coaching entities
-
-## 9. Design System Wiring
-
-### 9.1 Theme Tokens
-
-Tokens are defined in `app/globals.css` and mapped via Tailwind theme custom properties.
-
-Token groups:
-
-- Background/surface
-- Border
-- Text
-- Accent/status
-- Chart
-- Sidebar
-
-### 9.2 Typography
-
-`app/layout.tsx` sets font variables:
-
-- Display: DM Sans
-- Body: Inter
-- Mono: JetBrains Mono
-
-### 9.3 Motion And Feedback
-
-- Framer Motion for page and modal animations
-- Sonner for toast notifications
-
-## 10. Functional Coverage Snapshot
-
-### 10.1 Strongly Implemented
-
-- Shell/navigation/theming framework
-- Role-based route protection and redirect logic
-- Workout session tracking flow
-- Goal CRUD state
-- Coach and admin core API-backed workflows
-- Notifications API integration with realtime updates
-- Calculator workflows and utility-backed outputs
-
-### 10.2 Implemented But Mock-Heavy
-
-- Community feed and social interactions
-- Messages/attachments workflow
-- Coaching workflows
-- Meal planning and AI scan experience
-- Analytics panels in user/coach/admin spaces
-
-### 10.3 Explicitly Partial
-
-Known "coming soon" hooks are present in selected coach and client hub actions (for example filters/actions/planner/program viewer).
-
-## 11. Documentation Maintenance Rules
-
-When features change:
-
-1. Update this file and `superfit-all-functionalities-list.md` together.
-2. Mark partial/mocked behavior clearly.
-3. Reflect new `/api/v1` additions/removals in the API inventory section.
-4. Do not claim production API/payment/integration support unless implemented.
+1. Update this file, `SYSTEM_DOCUMENTATION.md`, and `md-files/superfit-all-functionalities-list.md` together.
+2. Keep route and API inventories synchronized with `app/**/page.tsx` and `app/api/v1/**/route.ts`.
+3. Keep persisted store keys synchronized with `store/*.ts`.
+4. Label mixed or mock behavior explicitly; avoid production claims not present in code.
