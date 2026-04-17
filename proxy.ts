@@ -1,6 +1,24 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+const SUPABASE_PROXY_TIMEOUT_MS = 2500
+
+function createTimeoutFetch(timeoutMs: number): typeof fetch {
+  return async (input, init) => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+    try {
+      return await fetch(input, {
+        ...init,
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+}
+
 function isCoachPortalPath(pathname: string) {
   return pathname === '/coach' || pathname.startsWith('/coach/')
 }
@@ -38,13 +56,27 @@ export async function proxy(request: NextRequest) {
         cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
       },
     },
+    global: {
+      fetch: createTimeoutFetch(SUPABASE_PROXY_TIMEOUT_MS),
+    },
   })
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+  let user: Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']['user'] | null = null
 
-  const user = session?.user ?? null
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    user = session?.user ?? null
+  } catch {
+    // Keep root route responsive even when Supabase is transiently unavailable.
+    if (isCoachPath || isAdminPath) {
+      return NextResponse.redirect(new URL('/', request.url))
+    }
+
+    return response
+  }
 
   if ((isCoachPath || isAdminPath) && !user) {
     return NextResponse.redirect(new URL('/', request.url))

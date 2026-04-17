@@ -1,10 +1,23 @@
 'use client'
 
 import React from 'react'
-import { Sidebar } from './Sidebar'
-import { TopBar } from './TopBar'
+import dynamic from 'next/dynamic'
 import { useUIStore } from '@/store/useUIStore'
 import { cn } from '@/lib/utils'
+
+const Sidebar = dynamic(() => import('./Sidebar').then((module) => module.Sidebar), {
+    ssr: false,
+    loading: () => (
+        <aside className="hidden lg:block fixed top-0 left-0 h-screen w-[240px] border-r border-(--sidebar-border) bg-(--sidebar-bg)" />
+    ),
+})
+
+const TopBar = dynamic(() => import('./TopBar').then((module) => module.TopBar), {
+    ssr: false,
+    loading: () => (
+        <header className="sticky top-0 z-30 h-[64px] border-b border-(--border-subtle) bg-(--bg-base) px-4 lg:px-[28px]" />
+    ),
+})
 
 interface AppShellProps {
     children: React.ReactNode

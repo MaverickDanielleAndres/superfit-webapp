@@ -1,15 +1,26 @@
 'use client'
 
 import React from 'react'
-import { motion } from 'framer-motion'
 import dynamic from 'next/dynamic'
 import { Weight, HeartPulse, Droplets, Activity, Plus } from 'lucide-react'
 import { MetricCard } from '@/components/dashboard/MetricCard'
-import { MacroRingCard } from '@/components/dashboard/MacroRingCard'
-import { RecommendedActivity } from '@/components/dashboard/RecommendedActivity'
-import { FitnessGoalCard } from '@/components/dashboard/FitnessGoalCard'
 import { useHydrationStore } from '@/store/useHydrationStore'
 import { toast } from 'sonner'
+
+const MacroRingCard = dynamic(() => import('@/components/dashboard/MacroRingCard').then((m) => m.MacroRingCard), {
+    ssr: false,
+    loading: () => <div className="h-[280px] rounded-[24px] bg-[var(--bg-surface)] border border-[var(--border-subtle)] animate-pulse" />
+})
+
+const RecommendedActivity = dynamic(() => import('@/components/dashboard/RecommendedActivity').then((m) => m.RecommendedActivity), {
+    ssr: false,
+    loading: () => <div className="h-[260px] rounded-[24px] bg-[var(--bg-surface)] border border-[var(--border-subtle)] animate-pulse" />
+})
+
+const FitnessGoalCard = dynamic(() => import('@/components/dashboard/FitnessGoalCard').then((m) => m.FitnessGoalCard), {
+    ssr: false,
+    loading: () => <div className="h-[260px] rounded-[24px] bg-[var(--bg-surface)] border border-[var(--border-subtle)] animate-pulse" />
+})
 
 const HeartRateCard = dynamic(() => import('@/components/dashboard/HeartRateCard').then((m) => m.HeartRateCard), {
     ssr: false,
@@ -38,12 +49,7 @@ export default function DashboardPage() {
     }
 
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-            className="flex flex-col gap-[16px] max-w-7xl"
-        >
+        <div className="flex flex-col gap-[16px] max-w-7xl">
 
             <div className="flex flex-col md:flex-row gap-[16px]">
                 <MetricCard title="Weight balance" icon={Weight} value="73" unit="kg" trend="↑ 0.22%" trendUp={true} href="/progress" />
@@ -78,6 +84,6 @@ export default function DashboardPage() {
                 <FitnessGoalCard />
             </div>
 
-        </motion.div>
+        </div>
     )
 }

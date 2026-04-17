@@ -79,46 +79,39 @@ export function TopBar({ scope = 'user' }: TopBarProps) {
     const notificationsRoute = isCoachScope ? '/coach/notifications' : isAdminScope ? '/admin/notifications' : '/notifications'
     const settingsRoute = isCoachScope ? '/coach/settings' : isAdminScope ? '/admin/settings' : '/settings'
     const fallbackSearchRoute = isCoachScope ? '/coach/clients' : isAdminScope ? '/admin/users' : '/exercises'
+    const notificationsBootstrappedRef = React.useRef(false)
+    const messagesBootstrappedRef = React.useRef(false)
+
+    const bootstrapNotifications = React.useCallback(() => {
+        if (!user?.id || notificationsBootstrappedRef.current) return
+        notificationsBootstrappedRef.current = true
+        void initialize()
+        startRealtime(user.id)
+    }, [initialize, startRealtime, user?.id])
+
+    const bootstrapMessages = React.useCallback(() => {
+        if (!user?.id || messagesBootstrappedRef.current) return
+        messagesBootstrappedRef.current = true
+        void initializeMessages()
+        startMessagesRealtime(user.id)
+    }, [initializeMessages, startMessagesRealtime, user?.id])
 
     useEffect(() => {
         if (!user?.id) return
 
-        void initialize()
-        startRealtime(user.id)
-
-        let idleId: number | ReturnType<typeof globalThis.setTimeout> | null = null
-        const idleApi = globalThis as typeof globalThis & {
-            requestIdleCallback?: (callback: IdleRequestCallback) => number
-            cancelIdleCallback?: (id: number) => void
-        }
-        const onIdle = () => {
-            void initializeMessages()
-            startMessagesRealtime(user.id)
-        }
-
-        if (typeof idleApi.requestIdleCallback === 'function') {
-            idleId = idleApi.requestIdleCallback(onIdle)
-        } else {
-            idleId = globalThis.setTimeout(onIdle, 300)
-        }
-
         return () => {
-            if (idleId !== null) {
-                if (typeof idleApi.cancelIdleCallback === 'function' && typeof idleId === 'number') {
-                    idleApi.cancelIdleCallback(idleId)
-                } else {
-                    globalThis.clearTimeout(idleId)
-                }
-            }
+            notificationsBootstrappedRef.current = false
+            messagesBootstrappedRef.current = false
             stopRealtime()
             stopMessagesRealtime()
         }
-    }, [initialize, initializeMessages, startMessagesRealtime, startRealtime, stopMessagesRealtime, stopRealtime, user?.id])
+    }, [stopMessagesRealtime, stopRealtime, user?.id])
 
     useEffect(() => {
         if (!isNotifOpen) return
+        bootstrapNotifications()
         void markAllSeen()
-    }, [isNotifOpen, markAllSeen])
+    }, [bootstrapNotifications, isNotifOpen, markAllSeen])
 
     useEffect(() => {
         if (!isSearchOpen) return
@@ -216,7 +209,11 @@ export function TopBar({ scope = 'user' }: TopBarProps) {
                     <Search className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />
                 </button>
                 <button
-                    onClick={() => { router.push(messageRoute); setIsNotifOpen(false); }}
+                    onClick={() => {
+                        bootstrapMessages()
+                        router.push(messageRoute)
+                        setIsNotifOpen(false)
+                    }}
                     className="relative w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
                 >
                     <MessageCircle className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />
@@ -230,7 +227,13 @@ export function TopBar({ scope = 'user' }: TopBarProps) {
                 {/* Notification Bell */}
                 <div className="relative">
                     <button
-                        onClick={() => setIsNotifOpen(!isNotifOpen)}
+                        onClick={() => {
+                            const nextState = !isNotifOpen
+                            if (nextState) {
+                                bootstrapNotifications()
+                            }
+                            setIsNotifOpen(nextState)
+                        }}
                         className="relative w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-full flex items-center justify-center text-(--text-secondary) hover:text-(--text-primary) hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
                     >
                         <Bell className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />

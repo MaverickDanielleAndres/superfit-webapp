@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.github
+.vscode
+coverage
+playwright-report
+test-results
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env.local
+.env.*
+*.md

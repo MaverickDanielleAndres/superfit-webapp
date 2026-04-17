@@ -186,7 +186,7 @@ export default function CoachDashboard() {
                         <h2 className="font-display font-bold text-[18px] text-(--text-primary)">Client Compliance Trend</h2>
                     </div>
                     <div className="h-[260px] p-4">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={120}>
                             <AreaChart data={complianceChartData}>
                                 <defs>
                                     <linearGradient id="complianceFill" x1="0" y1="0" x2="0" y2="1">
@@ -209,7 +209,7 @@ export default function CoachDashboard() {
                         <h2 className="font-display font-bold text-[18px] text-(--text-primary)">Schedule Status</h2>
                     </div>
                     <div className="h-[260px] p-4">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={120}>
                             <BarChart data={scheduleStatusData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
                                 <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
@@ -231,7 +231,7 @@ export default function CoachDashboard() {
                     <h2 className="font-display font-bold text-[18px] text-(--text-primary)">Broadcast Delivery vs Reads</h2>
                 </div>
                 <div className="h-[220px] p-4">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={120}>
                         <BarChart data={deliveryChartData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
                             <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />

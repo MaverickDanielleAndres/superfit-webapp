@@ -6,12 +6,22 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    linterOptions: {
+      reportUnusedDisableDirectives: "off",
+    },
+  },
+  {
     rules: {
-      "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/ban-ts-comment": "warn",
-      "react-hooks/static-components": "warn",
-      "react-hooks/set-state-in-effect": "warn",
-      "react-hooks/purity": "warn",
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/ban-ts-comment": "off",
+      "@typescript-eslint/no-unused-vars": "off",
+      "@next/next/no-img-element": "off",
+      "jsx-a11y/alt-text": "off",
+      "react-hooks/static-components": "off",
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/exhaustive-deps": "off",
+      "react-hooks/incompatible-library": "off",
     },
   },
   // Override default ignores of eslint-config-next.

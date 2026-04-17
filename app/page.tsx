@@ -4,8 +4,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { gsap } from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import {
   Check,
   ChevronRight,
@@ -24,8 +22,6 @@ import { Features as Features10 } from '@/components/ui/features-10'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Testimonials } from '@/components/ui/testimonials-demo'
 import { useAuthStore } from '@/store/useAuthStore'
-
-gsap.registerPlugin(ScrollTrigger)
 
 type ModalState = 'none' | 'signin' | 'role-select' | 'athlete-signup' | 'coach-apply'
 type SelectedRole = 'athlete' | 'coach' | null
@@ -306,142 +302,165 @@ function LandingPage() {
   useEffect(() => {
     if (prefersReducedMotion) return
 
-    const ctx = gsap.context(() => {
-      gsap.from('.nav-item', {
-        y: -20,
-        opacity: 0,
-        stagger: 0.08,
-        duration: 0.6,
-        ease: 'power3.out'
-      })
+    let cancelled = false
+    let ctx: { revert: () => void } | undefined
 
-      gsap.from('.hero-word', {
-        y: 50,
-        opacity: 0,
-        stagger: 0.07,
-        duration: 0.8,
-        ease: 'power3.out'
-      })
+    const initializeAnimations = async () => {
+      try {
+        const [{ gsap }, { ScrollTrigger }] = await Promise.all([
+          import('gsap'),
+          import('gsap/ScrollTrigger')
+        ])
 
-      gsap.from('.hero-subheadline', {
-        opacity: 0,
-        y: 18,
-        duration: 0.7,
-        delay: 0.55,
-        ease: 'power3.out'
-      })
+        if (cancelled) return
 
-      gsap.from('.hero-cta', {
-        opacity: 0,
-        y: 14,
-        duration: 0.7,
-        delay: 0.65,
-        stagger: 0.12,
-        ease: 'power3.out'
-      })
+        gsap.registerPlugin(ScrollTrigger)
 
-      gsap.from('.hero-card', {
-        x: 80,
-        opacity: 0,
-        delay: 0.6,
-        duration: 0.9,
-        ease: 'back.out(1.4)'
-      })
+        ctx = gsap.context(() => {
+          gsap.from('.nav-item', {
+            y: -20,
+            opacity: 0,
+            stagger: 0.08,
+            duration: 0.6,
+            ease: 'power3.out'
+          })
 
-      gsap.from('.feature-card', {
-        y: 40,
-        opacity: 0,
-        duration: 0.75,
-        stagger: 0.15,
-        ease: 'power2.out',
-        scrollTrigger: {
-          trigger: '#feature-grid',
-          start: 'top 80%',
-          toggleActions: 'play none none none'
-        }
-      })
+          gsap.from('.hero-word', {
+            y: 50,
+            opacity: 0,
+            stagger: 0.07,
+            duration: 0.8,
+            ease: 'power3.out'
+          })
 
-      gsap.utils.toArray<HTMLElement>('.deep-row').forEach((row) => {
-        const direction = row.dataset.direction === 'left' ? -60 : 60
-        gsap.from(row, {
-          x: direction,
-          opacity: 0,
-          duration: 0.8,
-          ease: 'power2.out',
-          scrollTrigger: {
-            trigger: row,
-            start: 'top 80%',
-            toggleActions: 'play none none none'
-          }
-        })
-      })
+          gsap.from('.hero-subheadline', {
+            opacity: 0,
+            y: 18,
+            duration: 0.7,
+            delay: 0.55,
+            ease: 'power3.out'
+          })
 
-      gsap.from('.testimonial-card', {
-        y: 24,
-        opacity: 0,
-        duration: 0.7,
-        stagger: 0.14,
-        ease: 'power2.out',
-        scrollTrigger: {
-          trigger: '#testimonials',
-          start: 'top 80%',
-          toggleActions: 'play none none none'
-        }
-      })
+          gsap.from('.hero-cta', {
+            opacity: 0,
+            y: 14,
+            duration: 0.7,
+            delay: 0.65,
+            stagger: 0.12,
+            ease: 'power3.out'
+          })
 
-      gsap.from('.pricing-card', {
-        y: 30,
-        scale: 0.95,
-        opacity: 0,
-        duration: 0.75,
-        stagger: 0.12,
-        ease: 'power2.out',
-        scrollTrigger: {
-          trigger: '#pricing',
-          start: 'top 80%',
-          toggleActions: 'play none none none'
-        }
-      })
+          gsap.from('.hero-card', {
+            x: 80,
+            opacity: 0,
+            delay: 0.6,
+            duration: 0.9,
+            ease: 'back.out(1.4)'
+          })
 
-      gsap.fromTo(
-        '.final-cta-headline',
-        { clipPath: 'inset(0 100% 0 0)' },
-        {
-          clipPath: 'inset(0 0% 0 0)',
-          duration: 1.2,
-          ease: 'power2.out',
-          scrollTrigger: {
-            trigger: '#final-cta',
-            start: 'top 80%',
-            toggleActions: 'play none none none'
-          }
-        }
-      )
+          gsap.from('.feature-card', {
+            y: 40,
+            opacity: 0,
+            duration: 0.75,
+            stagger: 0.15,
+            ease: 'power2.out',
+            scrollTrigger: {
+              trigger: '#feature-grid',
+              start: 'top 80%',
+              toggleActions: 'play none none none'
+            }
+          })
 
-      gsap.utils.toArray<HTMLElement>('.stat-counter').forEach((el) => {
-        const target = Number(el.dataset.target ?? '0')
-        const suffix = el.dataset.suffix ?? ''
-        const decimals = Number(el.dataset.decimals ?? '0')
-        const counterObj = { val: 0 }
+          gsap.utils.toArray<HTMLElement>('.deep-row').forEach((row) => {
+            const direction = row.dataset.direction === 'left' ? -60 : 60
+            gsap.from(row, {
+              x: direction,
+              opacity: 0,
+              duration: 0.8,
+              ease: 'power2.out',
+              scrollTrigger: {
+                trigger: row,
+                start: 'top 80%',
+                toggleActions: 'play none none none'
+              }
+            })
+          })
 
-        gsap.to(counterObj, {
-          val: target,
-          duration: 2,
-          ease: 'power2.out',
-          scrollTrigger: {
-            trigger: el,
-            start: 'top 80%',
-            toggleActions: 'play none none none'
-          },
-          onUpdate: () => {
-            const value = decimals > 0 ? counterObj.val.toFixed(decimals) : Math.round(counterObj.val).toLocaleString()
-            el.innerHTML = `${value}${suffix}`
-          }
-        })
-      })
-    }, rootRef)
+          gsap.from('.testimonial-card', {
+            y: 24,
+            opacity: 0,
+            duration: 0.7,
+            stagger: 0.14,
+            ease: 'power2.out',
+            scrollTrigger: {
+              trigger: '#testimonials',
+              start: 'top 80%',
+              toggleActions: 'play none none none'
+            }
+          })
 
-    return () => ctx.revert()
+          gsap.from('.pricing-card', {
+            y: 30,
+            scale: 0.95,
+            opacity: 0,
+            duration: 0.75,
+            stagger: 0.12,
+            ease: 'power2.out',
+            scrollTrigger: {
+              trigger: '#pricing',
+              start: 'top 80%',
+              toggleActions: 'play none none none'
+            }
+          })
+
+          gsap.fromTo(
+            '.final-cta-headline',
+            { clipPath: 'inset(0 100% 0 0)' },
+            {
+              clipPath: 'inset(0 0% 0 0)',
+              duration: 1.2,
+              ease: 'power2.out',
+              scrollTrigger: {
+                trigger: '#final-cta',
+                start: 'top 80%',
+                toggleActions: 'play none none none'
+              }
+            }
+          )
+
+          gsap.utils.toArray<HTMLElement>('.stat-counter').forEach((el) => {
+            const target = Number(el.dataset.target ?? '0')
+            const suffix = el.dataset.suffix ?? ''
+            const decimals = Number(el.dataset.decimals ?? '0')
+            const counterObj = { val: 0 }
+
+            gsap.to(counterObj, {
+              val: target,
+              duration: 2,
+              ease: 'power2.out',
+              scrollTrigger: {
+                trigger: el,
+                start: 'top 80%',
+                toggleActions: 'play none none none'
+              },
+              onUpdate: () => {
+                const value = decimals > 0 ? counterObj.val.toFixed(decimals) : Math.round(counterObj.val).toLocaleString()
+                el.innerHTML = `${value}${suffix}`
+              }
+            })
+          })
+        }, rootRef)
+      } catch {
+        // Keep the landing page usable even if optional animation modules fail to load.
+      }
+    }
+
+    void initializeAnimations()
+
+    return () => {
+      cancelled = true
+      ctx?.revert()
+    }
   }, [prefersReducedMotion])
 
   const closeModal = () => {

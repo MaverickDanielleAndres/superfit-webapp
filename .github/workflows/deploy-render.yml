@@ -1,0 +1,94 @@
+name: Deploy (Render)
+
+'on':
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: read
+  statuses: read
+
+concurrency:
+  group: deploy-render-production
+  cancel-in-progress: true
+
+jobs:
+  verify_required_checks:
+    name: Verify Required Checks
+    runs-on: ubuntu-latest
+    outputs:
+      checks_verified: ${{ steps.verify.outputs.verified }}
+    steps:
+      - name: Wait for required checks on commit
+        id: verify
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const requiredChecks = ['Lint and Build', 'Network-Gated Diary Scan E2E'];
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const ref = context.sha;
+
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            for (let attempt = 1; attempt <= 60; attempt += 1) {
+              const { data } = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref,
+                per_page: 100,
+              });
+
+              const checksByName = new Map(data.check_runs.map((run) => [run.name, run]));
+              const snapshot = requiredChecks.map((name) => {
+                const run = checksByName.get(name);
+                return {
+                  name,
+                  status: run?.status || 'missing',
+                  conclusion: run?.conclusion || 'pending',
+                };
+              });
+
+              core.info(`Attempt ${attempt}/60`);
+              core.info(JSON.stringify(snapshot, null, 2));
+
+              const missing = snapshot.filter((c) => c.status === 'missing');
+              const pending = snapshot.filter((c) => ['queued', 'in_progress', 'missing'].includes(c.status));
+
+              if (missing.length === 0 && pending.length === 0) {
+                const failed = snapshot.filter((c) => c.conclusion !== 'success');
+                if (failed.length > 0) {
+                  core.setFailed(`Required checks failed: ${failed.map((f) => `${f.name}=${f.conclusion}`).join(', ')}`);
+                  return;
+                }
+
+                core.setOutput('verified', 'true');
+                return;
+              }
+
+              await sleep(20_000);
+            }
+
+            core.setFailed('Timed out waiting for required checks to complete successfully.');
+
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    needs: verify_required_checks
+    environment: production
+    if: needs.verify_required_checks.outputs.checks_verified == 'true'
+    steps:
+      - name: Trigger Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "Missing secret: RENDER_DEPLOY_HOOK_URL"
+            exit 1
+          fi
+
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+          echo "Render deploy triggered successfully."

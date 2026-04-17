@@ -198,7 +198,7 @@ export default function AnalyticsPage() {
                 <div className="lg:col-span-2 bg-(--bg-surface) border border-(--border-subtle) rounded-[24px] shadow-sm p-6 flex flex-col h-[380px]">
                     <h3 className="font-display font-black text-[18px] text-(--text-primary) mb-6">Client Compliance Trend</h3>
                     <div className="flex-1">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={120}>
                             <AreaChart data={complianceTrendData}>
                                 <defs>
                                     <linearGradient id="coachComplianceFill" x1="0" y1="0" x2="0" y2="1">
@@ -220,7 +220,7 @@ export default function AnalyticsPage() {
                     <div>
                         <h3 className="font-display font-black text-[18px] text-(--text-primary) mb-4">Operational Pulse</h3>
                         <div className="h-[160px] rounded-[12px] border border-(--border-default) bg-[var(--bg-elevated)] p-2 mb-3">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={120}>
                                 <BarChart data={eventStatusData}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
                                     <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} />

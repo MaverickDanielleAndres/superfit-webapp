@@ -1,36 +1,138 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SuperFit
 
-## Getting Started
+SuperFit is a Next.js 16 application with client, coach, and admin experiences, including an authenticated image-based nutrition scan flow.
 
-First, run the development server:
+## Local Development
+
+Install and run:
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+App URL:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- http://localhost:3000
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## QA and E2E Commands
 
-## Learn More
+```bash
+npm run lint
+npm run build
+npm run ci:verify
+npm run playwright:install
+npm run test:e2e:scan
+```
 
-To learn more about Next.js, take a look at the following resources:
+## CI/CD Workflows
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 1) CI and Container Build
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Workflow: [.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml)
 
-## Deploy on Vercel
+Triggers:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- push
+- pull_request
+- workflow_dispatch
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Jobs:
+
+- Lint and Build
+- Build and Publish Container (push events)
+
+Container registry target:
+
+- GHCR image: `ghcr.io/<owner>/superfit`
+
+### 2) Authenticated UI Scan (Network Gated)
+
+Workflow: [.github/workflows/authenticated-ui-scan.yml](.github/workflows/authenticated-ui-scan.yml)
+
+Triggers:
+
+- pull_request to main
+- push to main
+- schedule (every 30 minutes)
+- workflow_dispatch
+
+Jobs:
+
+- Network-Gated Diary Scan E2E
+- Checkpoint Summary and Status
+
+Behavior:
+
+- Validates required secrets.
+- Waits for Supabase DNS + auth health endpoint.
+- Runs authenticated diary scan E2E only when reachable.
+- Fails the workflow if scan cannot pass.
+- Posts checkpoint summary (PR comment or commit comment).
+- Publishes commit status context: `Authenticated UI Scan / Checkpoints`.
+
+### 3) Production Deploy (Render)
+
+Workflow: [.github/workflows/deploy-render.yml](.github/workflows/deploy-render.yml)
+
+Triggers:
+
+- push to main
+- workflow_dispatch
+
+Gating:
+
+- Deploy waits for required checks on the same commit SHA.
+- Deploy proceeds only when all required checks conclude `success`.
+
+Platform target:
+
+- Render Deploy Hook
+
+## Branch Protection (Required)
+
+Configure branch protection for `main` with these settings:
+
+1. Require a pull request before merging.
+2. Require branches to be up to date before merging.
+3. Require status checks to pass before merging.
+
+Required checks list:
+
+- `Lint and Build`
+- `Network-Gated Diary Scan E2E`
+
+Recommended additional signal:
+
+- `Authenticated UI Scan / Checkpoints`
+
+This setup blocks merge unless CI and the authenticated scan both pass.
+
+## Containerization
+
+Files:
+
+- [Dockerfile](Dockerfile)
+- [docker-compose.yml](docker-compose.yml)
+- [.dockerignore](.dockerignore)
+
+Local container run:
+
+```bash
+docker compose up --build
+```
+
+## Required GitHub Secrets
+
+For authenticated scan + deploy workflows:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `GEMINI_API_KEY`
+- `USDA_API_KEY`
+- `RENDER_DEPLOY_HOOK_URL`
+
+## Notes
+
+- The authenticated UI scan workflow intentionally fails when secrets are missing or Supabase is unreachable, so branch protection correctly blocks merge until scan validation is truly passing.

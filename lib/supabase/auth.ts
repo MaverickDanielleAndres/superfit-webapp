@@ -1,5 +1,18 @@
 import { createClient } from '@/lib/supabase/client'
 
+function normalizeSupabaseAuthError(error: unknown) {
+  if (error instanceof Error) {
+    if (/failed to fetch|fetch failed|networkerror|load failed/i.test(error.message)) {
+      return new Error(
+        'Unable to reach Supabase authentication service. Verify NEXT_PUBLIC_SUPABASE_URL and your network/DNS connectivity.'
+      )
+    }
+    return error
+  }
+
+  return new Error('Unexpected authentication error.')
+}
+
 export function isSupabaseAuthEnabled() {
   return (
     process.env.NEXT_PUBLIC_ENABLE_SUPABASE_AUTH === 'true' &&
@@ -10,18 +23,26 @@ export function isSupabaseAuthEnabled() {
 
 export async function signInWithSupabase(email: string, password: string) {
   const supabase = createClient()
-  return supabase.auth.signInWithPassword({ email, password })
+  try {
+    return await supabase.auth.signInWithPassword({ email, password })
+  } catch (error) {
+    throw normalizeSupabaseAuthError(error)
+  }
 }
 
 export async function signUpWithSupabase(email: string, password: string, fullName: string) {
   const supabase = createClient()
-  return supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { full_name: fullName }
-    }
-  })
+  try {
+    return await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName }
+      }
+    })
+  } catch (error) {
+    throw normalizeSupabaseAuthError(error)
+  }
 }
 
 export async function signUpWithSupabaseMetadata(
@@ -31,21 +52,29 @@ export async function signUpWithSupabaseMetadata(
   metadata: Record<string, unknown>,
 ) {
   const supabase = createClient()
-  return supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name: fullName,
-        ...metadata,
+  try {
+    return await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          ...metadata,
+        },
       },
-    },
-  })
+    })
+  } catch (error) {
+    throw normalizeSupabaseAuthError(error)
+  }
 }
 
 export async function signOutWithSupabase() {
   const supabase = createClient()
-  return supabase.auth.signOut()
+  try {
+    return await supabase.auth.signOut()
+  } catch (error) {
+    throw normalizeSupabaseAuthError(error)
+  }
 }
 
 export async function fetchProfileRole(userId: string) {

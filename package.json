@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "ci:verify": "npm run lint && npm run build",
+    "playwright:install": "playwright install chromium",
+    "test:e2e:scan": "playwright test scripts/qa/diary-scan.e2e.spec.ts --project=chromium --workers=1 --reporter=line",
+    "test:e2e:scan:headed": "playwright test scripts/qa/diary-scan.e2e.spec.ts --project=chromium --workers=1 --headed --reporter=line"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
@@ -36,14 +40,19 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "playwright": "^1.59.1",
     "supabase": "^2.84.8",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "optionalDependencies": {
+    "lightningcss-win32-x64-msvc": "^1.31.1"
   }
 }

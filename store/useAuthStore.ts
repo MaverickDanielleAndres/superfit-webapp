@@ -59,6 +59,18 @@ let authLastInitializedAt = 0
 
 const AUTH_INIT_CACHE_MS = 60_000
 
+function formatSupabaseRuntimeError(error: unknown) {
+    if (error instanceof Error) {
+        const message = error.message || 'Unexpected authentication error.'
+        if (/failed to fetch|fetch failed|networkerror|load failed/i.test(message)) {
+            return 'Unable to reach Supabase authentication service. Verify NEXT_PUBLIC_SUPABASE_URL and your network/DNS connectivity.'
+        }
+        return message
+    }
+
+    return 'Unexpected authentication error.'
+}
+
 function bindProfileBroadcast(set: (partial: Partial<AuthState>) => void, get: () => AuthState) {
     if (typeof window === 'undefined') return
     if (profileBroadcastBound) return
@@ -171,29 +183,39 @@ export const useAuthStore = create<AuthState>()(
                 authInitializeInFlight = (async () => {
                     set({ isLoading: true, error: null })
 
-                    const supabase = createClient()
-                    const {
-                        data: { user },
-                        error,
-                    } = await supabase.auth.getUser()
+                    try {
+                        const supabase = createClient()
+                        const {
+                            data: { user },
+                            error,
+                        } = await supabase.auth.getUser()
 
-                    if (error || !user) {
-                        set({ isAuthenticated: false, user: null, isLoading: false, error: error?.message || null })
+                        if (error || !user) {
+                            set({ isAuthenticated: false, user: null, isLoading: false, error: error?.message || null })
+                            authLastInitializedAt = Date.now()
+                            return
+                        }
+
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('*')
+                            .eq('id', user.id)
+                            .maybeSingle()
+
+                        const mapped = mapUserProfile(user.id, user.email || '', profile || null, user.user_metadata)
+
+                        set({ isAuthenticated: true, user: mapped, isLoading: false, error: null })
                         authLastInitializedAt = Date.now()
-                        return
+                        bindProfileRealtime(user.id, set)
+                    } catch (error) {
+                        set({
+                            isAuthenticated: false,
+                            user: null,
+                            isLoading: false,
+                            error: formatSupabaseRuntimeError(error),
+                        })
+                        authLastInitializedAt = Date.now()
                     }
-
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('*')
-                        .eq('id', user.id)
-                        .maybeSingle()
-
-                    const mapped = mapUserProfile(user.id, user.email || '', profile || null, user.user_metadata)
-
-                    set({ isAuthenticated: true, user: mapped, isLoading: false, error: null })
-                    authLastInitializedAt = Date.now()
-                    bindProfileRealtime(user.id, set)
                 })()
 
                 try {
@@ -214,25 +236,33 @@ export const useAuthStore = create<AuthState>()(
                     return false
                 }
 
-                const { data, error } = await signInWithSupabase(email, password)
+                try {
+                    const { data, error } = await signInWithSupabase(email, password)
 
-                if (error || !data.user) {
-                    set({ isLoading: false, error: error?.message || 'Unable to authenticate user.' })
+                    if (error || !data.user) {
+                        set({ isLoading: false, error: error?.message || 'Unable to authenticate user.' })
+                        return false
+                    }
+
+                    const supabase = createClient()
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', data.user.id)
+                        .maybeSingle()
+
+                    const userProfile = mapUserProfile(data.user.id, data.user.email || email, profile || null, data.user.user_metadata)
+
+                    set({ user: userProfile, isAuthenticated: true, isLoading: false, error: null })
+                    authLastInitializedAt = Date.now()
+                    return true
+                } catch (error) {
+                    set({
+                        isLoading: false,
+                        error: formatSupabaseRuntimeError(error),
+                    })
                     return false
                 }
-
-                const supabase = createClient()
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', data.user.id)
-                    .maybeSingle()
-
-                const userProfile = mapUserProfile(data.user.id, data.user.email || email, profile || null, data.user.user_metadata)
-
-                set({ user: userProfile, isAuthenticated: true, isLoading: false, error: null })
-                authLastInitializedAt = Date.now()
-                return true
             },
 
             signup: async (name, email, password, role = 'user') => {
@@ -246,50 +276,58 @@ export const useAuthStore = create<AuthState>()(
                     return false
                 }
 
-                const initialAccountStatus = role === 'coach' ? 'pending_review' : 'active'
-                const { data, error } = await signUpWithSupabaseMetadata(email, password, name, {
-                    role,
-                    account_status: initialAccountStatus,
-                })
+                try {
+                    const initialAccountStatus = role === 'coach' ? 'pending_review' : 'active'
+                    const { data, error } = await signUpWithSupabaseMetadata(email, password, name, {
+                        role,
+                        account_status: initialAccountStatus,
+                    })
 
-                if (error) {
-                    set({ isLoading: false, error: error.message })
+                    if (error) {
+                        set({ isLoading: false, error: error.message })
+                        return false
+                    }
+
+                    const userId = data.user?.id || Math.random().toString(36).slice(2)
+                    const newUser = mapUserProfile(userId, email, {
+                        ...mockProfileShape(),
+                        id: userId,
+                        email,
+                        full_name: name,
+                        onboarding_complete: false,
+                        role,
+                    }, data.user?.user_metadata)
+
+                    if (data.user?.id) {
+                        const supabase = createClient()
+                        await supabase.from('profiles').upsert(
+                            {
+                                id: data.user.id,
+                                email,
+                                full_name: name,
+                                role,
+                                account_status: initialAccountStatus,
+                                onboarding_complete: false,
+                            },
+                            { onConflict: 'id' }
+                        )
+                    }
+
+                    set({
+                        user: newUser,
+                        isAuthenticated: true,
+                        isLoading: false,
+                        error: null
+                    })
+                    authLastInitializedAt = Date.now()
+                    return true
+                } catch (error) {
+                    set({
+                        isLoading: false,
+                        error: formatSupabaseRuntimeError(error),
+                    })
                     return false
                 }
-
-                const userId = data.user?.id || Math.random().toString(36).slice(2)
-                const newUser = mapUserProfile(userId, email, {
-                    ...mockProfileShape(),
-                    id: userId,
-                    email,
-                    full_name: name,
-                    onboarding_complete: false,
-                    role,
-                }, data.user?.user_metadata)
-
-                if (data.user?.id) {
-                    const supabase = createClient()
-                    await supabase.from('profiles').upsert(
-                        {
-                            id: data.user.id,
-                            email,
-                            full_name: name,
-                            role,
-                            account_status: initialAccountStatus,
-                            onboarding_complete: false,
-                        },
-                        { onConflict: 'id' }
-                    )
-                }
-
-                set({
-                    user: newUser,
-                    isAuthenticated: true,
-                    isLoading: false,
-                    error: null
-                })
-                authLastInitializedAt = Date.now()
-                return true
             },
 
             completeOnboarding: async (data) => {
