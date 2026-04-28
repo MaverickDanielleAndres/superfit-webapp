@@ -61,7 +61,9 @@ export async function proxy(request: NextRequest) {
     },
   })
 
-  let user: Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']['user'] | null = null
+  type SupabaseUser = NonNullable<Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']>['user']
+
+  let user: SupabaseUser | null = null
 
   try {
     const {
